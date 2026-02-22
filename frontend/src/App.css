@@ -267,6 +267,34 @@ button:disabled {
   to { transform: rotate(360deg); }
 }
 
+.author-footer {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.825rem;
+  color: var(--text-muted);
+}
+
+.author-footer p {
+  margin-bottom: 0.25rem;
+}
+
+.author-footer strong {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.author-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.author-footer a:hover {
+  color: var(--primary);
+}
+
 @media (max-width: 480px) {
   .card {
     padding: 1.5rem;
