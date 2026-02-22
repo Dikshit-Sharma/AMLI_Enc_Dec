@@ -155,7 +155,7 @@ function App() {
         </div>
 
         <footer className="author-footer">
-          <p>Built with ❤️ by <strong>Dikshit Sharma</strong></p>
+          <p>Built by <strong>Dikshit Sharma</strong></p>
           <p><a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a></p>
         </footer>
       </div>
