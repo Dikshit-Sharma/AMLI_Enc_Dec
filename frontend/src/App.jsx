@@ -85,6 +85,48 @@ function App() {
       setTimeout(() => setCopied(false), 2000);
     });
   };
+
+  const beautifyXML = (xml) => {
+    let formatted = '';
+    let indent = '';
+    const tab = '  ';
+    // Remove existing white space between tags
+    xml = xml.replace(/>\s*</g, '><');
+    xml.split(/>\s*</).forEach((node) => {
+      if (node.match(/^\/\w/)) indent = indent.substring(tab.length);
+      formatted += indent + '<' + node + '>\r\n';
+      if (node.match(/^<?\w[^>]*[^\/]$/)) indent += tab;
+    });
+    return formatted.trim();
+  };
+
+  const handleBeautify = () => {
+    if (!outputResult) return;
+    setError('');
+    const trimmed = outputResult.trim();
+
+    // Try JSON first
+    try {
+      const jsonObj = JSON.parse(trimmed);
+      setOutputResult(JSON.stringify(jsonObj, null, 2));
+      return;
+    } catch (e) {
+      // Not JSON, continue to XML
+    }
+
+    // Try XML
+    try {
+      if (trimmed.startsWith('<')) {
+        const formatted = beautifyXML(trimmed);
+        setOutputResult(formatted);
+      } else {
+        throw new Error('Not XML');
+      }
+    } catch (e) {
+      setError('Could not beautify: Invalid JSON or XML');
+    }
+  };
+
   const handleGenerateKey = () => {
     const newHexKey = generateAESKeyHex();
     setHexKeyConverter(newHexKey);
@@ -513,11 +555,18 @@ function App() {
             <div className="output-container">
               <div className="output-header">
                 <label>Output Result</label>
-                {outputResult && (
-                  <button className="copy-btn" onClick={handleCopy}>
-                    {copied ? '✓ Copied!' : 'Copy Result'}
-                  </button>
-                )}
+                <div className="header-actions">
+                  {outputResult && (
+                    <>
+                      <button className="copy-btn secondary" onClick={handleBeautify}>
+                        ✨ Beautify
+                      </button>
+                      <button className="copy-btn" onClick={handleCopy}>
+                        {copied ? '✓ Copied!' : 'Copy Result'}
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
               <textarea
                 className="output-area"

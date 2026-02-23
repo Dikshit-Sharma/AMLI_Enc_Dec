@@ -464,6 +464,11 @@ button:disabled {
   margin-bottom: 0.75rem;
 }
 
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .output-area {
   background-color: var(--output-bg);
   color: var(--output-text);
@@ -489,12 +494,24 @@ button:disabled {
   flex: none;
   width: auto;
   font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.copy-btn.secondary {
+  border-color: var(--secondary);
+  color: var(--secondary);
 }
 
 .copy-btn:hover {
   background: var(--primary);
   color: white;
-  box-shadow: none;
+  transform: translateY(-1px);
+}
+
+.copy-btn.secondary:hover {
+  background: var(--secondary);
+  color: white;
 }
 
 .error-message {
