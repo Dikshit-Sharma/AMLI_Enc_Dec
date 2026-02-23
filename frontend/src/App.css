@@ -562,3 +562,105 @@ button:disabled {
     flex-direction: column;
   }
 }
+
+/* Library Page Styles */
+.library-container {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.library-header {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.back-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+  display: inline-block;
+  margin-bottom: 1rem;
+  transition: all 0.2s ease;
+}
+
+.back-link:hover {
+  transform: translateX(-4px);
+  color: var(--primary-glow);
+}
+
+.search-bar {
+  margin-top: 1.5rem;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.api-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.api-table th {
+  text-align: left;
+  padding: 1rem;
+  background: #f1f5f9;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-table td {
+  padding: 1.25rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.api-table tr:hover td {
+  background: #f8fafc;
+}
+
+.badge-ticket {
+  background: var(--primary-glow);
+  color: var(--primary);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.4rem;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.curl-cell {
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; font-family: 'Fira Code', monospace; font-size: 0.75rem; color: var(--text-muted); background: #f1f5f9; padding: 0.4rem; border-radius: 0.25rem; cursor: help; }
+
+.loading-state { text-align: center; padding: 3rem; }
+.loading-state .loader { margin: 0 auto 1rem; border-color: var(--primary-glow); border-top-color: var(--primary); }
+.empty-state { text-align: center; padding: 3rem; color: var(--text-muted); font-style: italic; }
+
+.btn-lib {
+  background: #334155;
+  margin-top: 1rem;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-shadow: 0 4px 14px 0 rgba(51, 65, 85, 0.4);
+}
+
+.btn-lib:hover {
+  background: #1e293b;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px 0 rgba(51, 65, 85, 0.5);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

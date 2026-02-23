@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
+import { Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from './firebase';
 import './App.css';
 import { encrypt, decrypt, encryptCBC, decryptCBC, generateAESKeyHex, hexToBase64, base64ToHex } from './cryptoUtil';
 import { generateAndDownloadZip } from './artifactUtil';
+import LibraryPage from './LibraryPage';
 
 function App() {
   const [inputText, setInputText] = useState('');
@@ -170,6 +174,21 @@ function App() {
     });
   };
 
+  const pushToLibrary = async (artifactsToPush) => {
+    try {
+      for (const art of artifactsToPush) {
+        await addDoc(collection(db, 'artifacts'), {
+          apiName: art.apiName,
+          jiraTicket: art.jiraTicket,
+          curl: art.curl,
+          timestamp: serverTimestamp()
+        });
+      }
+    } catch (e) {
+      console.error("Error adding to library: ", e);
+    }
+  };
+
   const handleGenerateArtifacts = async () => {
     setError('');
     const jiraRegex = /^SOA-\d+$/;
@@ -201,6 +220,7 @@ function App() {
     setLoading(true);
     try {
       await generateAndDownloadZip(artifacts, decrypt, decryptCBC);
+      await pushToLibrary(artifacts); // Push to Firestore
       setShowArtifactsModal(false);
     } catch (err) {
       setError('Generation failed: ' + err.message);
@@ -210,289 +230,299 @@ function App() {
   };
 
   return (
-    <div className="container">
-      <div className="card">
-        <h1>AMLI TOOLS</h1>
+    <Routes>
+      <Route path="/" element={
+        <div className="container">
+          <div className="card">
+            <h1>AMLI TOOLS</h1>
 
-        <div className="mode-toggle">
-          <button
-            className={`toggle-btn ${mode === 'GCM' ? 'active' : ''}`}
-            onClick={() => { setMode('GCM'); setError(''); }}
-          >
-            AES/GCM/NoPadding
-          </button>
-          <button
-            className={`toggle-btn ${mode === 'CBC' ? 'active' : ''}`}
-            onClick={() => { setMode('CBC'); setError(''); }}
-          >
-            AES/CBC/PKCS5Padding
-          </button>
-          <button
-            className="toggle-btn"
-            onClick={() => setShowArtifactsModal(true)}
-          >
-            💎 ARTIFACTS
-          </button>
-        </div>
-
-        {error && (
-          <div className="error-message">
-            <span>⚠️ {error}</span>
-          </div>
-        )}
-
-        <div className="form-group">
-          <label htmlFor="inputText">Input Message</label>
-          <textarea
-            id="inputText"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={mode === 'GCM' ? "Type message or paste encrypted (Base64)..." : "Type message or paste encrypted..."}
-          />
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="aesKey">{mode === 'GCM' ? 'AES Key (Base64)' : 'AES Key (Raw String)'}</label>
-          <input
-            id="aesKey"
-            type="text"
-            value={aesKey}
-            onChange={(e) => setAesKey(e.target.value)}
-            placeholder={mode === 'GCM' ? "Enter 256-bit Base64 key..." : "Enter key string (min 16 chars recommended)..."}
-          />
-        </div>
-
-        <div className="button-group">
-          <button
-            className="btn-encrypt"
-            onClick={handleEncrypt}
-            disabled={loading}
-          >
-            {loading ? <div className="loader"></div> : 'Secure Encrypt'}
-          </button>
-          <button
-            className="btn-decrypt"
-            onClick={handleDecrypt}
-            disabled={loading}
-          >
-            {loading ? <div className="loader"></div> : 'Secure Decrypt'}
-          </button>
-          <button
-            className="btn-generate"
-            onClick={handleGenerateKey}
-          >
-            ✨ Generate AES Key
-          </button>
-        </div>
-
-        {showModal && (
-          <div className="modal-overlay" onClick={() => setShowModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>AES Key Generator & Converter</h2>
-                <button className="close-modal" onClick={() => setShowModal(false)}>&times;</button>
-              </div>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label>Generated Hex Key</label>
-                  <div className="input-with-copy">
-                    <input
-                      type="text"
-                      value={hexKeyConverter}
-                      onChange={handleHexChange}
-                      placeholder="Enter Hex key..."
-                    />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>Base64 Encoded Key</label>
-                  <div className="input-with-copy">
-                    <input
-                      type="text"
-                      value={base64KeyConverter}
-                      onChange={handleBase64Change}
-                      placeholder="Base64 will appear here..."
-                    />
-                  </div>
-                </div>
-                <p className="hint-text">This Base64 is the literal encoding of the hex string.</p>
-                <div className="modal-actions">
-                  <button className="btn-primary" onClick={useConvertedKey}>
-                    Use this Key in Cipher
-                  </button>
-                </div>
-              </div>
+            <div className="mode-toggle">
+              {/* ... existing mode toggle ... */}
+              <button
+                className={`toggle-btn ${mode === 'GCM' ? 'active' : ''}`}
+                onClick={() => { setMode('GCM'); setError(''); }}
+              >
+                AES/GCM/NoPadding
+              </button>
+              <button
+                className={`toggle-btn ${mode === 'CBC' ? 'active' : ''}`}
+                onClick={() => { setMode('CBC'); setError(''); }}
+              >
+                AES/CBC/PKCS5Padding
+              </button>
+              <button
+                className="toggle-btn"
+                onClick={() => setShowArtifactsModal(true)}
+              >
+                💎 ARTIFACTS
+              </button>
             </div>
-          </div>
-        )}
 
-        {showArtifactsModal && (
-          <div className="modal-overlay" onClick={() => setShowArtifactsModal(false)}>
-            <div className="modal-content artifact-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h2>Artifacts Generator</h2>
-                <button className="close-modal" onClick={() => setShowArtifactsModal(false)}>&times;</button>
+            {error && (
+              <div className="error-message">
+                <span>⚠️ {error}</span>
               </div>
-              <div className="modal-body scrollable">
-                <div className="form-group">
-                  <label>Multiple Files</label>
-                  <select
-                    className="custom-select"
-                    value={numArtifacts}
-                    onChange={(e) => handleArtifactCountChange(e.target.value)}
-                  >
-                    {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}</option>)}
-                  </select>
+            )}
+
+            <div className="form-group">
+              <label htmlFor="inputText">Input Message</label>
+              <textarea
+                id="inputText"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder={mode === 'GCM' ? "Type message or paste encrypted (Base64)..." : "Type message or paste encrypted..."}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="aesKey">{mode === 'GCM' ? 'AES Key (Base64)' : 'AES Key (Raw String)'}</label>
+              <input
+                id="aesKey"
+                type="text"
+                value={aesKey}
+                onChange={(e) => setAesKey(e.target.value)}
+                placeholder={mode === 'GCM' ? "Enter 256-bit Base64 key..." : "Enter key string (min 16 chars recommended)..."}
+              />
+            </div>
+
+            <div className="button-group">
+              <button
+                className="btn-encrypt"
+                onClick={handleEncrypt}
+                disabled={loading}
+              >
+                {loading ? <div className="loader"></div> : 'Secure Encrypt'}
+              </button>
+              <button
+                className="btn-decrypt"
+                onClick={handleDecrypt}
+                disabled={loading}
+              >
+                {loading ? <div className="loader"></div> : 'Secure Decrypt'}
+              </button>
+              <button
+                className="btn-generate"
+                onClick={handleGenerateKey}
+              >
+                ✨ Generate AES Key
+              </button>
+            </div>
+
+            <Link to="/library" className="btn-lib button">
+              📚 API LIB
+            </Link>
+
+            {showModal && (
+              <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <h2>AES Key Generator & Converter</h2>
+                    <button className="close-modal" onClick={() => setShowModal(false)}>&times;</button>
+                  </div>
+                  <div className="modal-body">
+                    <div className="form-group">
+                      <label>Generated Hex Key</label>
+                      <div className="input-with-copy">
+                        <input
+                          type="text"
+                          value={hexKeyConverter}
+                          onChange={handleHexChange}
+                          placeholder="Enter Hex key..."
+                        />
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label>Base64 Encoded Key</label>
+                      <div className="input-with-copy">
+                        <input
+                          type="text"
+                          value={base64KeyConverter}
+                          onChange={handleBase64Change}
+                          placeholder="Base64 will appear here..."
+                        />
+                      </div>
+                    </div>
+                    <p className="hint-text">This Base64 is the literal encoding of the hex string.</p>
+                    <div className="modal-actions">
+                      <button className="btn-primary" onClick={useConvertedKey}>
+                        Use this Key in Cipher
+                      </button>
+                    </div>
+                  </div>
                 </div>
+              </div>
+            )}
 
-                {artifacts.map((art, index) => (
-                  <div key={index} className="artifact-group">
-                    <h3 className="artifact-title">Artifact {index + 1}</h3>
-                    <div className="form-row">
-                      <div className="form-group flexify">
-                        <label>Jira Ticket</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. SOA-1390"
-                          value={art.jiraTicket}
-                          onChange={(e) => updateArtifact(index, 'jiraTicket', e.target.value)}
-                        />
-                      </div>
-                      <div className="form-group flexify">
-                        <label>API Name</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. EmailService"
-                          value={art.apiName}
-                          onChange={(e) => updateArtifact(index, 'apiName', e.target.value)}
-                        />
-                      </div>
-                    </div>
+            {showArtifactsModal && (
+              <div className="modal-overlay" onClick={() => setShowArtifactsModal(false)}>
+                <div className="modal-content artifact-modal" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <h2>Artifacts Generator</h2>
+                    <button className="close-modal" onClick={() => setShowArtifactsModal(false)}>&times;</button>
+                  </div>
+                  <div className="modal-body scrollable">
                     <div className="form-group">
-                      <label>Curl (Request 1)</label>
-                      <textarea
-                        className="small-area"
-                        placeholder="Paste full curl here..."
-                        value={art.curl}
-                        onChange={(e) => updateArtifact(index, 'curl', e.target.value)}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Response 1</label>
-                      <textarea
-                        className="small-area"
-                        placeholder="Paste full response JSON..."
-                        value={art.response}
-                        onChange={(e) => updateArtifact(index, 'response', e.target.value)}
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Number of Requests</label>
+                      <label>Multiple Files</label>
                       <select
                         className="custom-select"
-                        value={art.numRequests}
-                        onChange={(e) => handleRequestCountChange(index, e.target.value)}
+                        value={numArtifacts}
+                        onChange={(e) => handleArtifactCountChange(e.target.value)}
                       >
                         {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}</option>)}
                       </select>
                     </div>
 
-                    {art.extraRequests && art.extraRequests.map((extra, eIdx) => (
-                      <div key={eIdx} className="extra-request-group">
+                    {artifacts.map((art, index) => (
+                      <div key={index} className="artifact-group">
+                        <h3 className="artifact-title">Artifact {index + 1}</h3>
+                        <div className="form-row">
+                          <div className="form-group flexify">
+                            <label>Jira Ticket</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. SOA-1390"
+                              value={art.jiraTicket}
+                              onChange={(e) => updateArtifact(index, 'jiraTicket', e.target.value)}
+                            />
+                          </div>
+                          <div className="form-group flexify">
+                            <label>API Name</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. EmailService"
+                              value={art.apiName}
+                              onChange={(e) => updateArtifact(index, 'apiName', e.target.value)}
+                            />
+                          </div>
+                        </div>
                         <div className="form-group">
-                          <label>Request {eIdx + 2}</label>
+                          <label>Curl (Request 1)</label>
                           <textarea
                             className="small-area"
-                            placeholder={`Paste request ${eIdx + 2} JSON...`}
-                            value={extra.request}
-                            onChange={(e) => updateExtraRequest(index, eIdx, 'request', e.target.value)}
+                            placeholder="Paste full curl here..."
+                            value={art.curl}
+                            onChange={(e) => updateArtifact(index, 'curl', e.target.value)}
                           />
                         </div>
                         <div className="form-group">
-                          <label>Response {eIdx + 2}</label>
+                          <label>Response 1</label>
                           <textarea
                             className="small-area"
-                            placeholder={`Paste response ${eIdx + 2} JSON...`}
-                            value={extra.response}
-                            onChange={(e) => updateExtraRequest(index, eIdx, 'response', e.target.value)}
+                            placeholder="Paste full response JSON..."
+                            value={art.response}
+                            onChange={(e) => updateArtifact(index, 'response', e.target.value)}
                           />
+                        </div>
+
+                        <div className="form-group">
+                          <label>Number of Requests</label>
+                          <select
+                            className="custom-select"
+                            value={art.numRequests}
+                            onChange={(e) => handleRequestCountChange(index, e.target.value)}
+                          >
+                            {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}</option>)}
+                          </select>
+                        </div>
+
+                        {art.extraRequests && art.extraRequests.map((extra, eIdx) => (
+                          <div key={eIdx} className="extra-request-group">
+                            <div className="form-group">
+                              <label>Request {eIdx + 2}</label>
+                              <textarea
+                                className="small-area"
+                                placeholder={`Paste request ${eIdx + 2} JSON...`}
+                                value={extra.request}
+                                onChange={(e) => updateExtraRequest(index, eIdx, 'request', e.target.value)}
+                              />
+                            </div>
+                            <div className="form-group">
+                              <label>Response {eIdx + 2}</label>
+                              <textarea
+                                className="small-area"
+                                placeholder={`Paste response ${eIdx + 2} JSON...`}
+                                value={extra.response}
+                                onChange={(e) => updateExtraRequest(index, eIdx, 'response', e.target.value)}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                        <div className="form-row">
+                          <div className="form-group flexify">
+                            <label>Encryption</label>
+                            <select
+                              className="custom-select"
+                              value={art.encryption}
+                              onChange={(e) => updateArtifact(index, 'encryption', e.target.value)}
+                            >
+                              <option value="Disabled">Disabled</option>
+                              <option value="Enabled">Enabled</option>
+                            </select>
+                          </div>
+                          {art.encryption === 'Enabled' && (
+                            <>
+                              <div className="form-group flexify">
+                                <label>Mode</label>
+                                <select
+                                  className="custom-select"
+                                  value={art.algo}
+                                  onChange={(e) => updateArtifact(index, 'algo', e.target.value)}
+                                >
+                                  <option value="GCM">AES/GCM/NoPadding</option>
+                                  <option value="CBC">AES/CBC/PKCS5Padding</option>
+                                </select>
+                              </div>
+                              <div className="form-group flexify">
+                                <label>AES Key</label>
+                                <input
+                                  type="text"
+                                  placeholder="Enter AES Key"
+                                  value={art.aesKey}
+                                  onChange={(e) => updateArtifact(index, 'aesKey', e.target.value)}
+                                />
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     ))}
-                    <div className="form-row">
-                      <div className="form-group flexify">
-                        <label>Encryption</label>
-                        <select
-                          className="custom-select"
-                          value={art.encryption}
-                          onChange={(e) => updateArtifact(index, 'encryption', e.target.value)}
-                        >
-                          <option value="Disabled">Disabled</option>
-                          <option value="Enabled">Enabled</option>
-                        </select>
-                      </div>
-                      {art.encryption === 'Enabled' && (
-                        <>
-                          <div className="form-group flexify">
-                            <label>Mode</label>
-                            <select
-                              className="custom-select"
-                              value={art.algo}
-                              onChange={(e) => updateArtifact(index, 'algo', e.target.value)}
-                            >
-                              <option value="GCM">AES/GCM/NoPadding</option>
-                              <option value="CBC">AES/CBC/PKCS5Padding</option>
-                            </select>
-                          </div>
-                          <div className="form-group flexify">
-                            <label>AES Key</label>
-                            <input
-                              type="text"
-                              placeholder="Enter AES Key"
-                              value={art.aesKey}
-                              onChange={(e) => updateArtifact(index, 'aesKey', e.target.value)}
-                            />
-                          </div>
-                        </>
-                      )}
+
+                    <div className="modal-actions sticky-footer">
+                      <button className="btn-primary full-width" onClick={handleGenerateArtifacts} disabled={loading}>
+                        {loading ? <div className="loader"></div> : '🚀 Generate & Download ZIP'}
+                      </button>
                     </div>
                   </div>
-                ))}
-
-                <div className="modal-actions sticky-footer">
-                  <button className="btn-primary full-width" onClick={handleGenerateArtifacts} disabled={loading}>
-                    {loading ? <div className="loader"></div> : '🚀 Generate & Download ZIP'}
-                  </button>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
-
-        <div className="output-container">
-          <div className="output-header">
-            <label>Output Result</label>
-            {outputResult && (
-              <button className="copy-btn" onClick={handleCopy}>
-                {copied ? '✓ Copied!' : 'Copy Result'}
-              </button>
             )}
-          </div>
-          <textarea
-            className="output-area"
-            value={outputResult}
-            readOnly
-            placeholder="Authentication Tag + Ciphertext will appear here..."
-          />
-        </div>
 
-        <footer className="author-footer">
-          <p>Built by <strong>Dikshit Sharma</strong></p>
-          <p><a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a></p>
-        </footer>
-      </div>
-    </div>
+            <div className="output-container">
+              <div className="output-header">
+                <label>Output Result</label>
+                {outputResult && (
+                  <button className="copy-btn" onClick={handleCopy}>
+                    {copied ? '✓ Copied!' : 'Copy Result'}
+                  </button>
+                )}
+              </div>
+              <textarea
+                className="output-area"
+                value={outputResult}
+                readOnly
+                placeholder="Authentication Tag + Ciphertext will appear here..."
+              />
+            </div>
+
+            <footer className="author-footer">
+              <p>Built by <strong>Dikshit Sharma</strong></p>
+              <p><a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a></p>
+            </footer>
+          </div>
+        </div>
+      } />
+      <Route path="/library" element={<LibraryPage />} />
+    </Routes>
   );
 }
 
