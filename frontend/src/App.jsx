@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import './App.css';
 import { encrypt, decrypt, encryptCBC, decryptCBC, generateAESKeyHex, hexToBase64, base64ToHex } from './cryptoUtil';
+import { generateAndDownloadZip } from './artifactUtil';
 
 function App() {
   const [inputText, setInputText] = useState('');
@@ -13,6 +14,11 @@ function App() {
   const [hexKeyConverter, setHexKeyConverter] = useState('');
   const [base64KeyConverter, setBase64KeyConverter] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showArtifactsModal, setShowArtifactsModal] = useState(false);
+  const [artifacts, setArtifacts] = useState([
+    { jiraTicket: '', apiName: '', curl: '', response: '', encryption: 'Disabled', aesKey: '', algo: 'GCM', numRequests: 1, extraRequests: [] }
+  ]);
+  const [numArtifacts, setNumArtifacts] = useState(1);
 
   const validate = () => {
     if (!inputText.trim()) {
@@ -110,10 +116,103 @@ function App() {
     }
   };
 
+  const handleArtifactCountChange = (count) => {
+    const newCount = parseInt(count);
+    setNumArtifacts(newCount);
+    setArtifacts(prev => {
+      const newArtifacts = [...prev];
+      if (newCount > prev.length) {
+        for (let i = prev.length; i < newCount; i++) {
+          newArtifacts.push({ jiraTicket: '', apiName: '', curl: '', response: '', encryption: 'Disabled', aesKey: '', algo: 'GCM', numRequests: 1, extraRequests: [] });
+        }
+      } else {
+        return newArtifacts.slice(0, newCount);
+      }
+      return newArtifacts;
+    });
+  };
+
+  const updateArtifact = (index, field, value) => {
+    setArtifacts(prev => {
+      const newArtifacts = [...prev];
+      newArtifacts[index] = { ...newArtifacts[index], [field]: value };
+      return newArtifacts;
+    });
+  };
+
+  const handleRequestCountChange = (artifactIndex, count) => {
+    const newCount = parseInt(count);
+    setArtifacts(prev => {
+      const newArtifacts = [...prev];
+      const art = newArtifacts[artifactIndex];
+      const oldNum = art.numRequests;
+
+      art.numRequests = newCount;
+      if (newCount > oldNum) {
+        // Add extra requests
+        for (let i = oldNum; i < newCount; i++) {
+          art.extraRequests.push({ request: '', response: '' });
+        }
+      } else {
+        // Trim extra requests
+        art.extraRequests = art.extraRequests.slice(0, newCount - 1);
+      }
+      return newArtifacts;
+    });
+  };
+
+  const updateExtraRequest = (artifactIndex, extraIndex, field, value) => {
+    setArtifacts(prev => {
+      const newArtifacts = [...prev];
+      const art = newArtifacts[artifactIndex];
+      art.extraRequests[extraIndex] = { ...art.extraRequests[extraIndex], [field]: value };
+      return newArtifacts;
+    });
+  };
+
+  const handleGenerateArtifacts = async () => {
+    setError('');
+    const jiraRegex = /^SOA-\d+$/;
+
+    for (let i = 0; i < artifacts.length; i++) {
+      const art = artifacts[i];
+      if (!jiraRegex.test(art.jiraTicket)) {
+        setError(`Artifact ${i + 1}: Invalid Jira Ticket format (expected SOA-XXXX)`);
+        return;
+      }
+      if (!art.apiName.trim() || !art.curl.trim() || !art.response.trim()) {
+        setError(`Artifact ${i + 1}: All fields are mandatory`);
+        return;
+      }
+      if (art.encryption === 'Enabled' && !art.aesKey.trim()) {
+        setError(`Artifact ${i + 1}: AES Key is mandatory when encryption is enabled`);
+        return;
+      }
+      // Check extra requests
+      for (let j = 0; j < art.extraRequests.length; j++) {
+        const extra = art.extraRequests[j];
+        if (!extra.request.trim() || !extra.response.trim()) {
+          setError(`Artifact ${i + 1}: Extra Request/Response ${j + 2} fields are mandatory`);
+          return;
+        }
+      }
+    }
+
+    setLoading(true);
+    try {
+      await generateAndDownloadZip(artifacts, decrypt, decryptCBC);
+      setShowArtifactsModal(false);
+    } catch (err) {
+      setError('Generation failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="container">
       <div className="card">
-        <h1>AES Cipher Studio</h1>
+        <h1>AMLI TOOLS</h1>
 
         <div className="mode-toggle">
           <button
@@ -127,6 +226,12 @@ function App() {
             onClick={() => { setMode('CBC'); setError(''); }}
           >
             AES/CBC/PKCS5Padding
+          </button>
+          <button
+            className="toggle-btn"
+            onClick={() => setShowArtifactsModal(true)}
+          >
+            💎 ARTIFACTS
           </button>
         </div>
 
@@ -214,6 +319,150 @@ function App() {
                 <div className="modal-actions">
                   <button className="btn-primary" onClick={useConvertedKey}>
                     Use this Key in Cipher
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showArtifactsModal && (
+          <div className="modal-overlay" onClick={() => setShowArtifactsModal(false)}>
+            <div className="modal-content artifact-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Artifacts Generator</h2>
+                <button className="close-modal" onClick={() => setShowArtifactsModal(false)}>&times;</button>
+              </div>
+              <div className="modal-body scrollable">
+                <div className="form-group">
+                  <label>Multiple Files</label>
+                  <select
+                    className="custom-select"
+                    value={numArtifacts}
+                    onChange={(e) => handleArtifactCountChange(e.target.value)}
+                  >
+                    {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+
+                {artifacts.map((art, index) => (
+                  <div key={index} className="artifact-group">
+                    <h3 className="artifact-title">Artifact {index + 1}</h3>
+                    <div className="form-row">
+                      <div className="form-group flexify">
+                        <label>Jira Ticket</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. SOA-1390"
+                          value={art.jiraTicket}
+                          onChange={(e) => updateArtifact(index, 'jiraTicket', e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group flexify">
+                        <label>API Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. EmailService"
+                          value={art.apiName}
+                          onChange={(e) => updateArtifact(index, 'apiName', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label>Curl (Request 1)</label>
+                      <textarea
+                        className="small-area"
+                        placeholder="Paste full curl here..."
+                        value={art.curl}
+                        onChange={(e) => updateArtifact(index, 'curl', e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Response 1</label>
+                      <textarea
+                        className="small-area"
+                        placeholder="Paste full response JSON..."
+                        value={art.response}
+                        onChange={(e) => updateArtifact(index, 'response', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Number of Requests</label>
+                      <select
+                        className="custom-select"
+                        value={art.numRequests}
+                        onChange={(e) => handleRequestCountChange(index, e.target.value)}
+                      >
+                        {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+
+                    {art.extraRequests && art.extraRequests.map((extra, eIdx) => (
+                      <div key={eIdx} className="extra-request-group">
+                        <div className="form-group">
+                          <label>Request {eIdx + 2}</label>
+                          <textarea
+                            className="small-area"
+                            placeholder={`Paste request ${eIdx + 2} JSON...`}
+                            value={extra.request}
+                            onChange={(e) => updateExtraRequest(index, eIdx, 'request', e.target.value)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Response {eIdx + 2}</label>
+                          <textarea
+                            className="small-area"
+                            placeholder={`Paste response ${eIdx + 2} JSON...`}
+                            value={extra.response}
+                            onChange={(e) => updateExtraRequest(index, eIdx, 'response', e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    <div className="form-row">
+                      <div className="form-group flexify">
+                        <label>Encryption</label>
+                        <select
+                          className="custom-select"
+                          value={art.encryption}
+                          onChange={(e) => updateArtifact(index, 'encryption', e.target.value)}
+                        >
+                          <option value="Disabled">Disabled</option>
+                          <option value="Enabled">Enabled</option>
+                        </select>
+                      </div>
+                      {art.encryption === 'Enabled' && (
+                        <>
+                          <div className="form-group flexify">
+                            <label>Mode</label>
+                            <select
+                              className="custom-select"
+                              value={art.algo}
+                              onChange={(e) => updateArtifact(index, 'algo', e.target.value)}
+                            >
+                              <option value="GCM">AES/GCM/NoPadding</option>
+                              <option value="CBC">AES/CBC/PKCS5Padding</option>
+                            </select>
+                          </div>
+                          <div className="form-group flexify">
+                            <label>AES Key</label>
+                            <input
+                              type="text"
+                              placeholder="Enter AES Key"
+                              value={art.aesKey}
+                              onChange={(e) => updateArtifact(index, 'aesKey', e.target.value)}
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                <div className="modal-actions sticky-footer">
+                  <button className="btn-primary full-width" onClick={handleGenerateArtifacts} disabled={loading}>
+                    {loading ? <div className="loader"></div> : '🚀 Generate & Download ZIP'}
                   </button>
                 </div>
               </div>
