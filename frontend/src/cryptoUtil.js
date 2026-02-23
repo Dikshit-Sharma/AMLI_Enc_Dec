@@ -17,13 +17,33 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-function base64ToBytes(base64) {
+export function base64ToBytes(base64) {
   const binaryString = atob(base64.trim());
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return bytes;
+}
+
+/** Generate 128-bit AES key in Hex format (matches Java logic) */
+export function generateAESKeyHex() {
+  const bytes = window.crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+export function hexToBase64(hex) {
+  const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+  return bytesToBase64(bytes);
+}
+
+export function base64ToHex(base64) {
+  const bytes = base64ToBytes(base64);
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 export async function encrypt(plainText, base64Key) {

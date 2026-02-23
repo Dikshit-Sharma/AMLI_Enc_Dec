@@ -53,6 +53,65 @@ body {
   transition: transform 0.3s ease;
 }
 
+.quick-actions {
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: center;
+}
+
+.gen-btn {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  padding: 0.8rem 1.5rem;
+  font-size: 0.95rem;
+  border-radius: 2rem;
+  width: auto;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+}
+
+.gen-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+}
+
+.key-converter {
+  background: #f8fafc;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  margin-bottom: 2rem;
+  border: 1px solid var(--border);
+}
+
+.key-converter h3 {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.converter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.btn-secondary {
+  background: white;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  padding: 0.6rem 1rem;
+  font-size: 0.875rem;
+  width: auto;
+  margin: 0 auto;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+}
+
 .mode-toggle {
   display: flex;
   background: #f1f5f9;
@@ -96,6 +155,7 @@ h1 {
   text-align: center;
   background: linear-gradient(to right, var(--primary), #818cf8);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: -0.025em;
 }

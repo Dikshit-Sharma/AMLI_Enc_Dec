@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import './App.css';
-import { encrypt, decrypt, encryptCBC, decryptCBC } from './cryptoUtil';
+import { encrypt, decrypt, encryptCBC, decryptCBC, generateAESKeyHex, hexToBase64, base64ToHex } from './cryptoUtil';
 
 function App() {
   const [inputText, setInputText] = useState('');
@@ -10,6 +10,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mode, setMode] = useState('GCM'); // 'GCM' or 'CBC'
+  const [hexKeyConverter, setHexKeyConverter] = useState('');
+  const [base64KeyConverter, setBase64KeyConverter] = useState('');
 
   const validate = () => {
     if (!inputText.trim()) {
@@ -72,11 +74,84 @@ function App() {
       setTimeout(() => setCopied(false), 2000);
     });
   };
+  const handleGenerateKey = () => {
+    const newHexKey = generateAESKeyHex();
+    setHexKeyConverter(newHexKey);
+    setBase64KeyConverter(hexToBase64(newHexKey));
+    setAesKey(hexToBase64(newHexKey));
+    setMode('GCM');
+    setError('');
+  };
+
+  const handleHexChange = (e) => {
+    const hex = e.target.value.replace(/[^0-9a-fA-F]/g, '');
+    setHexKeyConverter(hex);
+    if (hex.length % 2 === 0 && hex.length > 0) {
+      try {
+        setBase64KeyConverter(hexToBase64(hex));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const handleBase64Change = (e) => {
+    const b64 = e.target.value;
+    setBase64KeyConverter(b64);
+    try {
+      if (b64.trim()) {
+        setHexKeyConverter(base64ToHex(b64));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const useConvertedKey = () => {
+    if (base64KeyConverter) {
+      setAesKey(base64KeyConverter);
+      setMode('GCM');
+      setError('');
+    }
+  };
 
   return (
     <div className="container">
       <div className="card">
         <h1>AES Cipher Studio</h1>
+
+        <div className="quick-actions">
+          <button className="gen-btn" onClick={handleGenerateKey}>
+            ✨ Generate 128-bit AES Key (Hex)
+          </button>
+        </div>
+
+        <div className="key-converter">
+          <h3>Key Conversion (Base64 &lt;-&gt; Hex)</h3>
+          <div className="converter-grid">
+            <div className="form-group">
+              <label>Hex Key</label>
+              <input
+                type="text"
+                value={hexKeyConverter}
+                onChange={handleHexChange}
+                placeholder="e.g. 70617373776f7264..."
+              />
+            </div>
+            <div className="form-group">
+              <label>Base64 Key</label>
+              <input
+                type="text"
+                value={base64KeyConverter}
+                onChange={handleBase64Change}
+                placeholder="e.g. cGFzc3dvcmQ=..."
+              />
+            </div>
+          </div>
+          <button className="btn-secondary" onClick={useConvertedKey} disabled={!base64KeyConverter}>
+            Apply to Cipher Key
+          </button>
+        </div>
 
         <div className="mode-toggle">
           <button
