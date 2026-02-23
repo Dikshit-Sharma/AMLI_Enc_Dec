@@ -20,7 +20,7 @@ function App() {
   const [showModal, setShowModal] = useState(false);
   const [showArtifactsModal, setShowArtifactsModal] = useState(false);
   const [artifacts, setArtifacts] = useState([
-    { jiraTicket: '', apiName: '', curl: '', response: '', encryption: 'Disabled', aesKey: '', algo: 'GCM', numRequests: 1, extraRequests: [] }
+    { jiraTicket: '', apiName: '', env: 'DEV', curl: '', response: '', encryption: 'Disabled', aesKey: '', algo: 'GCM', numRequests: 1, extraRequests: [] }
   ]);
   const [numArtifacts, setNumArtifacts] = useState(1);
 
@@ -169,7 +169,7 @@ function App() {
       const newArtifacts = [...prev];
       if (newCount > prev.length) {
         for (let i = prev.length; i < newCount; i++) {
-          newArtifacts.push({ jiraTicket: '', apiName: '', curl: '', response: '', encryption: 'Disabled', aesKey: '', algo: 'GCM', numRequests: 1, extraRequests: [] });
+          newArtifacts.push({ jiraTicket: '', apiName: '', env: 'DEV', curl: '', response: '', encryption: 'Disabled', aesKey: '', algo: 'GCM', numRequests: 1, extraRequests: [] });
         }
       } else {
         return newArtifacts.slice(0, newCount);
@@ -225,9 +225,7 @@ function App() {
 
       for (const art of artifactsToPush) {
         const writePromise = addDoc(collection(db, 'artifacts'), {
-          apiName: art.apiName,
-          jiraTicket: art.jiraTicket,
-          curl: art.curl,
+          ...art,
           timestamp: serverTimestamp()
         });
 
@@ -448,6 +446,21 @@ function App() {
                               value={art.apiName}
                               onChange={(e) => updateArtifact(index, 'apiName', e.target.value)}
                             />
+                          </div>
+                          <div className="form-group flexify">
+                            <label>ENV</label>
+                            <select
+                              className="custom-select"
+                              value={art.env}
+                              onChange={(e) => updateArtifact(index, 'env', e.target.value)}
+                            >
+                              <option value="DEV">DEV</option>
+                              <option value="Digi-Dev">Digi-Dev</option>
+                              <option value="UAT">UAT</option>
+                              <option value="Pre-Prod">Pre-Prod</option>
+                              <option value="PROD">PROD</option>
+                              <option value="Digi-Prod">Digi-Prod</option>
+                            </select>
                           </div>
                         </div>
                         <div className="form-group">

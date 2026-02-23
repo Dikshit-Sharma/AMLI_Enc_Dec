@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { Link } from 'react-router-dom';
+import { generateAndDownloadZip } from './artifactUtil';
+import { decrypt, decryptCBC } from './cryptoUtil';
 
 const LibraryPage = () => {
   const [artifacts, setArtifacts] = useState([]);
@@ -35,6 +37,7 @@ const LibraryPage = () => {
   );
 
   const [copyStatus, setCopyStatus] = useState({}); // { id: boolean }
+  const [downloadingStatus, setDownloadingStatus] = useState({}); // { id: boolean }
 
   const handleCopyCurl = (id, curl) => {
     navigator.clipboard.writeText(curl).then(() => {
@@ -43,6 +46,19 @@ const LibraryPage = () => {
         setCopyStatus(prev => ({ ...prev, [id]: false }));
       }, 2000);
     });
+  };
+
+  const handleDownload = async (art) => {
+    setDownloadingStatus(prev => ({ ...prev, [art.id]: true }));
+    try {
+      // The stored artifact has all the fields needed
+      await generateAndDownloadZip([art], decrypt, decryptCBC);
+    } catch (err) {
+      console.error("Re-download failed:", err);
+      alert("Re-download failed: " + err.message);
+    } finally {
+      setDownloadingStatus(prev => ({ ...prev, [art.id]: false }));
+    }
   };
 
   return (
@@ -73,6 +89,7 @@ const LibraryPage = () => {
                 <tr>
                   <th>Sr. No.</th>
                   <th>API NAME</th>
+                  <th>ENV</th>
                   <th>JIRA TICKET</th>
                   <th>Date</th>
                   <th>CURL / ACTION</th>
@@ -84,6 +101,7 @@ const LibraryPage = () => {
                     <tr key={art.id}>
                       <td>{index + 1}</td>
                       <td><strong>{art.apiName}</strong></td>
+                      <td><span className="badge-env" data-env={art.env}>{art.env || 'DEV'}</span></td>
                       <td>
                         <a
                           href={`https://axismaxlife.atlassian.net/browse/${art.jiraTicket}`}
@@ -108,6 +126,14 @@ const LibraryPage = () => {
                             title="Copy full curl"
                           >
                             {copyStatus[art.id] ? '✓' : '📋'}
+                          </button>
+                          <button
+                            className="copy-icon-btn download-btn"
+                            onClick={() => handleDownload(art)}
+                            disabled={downloadingStatus[art.id]}
+                            title="Re-download Artifacts ZIP"
+                          >
+                            {downloadingStatus[art.id] ? <div className="loader tiny"></div> : '📦'}
                           </button>
                         </div>
                       </td>

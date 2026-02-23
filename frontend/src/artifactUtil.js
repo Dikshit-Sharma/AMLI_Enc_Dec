@@ -43,10 +43,10 @@ export function parseCurl(curlString) {
  * Decrypts payload if needed and formats the artifact text.
  */
 export async function generateArtifactText(artifact, decryptGCM, decryptCBC) {
-  const { jiraTicket, apiName, curl, response, encryption, aesKey, algo, numRequests, extraRequests } = artifact;
+  const { jiraTicket, apiName, env, curl, response, encryption, aesKey, algo, numRequests, extraRequests } = artifact;
   const parsedCurl = parseCurl(curl);
 
-  let resultText = `${jiraTicket} Artifacts\n\n`;
+  let resultText = `${jiraTicket} Artifacts (${env || 'DEV'})\n\n`;
   resultText += `API URL: ${parsedCurl.url}\n\n`;
 
   const headerLines = Object.entries(parsedCurl.headers || {})
