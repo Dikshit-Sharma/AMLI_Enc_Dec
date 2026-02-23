@@ -35,15 +35,17 @@ export function generateAESKeyHex() {
 }
 
 export function hexToBase64(hex) {
-  const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-  return bytesToBase64(bytes);
+  // User requested literal string encoding: btoa(hexString)
+  return btoa(hex);
 }
 
 export function base64ToHex(base64) {
-  const bytes = base64ToBytes(base64);
-  return Array.from(bytes)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
+  // User requested literal string decoding: atob(base64)
+  try {
+    return atob(base64.trim());
+  } catch (e) {
+    return '';
+  }
 }
 
 export async function encrypt(plainText, base64Key) {

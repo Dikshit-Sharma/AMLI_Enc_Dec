@@ -12,6 +12,7 @@ function App() {
   const [mode, setMode] = useState('GCM'); // 'GCM' or 'CBC'
   const [hexKeyConverter, setHexKeyConverter] = useState('');
   const [base64KeyConverter, setBase64KeyConverter] = useState('');
+  const [showModal, setShowModal] = useState(false);
 
   const validate = () => {
     if (!inputText.trim()) {
@@ -78,32 +79,25 @@ function App() {
     const newHexKey = generateAESKeyHex();
     setHexKeyConverter(newHexKey);
     setBase64KeyConverter(hexToBase64(newHexKey));
-    setAesKey(hexToBase64(newHexKey));
-    setMode('GCM');
-    setError('');
+    setShowModal(true);
   };
 
   const handleHexChange = (e) => {
-    const hex = e.target.value.replace(/[^0-9a-fA-F]/g, '');
+    const hex = e.target.value;
     setHexKeyConverter(hex);
-    if (hex.length % 2 === 0 && hex.length > 0) {
-      try {
-        setBase64KeyConverter(hexToBase64(hex));
-      } catch (err) {
-        console.error(err);
-      }
+    if (hex.trim()) {
+      setBase64KeyConverter(hexToBase64(hex));
+    } else {
+      setBase64KeyConverter('');
     }
   };
 
   const handleBase64Change = (e) => {
     const b64 = e.target.value;
     setBase64KeyConverter(b64);
-    try {
-      if (b64.trim()) {
-        setHexKeyConverter(base64ToHex(b64));
-      }
-    } catch (err) {
-      console.error(err);
+    if (b64.trim()) {
+      const hex = base64ToHex(b64);
+      if (hex) setHexKeyConverter(hex);
     }
   };
 
@@ -112,6 +106,7 @@ function App() {
       setAesKey(base64KeyConverter);
       setMode('GCM');
       setError('');
+      setShowModal(false);
     }
   };
 
@@ -119,39 +114,6 @@ function App() {
     <div className="container">
       <div className="card">
         <h1>AES Cipher Studio</h1>
-
-        <div className="quick-actions">
-          <button className="gen-btn" onClick={handleGenerateKey}>
-            ✨ Generate 128-bit AES Key (Hex)
-          </button>
-        </div>
-
-        <div className="key-converter">
-          <h3>Key Conversion (Base64 &lt;-&gt; Hex)</h3>
-          <div className="converter-grid">
-            <div className="form-group">
-              <label>Hex Key</label>
-              <input
-                type="text"
-                value={hexKeyConverter}
-                onChange={handleHexChange}
-                placeholder="e.g. 70617373776f7264..."
-              />
-            </div>
-            <div className="form-group">
-              <label>Base64 Key</label>
-              <input
-                type="text"
-                value={base64KeyConverter}
-                onChange={handleBase64Change}
-                placeholder="e.g. cGFzc3dvcmQ=..."
-              />
-            </div>
-          </div>
-          <button className="btn-secondary" onClick={useConvertedKey} disabled={!base64KeyConverter}>
-            Apply to Cipher Key
-          </button>
-        </div>
 
         <div className="mode-toggle">
           <button
@@ -210,7 +172,54 @@ function App() {
           >
             {loading ? <div className="loader"></div> : 'Secure Decrypt'}
           </button>
+          <button
+            className="btn-generate"
+            onClick={handleGenerateKey}
+          >
+            ✨ Generate AES Key
+          </button>
         </div>
+
+        {showModal && (
+          <div className="modal-overlay" onClick={() => setShowModal(false)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>AES Key Generator & Converter</h2>
+                <button className="close-modal" onClick={() => setShowModal(false)}>&times;</button>
+              </div>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>Generated Hex Key</label>
+                  <div className="input-with-copy">
+                    <input
+                      type="text"
+                      value={hexKeyConverter}
+                      onChange={handleHexChange}
+                      placeholder="Enter Hex key..."
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Base64 Encoded Key</label>
+                  <div className="input-with-copy">
+                    <input
+                      type="text"
+                      value={base64KeyConverter}
+                      onChange={handleBase64Change}
+                      placeholder="Base64 will appear here..."
+                    />
+                  </div>
+                </div>
+                <p className="hint-text">This Base64 is the literal encoding of the hex string.</p>
+                <div className="modal-actions">
+                  <button className="btn-primary" onClick={useConvertedKey}>
+                    Use this Key in Cipher
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="output-container">
           <div className="output-header">
