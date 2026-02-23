@@ -63,7 +63,12 @@ body {
 
 #root {
   width: 100%;
-  max-width: 900px; /* Increased from 640px */
+}
+
+.container {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .card {
