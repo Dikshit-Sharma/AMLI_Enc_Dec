@@ -11,6 +11,7 @@ const LibraryPage = () => {
   useEffect(() => {
     const q = query(collection(db, 'artifacts'), orderBy('timestamp', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
+      console.log(`Snapshot received. Items: ${snapshot.size}, From Cache: ${snapshot.metadata.fromCache}`);
       const docs = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -18,7 +19,10 @@ const LibraryPage = () => {
       setArtifacts(docs);
       setLoading(false);
     }, (error) => {
-      console.error("Error fetching artifacts:", error);
+      console.error("Firestore Error:", error.code, error.message);
+      if (error.code === 'permission-denied') {
+        alert("Firestore Permission Denied. Please check your rules in the Firebase Console and set them to Test Mode.");
+      }
       setLoading(false);
     });
 
@@ -29,6 +33,17 @@ const LibraryPage = () => {
     art.apiName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     art.jiraTicket?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const [copyStatus, setCopyStatus] = useState({}); // { id: boolean }
+
+  const handleCopyCurl = (id, curl) => {
+    navigator.clipboard.writeText(curl).then(() => {
+      setCopyStatus(prev => ({ ...prev, [id]: true }));
+      setTimeout(() => {
+        setCopyStatus(prev => ({ ...prev, [id]: false }));
+      }, 2000);
+    });
+  };
 
   return (
     <div className="library-container">
@@ -60,7 +75,7 @@ const LibraryPage = () => {
                   <th>API NAME</th>
                   <th>JIRA TICKET</th>
                   <th>Date</th>
-                  <th>CURL</th>
+                  <th>CURL / ACTION</th>
                 </tr>
               </thead>
               <tbody>
@@ -69,11 +84,31 @@ const LibraryPage = () => {
                     <tr key={art.id}>
                       <td>{index + 1}</td>
                       <td><strong>{art.apiName}</strong></td>
-                      <td><span className="badge-ticket">{art.jiraTicket}</span></td>
-                      <td>{art.timestamp?.toDate ? art.timestamp.toDate().toLocaleString() : new Date(art.timestamp).toLocaleString()}</td>
                       <td>
-                        <div className="curl-cell" title={art.curl}>
-                          {art.curl?.substring(0, 50)}...
+                        <a
+                          href={`https://axismaxlife.atlassian.net/browse/${art.jiraTicket}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="badge-ticket link"
+                        >
+                          {art.jiraTicket}
+                        </a>
+                      </td>
+                      <td className="date-cell">
+                        {art.timestamp?.toDate ? art.timestamp.toDate().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : new Date(art.timestamp).toLocaleString()}
+                      </td>
+                      <td>
+                        <div className="action-cell">
+                          <div className="curl-cell" title={art.curl}>
+                            {art.curl?.substring(0, 40)}...
+                          </div>
+                          <button
+                            className={`copy-icon-btn ${copyStatus[art.id] ? 'copied' : ''}`}
+                            onClick={() => handleCopyCurl(art.id, art.curl)}
+                            title="Copy full curl"
+                          >
+                            {copyStatus[art.id] ? '✓' : '📋'}
+                          </button>
                         </div>
                       </td>
                     </tr>

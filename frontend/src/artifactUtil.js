@@ -49,7 +49,16 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC) {
   let resultText = `${jiraTicket} Artifacts\n\n`;
   resultText += `API URL: ${parsedCurl.url}\n\n`;
 
-  resultText += `HEADERS:\n${JSON.stringify(parsedCurl.headers, null, 2)}\n\n`;
+  const headerLines = Object.entries(parsedCurl.headers || {})
+    .map(([key, value]) => {
+      if (key.toLowerCase() === 'authorization') {
+        return `${key}:Bearer {{token}}`;
+      }
+      return `${key}:${value}`;
+    })
+    .join('\n');
+
+  resultText += `HEADERS:\n${headerLines}\n\n`;
 
   // Helper to safely parse and stringify JSON
   const formatJSON = (val) => {

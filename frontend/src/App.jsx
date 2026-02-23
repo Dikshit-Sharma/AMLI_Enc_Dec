@@ -176,16 +176,25 @@ function App() {
 
   const pushToLibrary = async (artifactsToPush) => {
     try {
+      // Add a simple timeout promise
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Database write timed out")), 5000)
+      );
+
       for (const art of artifactsToPush) {
-        await addDoc(collection(db, 'artifacts'), {
+        const writePromise = addDoc(collection(db, 'artifacts'), {
           apiName: art.apiName,
           jiraTicket: art.jiraTicket,
           curl: art.curl,
           timestamp: serverTimestamp()
         });
+
+        // Wait for either the write or the timeout
+        await Promise.race([writePromise, timeoutPromise]);
       }
     } catch (e) {
       console.error("Error adding to library: ", e);
+      // We don't throw here so that the UI can still close even if DB fails
     }
   };
 
@@ -219,8 +228,12 @@ function App() {
 
     setLoading(true);
     try {
+      // 1. Generate ZIP
       await generateAndDownloadZip(artifacts, decrypt, decryptCBC);
-      await pushToLibrary(artifacts); // Push to Firestore
+
+      // 2. Try to push to library (background, don't block UI if it fails)
+      await pushToLibrary(artifacts);
+
       setShowArtifactsModal(false);
     } catch (err) {
       setError('Generation failed: ' + err.message);

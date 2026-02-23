@@ -628,16 +628,71 @@ button:disabled {
 .badge-ticket {
   background: var(--primary-glow);
   color: var(--primary);
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.6rem;
   border-radius: 0.4rem;
   font-weight: 600;
   font-size: 0.8rem;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  display: inline-block;
+}
+
+.badge-ticket.link:hover {
+  background: var(--primary);
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+}
+
+.date-cell {
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: inherit;
+}
+
+.action-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .curl-cell {
-  max-width: 250px;
+  flex: 1;
+  max-width: 200px;
   overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; font-family: 'Fira Code', monospace; font-size: 0.75rem; color: var(--text-muted); background: #f1f5f9; padding: 0.4rem; border-radius: 0.25rem; cursor: help; }
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: #f1f5f9;
+  padding: 0.4rem;
+  border-radius: 0.25rem;
+  cursor: help;
+}
+
+.copy-icon-btn {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.copy-icon-btn:hover {
+  background: var(--primary-glow);
+  border-color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.copy-icon-btn.copied {
+  color: var(--success);
+  border-color: var(--success);
+  background: rgba(5, 150, 105, 0.1);
+}
 
 .loading-state { text-align: center; padding: 3rem; }
 .loading-state .loader { margin: 0 auto 1rem; border-color: var(--primary-glow); border-top-color: var(--primary); }
