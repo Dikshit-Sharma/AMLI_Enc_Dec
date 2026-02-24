@@ -1,5 +1,51 @@
 import JSZip from 'jszip';
 
+const SENSITIVE_KEYS = [
+  'APPID',
+  'SOAAPPID',
+  'x-api-key',
+  'clientId',
+  'clientSecret',
+  'x-apigw-api-id'
+];
+
+/**
+ * Replaces a value with * characters of the same length.
+ */
+function maskValue(value) {
+  if (value === null || value === undefined) return value;
+  const str = String(value);
+  return '*'.repeat(str.length);
+}
+
+/**
+ * Recursively masks sensitive keys in an object.
+ */
+function maskSensitiveData(data) {
+  if (!data || typeof data !== 'object') return data;
+
+  if (Array.isArray(data)) {
+    return data.map(item => maskSensitiveData(item));
+  }
+
+  const masked = {};
+  for (const key in data) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      const lowerKey = key.toLowerCase();
+      const isSensitive = SENSITIVE_KEYS.some(sk => sk.toLowerCase() === lowerKey);
+
+      if (isSensitive) {
+        masked[key] = maskValue(data[key]);
+      } else if (typeof data[key] === 'object') {
+        masked[key] = maskSensitiveData(data[key]);
+      } else {
+        masked[key] = data[key];
+      }
+    }
+  }
+  return masked;
+}
+
 /**
  * Parses a curl command string to extract URL, Headers, and Body.
  */
@@ -42,14 +88,19 @@ export function parseCurl(curlString) {
 /**
  * Decrypts payload if needed and formats the artifact text.
  */
-export async function generateArtifactText(artifact, decryptGCM, decryptCBC) {
+export async function generateArtifactText(artifact, decryptGCM, decryptCBC, shouldMask = false) {
   const { jiraTicket, apiName, env, curl, response, encryption, aesKey, algo, numRequests, extraRequests } = artifact;
   const parsedCurl = parseCurl(curl);
 
   let resultText = `${jiraTicket} Artifacts (${env || 'DEV'})\n\n`;
   resultText += `API URL: ${parsedCurl.url}\n\n`;
 
-  const headerLines = Object.entries(parsedCurl.headers || {})
+  let finalHeaders = parsedCurl.headers || {};
+  if (shouldMask) {
+    finalHeaders = maskSensitiveData(finalHeaders);
+  }
+
+  const headerLines = Object.entries(finalHeaders)
     .map(([key, value]) => {
       if (key.toLowerCase() === 'authorization') {
         return `${key}:Bearer {{token}}`;
@@ -102,8 +153,11 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC) {
     }
 
     if (encryption === 'Disabled') {
-      resultText += `REQUEST ${pairNum}:\n${formatJSON(currentParsedReq || {})}\n\n`;
-      resultText += `RESPONSE ${pairNum}:\n${formatJSON(currentParsedRes || {})}\n\n`;
+      const reqToDisplay = shouldMask ? maskSensitiveData(currentParsedReq || {}) : (currentParsedReq || {});
+      const resToDisplay = shouldMask ? maskSensitiveData(currentParsedRes || {}) : (currentParsedRes || {});
+
+      resultText += `REQUEST ${pairNum}:\n${formatJSON(reqToDisplay)}\n\n`;
+      resultText += `RESPONSE ${pairNum}:\n${formatJSON(resToDisplay)}\n\n`;
     } else {
       // Encryption Enabled
       const encReqPayload = currentParsedReq?.request?.payload || '';
@@ -126,10 +180,25 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC) {
         } catch (e) { decRes = `Error: ${e.message}`; }
       }
 
+      let finalDecReq = decReq;
+      let finalDecRes = decRes;
+
+      if (shouldMask) {
+        try {
+          const parsedDecReq = typeof decReq === 'string' ? JSON.parse(decReq) : decReq;
+          finalDecReq = formatJSON(maskSensitiveData(parsedDecReq));
+        } catch (e) { /* ignore if not JSON */ }
+
+        try {
+          const parsedDecRes = typeof decRes === 'string' ? JSON.parse(decRes) : decRes;
+          finalDecRes = formatJSON(maskSensitiveData(parsedDecRes));
+        } catch (e) { /* ignore if not JSON */ }
+      }
+
       resultText += `ENC REQUEST ${pairNum}:\n${formatJSON(currentParsedReq || {})}\n\n`;
       resultText += `ENC RESPONSE ${pairNum}:\n${formatJSON(currentParsedRes || {})}\n\n`;
-      resultText += `DEC REQUEST ${pairNum}:\n${decReq}\n\n`;
-      resultText += `DEC RESPONSE ${pairNum}:\n${decRes}\n\n`;
+      resultText += `DEC REQUEST ${pairNum}:\n${finalDecReq}\n\n`;
+      resultText += `DEC RESPONSE ${pairNum}:\n${finalDecRes}\n\n`;
     }
   }
 
@@ -140,25 +209,32 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC) {
  * Generates and triggers ZIP download for all artifacts.
  */
 export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC) {
-  const zip = new JSZip();
-  let firstJira = 'Artifacts';
+  const firstArt = artifacts[0] || {};
+  const jira = firstArt.jiraTicket || 'JIRA';
+  const env = firstArt.env || 'DEV';
+  const baseFileName = `${jira}_${env}_Artifacts`;
 
-  for (let i = 0; i < artifacts.length; i++) {
-    const art = artifacts[i];
-    if (i === 0 && art.jiraTicket) firstJira = art.jiraTicket;
+  const download = async (shouldMask, suffix = '') => {
+    const zip = new JSZip();
+    for (const art of artifacts) {
+      const content = await generateArtifactText(art, decryptGCM, decryptCBC, shouldMask);
+      const fileName = `${art.jiraTicket || 'JIRA'}_${art.apiName || 'API'}.txt`;
+      zip.file(fileName, content);
+    }
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${baseFileName}${suffix}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
 
-    const content = await generateArtifactText(art, decryptGCM, decryptCBC);
-    const fileName = `${art.jiraTicket || 'JIRA'}_${art.apiName || 'API'}.txt`;
-    zip.file(fileName, content);
-  }
+  // Download Original
+  await download(false);
 
-  const blob = await zip.generateAsync({ type: 'blob' });
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${firstJira}Artifacts.zip`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
+  // Download Masked
+  await download(true, '_Masked');
 }
