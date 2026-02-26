@@ -780,3 +780,34 @@ button:disabled {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Password Gate Styles */
+.password-gate-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+  width: 100%;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.password-card {
+  max-width: 450px;
+  text-align: center;
+}
+
+.password-card h2 {
+  margin-bottom: 0.75rem;
+  color: var(--primary);
+  font-size: 1.5rem;
+}
+
+.password-card .hint-text {
+  margin-bottom: 2rem;
+  font-style: normal;
+}
+
+.password-card .back-link {
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+}

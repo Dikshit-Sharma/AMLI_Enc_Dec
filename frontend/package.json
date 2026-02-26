@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@sentry/browser": "^10.40.0",
+    "@sentry/react": "^10.40.0",
     "firebase": "^12.9.0",
     "jszip": "^3.10.1",
     "react": "^19.2.0",

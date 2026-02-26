@@ -9,8 +9,17 @@ const LibraryPage = () => {
   const [artifacts, setArtifacts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    sessionStorage.getItem('lib_auth') === 'true'
+  );
+  const [password, setPassword] = useState('');
+  const [passError, setPassError] = useState('');
+
+  const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     const q = query(collection(db, 'artifacts'), orderBy('timestamp', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       console.log(`Snapshot received. Items: ${snapshot.size}, From Cache: ${snapshot.metadata.fromCache}`);
@@ -29,7 +38,18 @@ const LibraryPage = () => {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [isAuthenticated]);
+
+  const handlePasswordSubmit = (e) => {
+    e.preventDefault();
+    if (password === LIB_PASSWORD) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('lib_auth', 'true');
+      setPassError('');
+    } else {
+      setPassError('Incorrect password. Please try again.');
+    }
+  };
 
   const filteredArtifacts = artifacts.filter(art =>
     art.apiName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -60,6 +80,31 @@ const LibraryPage = () => {
       setDownloadingStatus(prev => ({ ...prev, [art.id]: false }));
     }
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="password-gate-container">
+        <div className="card password-card">
+          <Link to="/" className="back-link">← Back to Tool</Link>
+          <h2>Library Access Protected</h2>
+          <p className="hint-text">Please enter the secret password to access the API Artifact Library.</p>
+          <form onSubmit={handlePasswordSubmit}>
+            <div className="form-group">
+              <input
+                type="password"
+                placeholder="Enter Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoFocus
+              />
+            </div>
+            {passError && <div className="error-message"><span>⚠️ {passError}</span></div>}
+            <button type="submit" className="btn-encrypt full-width">Unlock Library</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="library-container">
@@ -141,7 +186,7 @@ const LibraryPage = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="5" className="empty-state">No artifacts found matching your search.</td>
+                    <td colSpan="6" className="empty-state">No artifacts found matching your search.</td>
                   </tr>
                 )}
               </tbody>
