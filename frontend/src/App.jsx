@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, logAnalyticsEvent } from './firebase';
 import './App.css';
 import { encrypt, decrypt, encryptCBC, decryptCBC, generateAESKeyHex, hexToBase64, base64ToHex } from './cryptoUtil';
 import { generateAndDownloadZip } from './artifactUtil';
@@ -54,6 +54,7 @@ function App() {
         : await encryptCBC(inputText, aesKey);
       setOutputResult(result);
       setCopied(false);
+      logAnalyticsEvent('encrypt', { mode });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -71,6 +72,7 @@ function App() {
         : await decryptCBC(inputText, aesKey);
       setOutputResult(result);
       setCopied(false);
+      logAnalyticsEvent('decrypt', { mode });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -274,6 +276,7 @@ function App() {
       // 2. Try to push to library (background, don't block UI if it fails)
       await pushToLibrary(artifacts);
 
+      logAnalyticsEvent('generate_artifacts', { count: artifacts.length });
       setShowArtifactsModal(false);
     } catch (err) {
       setError('Generation failed: ' + err.message);
