@@ -424,7 +424,7 @@ function App() {
                         value={numArtifacts}
                         onChange={(e) => handleArtifactCountChange(e.target.value)}
                       >
-                        {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}</option>)}
+                        {Array.from({ length: 15 }, (_, i) => i + 1).map(v => <option key={v} value={v}>{v}</option>)}
                       </select>
                     </div>
 
@@ -492,7 +492,7 @@ function App() {
                             value={art.numRequests}
                             onChange={(e) => handleRequestCountChange(index, e.target.value)}
                           >
-                            {[1, 2, 3, 4, 5].map(v => <option key={v} value={v}>{v}</option>)}
+                            {Array.from({ length: 15 }, (_, i) => i + 1).map(v => <option key={v} value={v}>{v}</option>)}
                           </select>
                         </div>
 
