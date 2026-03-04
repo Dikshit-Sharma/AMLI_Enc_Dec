@@ -1,0 +1,230 @@
+/* ─── Smart Text Area Editor ─── */
+
+.smart-editor {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.25rem;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.3);
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+  position: relative;
+  width: 100%;
+  flex: 1; /* Key for equal heights */
+  min-height: 0;
+}
+
+.smart-editor:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-glow);
+}
+
+.smart-editor--dark {
+  background: var(--output-bg);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.smart-editor--dark:focus-within {
+  border-color: var(--output-text);
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.1);
+}
+
+/* ─── Toolbar ─── */
+.smart-editor__toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: rgba(15, 23, 42, 0.02);
+  border-bottom: 1px solid var(--border);
+  z-index: 5;
+}
+
+.smart-editor__toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.smart-editor--dark .smart-editor__toolbar {
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.smart-editor__format-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.4rem;
+  text-transform: uppercase;
+  background: var(--primary-glow);
+  color: var(--primary);
+  letter-spacing: 0.05em;
+}
+
+.smart-editor--dark .smart-editor__format-badge {
+  background: rgba(56, 189, 248, 0.2);
+  color: var(--output-text);
+}
+
+.smart-editor__beautify-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  width: auto;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.smart-editor__beautify-btn:hover {
+  background: #ffffff;
+  border-color: var(--primary);
+  color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.smart-editor__beautify-btn.copied {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.smart-editor--dark .smart-editor__beautify-btn {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #94a3b8;
+}
+
+.smart-editor--dark .smart-editor__beautify-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--output-text);
+  color: var(--output-text);
+}
+
+/* ─── Body (Gutter + Textarea) ─── */
+.smart-editor__body {
+  display: flex;
+  position: relative;
+  flex: 1;
+  min-height: 0; /* Important for flex-grow to work without overflow */
+  overflow: hidden;
+}
+
+/* ─── Line Number Gutter ─── */
+.smart-editor__gutter {
+  width: 55px; /* Increased for better spacing */
+  background: #f8fafc;
+  border-right: 1px solid var(--border);
+  padding: 1rem 0;
+  user-select: none;
+  overflow: hidden;
+  text-align: right;
+  padding-right: 0.75rem;
+  color: #94a3b8;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  font-size: 0.8rem;
+  z-index: 2;
+}
+
+.smart-editor--dark .smart-editor__gutter {
+  background: rgba(0, 0, 0, 0.3);
+  border-right-color: rgba(255, 255, 255, 0.05);
+  color: #475569;
+}
+
+.smart-editor__gutter-line {
+  line-height: 1.6;
+  height: 1.6em;
+  transition: all 0.2s ease;
+}
+
+.smart-editor__gutter-line.error {
+  color: #f43f5e !important;
+  background: rgba(244, 63, 94, 0.2) !important;
+  font-weight: 800;
+  border-right: 3px solid #f43f5e;
+}
+
+/* ─── Textarea ─── */
+.smart-editor__textarea {
+  flex: 1;
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 1rem !important;
+  font-family: 'Fira Code', 'Courier New', monospace !important;
+  font-size: 0.9rem !important;
+  line-height: 1.6 !important;
+  resize: none !important;
+  overflow-y: auto;
+  min-height: 120px;
+  color: #0f172a;
+  font-weight: 500;
+  transition: height 0.15s ease;
+  width: 100%;
+}
+
+.smart-editor__textarea:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.smart-editor--dark .smart-editor__textarea {
+  color: var(--output-text);
+}
+
+.smart-editor__textarea::placeholder {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.smart-editor--dark .smart-editor__textarea::placeholder {
+  color: #475569;
+}
+
+/* ─── Error Badge (below editor) ─── */
+.smart-editor__error-badge {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: #fff1f2;
+  border-top: 1px solid rgba(225, 29, 72, 0.2);
+  font-size: 0.8rem;
+  color: var(--error);
+  font-weight: 500;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  line-height: 1.4;
+  animation: smartEditorSlideIn 0.2s ease;
+}
+
+.smart-editor--dark .smart-editor__error-badge {
+  background: rgba(225, 29, 72, 0.1);
+  border-top-color: rgba(225, 29, 72, 0.2);
+  color: #fb7185;
+}
+
+.smart-editor__error-icon {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+@keyframes smartEditorSlideIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Sync scrolling ─── */
+.smart-editor__body {
+  overflow: hidden;
+}
+
+/* when the textarea scrolls, the gutter must scroll too — handled via JS */
