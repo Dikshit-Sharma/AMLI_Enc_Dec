@@ -154,7 +154,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                     filteredArtifacts.map((art, index) => (
                       <tr key={art.id}>
                         <td>{index + 1}</td>
-                        <td style={{ color: 'white', fontWeight: 600 }}>{art.apiName}</td>
+                        <td style={{ fontWeight: 600 }}>{art.apiName}</td>
                         <td><span className="badge-env" data-env={art.env}>{art.env || 'DEV'}</span></td>
                         <td>
                           <a

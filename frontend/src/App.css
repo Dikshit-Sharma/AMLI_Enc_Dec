@@ -45,6 +45,11 @@
   padding: 0;
 }
 
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
 html, body {
   height: 100vh;
   margin: 0;
@@ -1127,6 +1132,7 @@ button:disabled {
   background: var(--card-bg);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
+  color: var(--text);
 }
 
 .api-table tr td:first-child {
