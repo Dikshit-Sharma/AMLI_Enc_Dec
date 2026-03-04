@@ -6,7 +6,6 @@
   --secondary: #22d3ee;
   --error: #f43f5e;
   --success: #10b981;
-  --transition-speed: 0.3s;
 }
 
 [data-theme='light'] {
@@ -63,7 +62,6 @@ body {
   color: var(--text);
   display: flex;
   flex-direction: column;
-  transition: background var(--transition-speed), color var(--transition-speed);
 }
 
 .container {
@@ -90,7 +88,6 @@ body {
 ::-webkit-scrollbar-thumb {
   background: rgba(99, 102, 241, 0.2);
   border-radius: 4px;
-  transition: background 0.2s;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -117,7 +114,6 @@ body {
   min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--border);
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1), background var(--transition-speed), border-color var(--transition-speed);
   position: relative;
 }
 
@@ -133,14 +129,12 @@ body {
   gap: 0.6rem;
   font-size: 0.85rem;
   font-weight: 600;
-  transition: all 0.3s ease;
   backdrop-filter: var(--glass-effect);
   z-index: 100;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
 .theme-toggle:hover {
-  transform: translateY(-2px);
   border-color: var(--primary);
   box-shadow: 0 6px 15px var(--primary-glow);
 }
@@ -205,7 +199,6 @@ body {
   border: 1px solid var(--border);
   border-radius: 1.25rem;
   margin-bottom: 2.5rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-left: 4px solid var(--primary-glow);
 }
 
@@ -247,7 +240,6 @@ body {
   border: 1px solid var(--border);
   color: var(--text);
   font-weight: 500;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .custom-select:hover {
@@ -279,7 +271,6 @@ body {
   border: 1px dashed rgba(255, 255, 255, 0.1);
   border-radius: 1rem;
   background: rgba(255, 255, 255, 0.02);
-  transition: all 0.3s ease;
 }
 
 .extra-request-group:hover {
@@ -366,7 +357,6 @@ body {
 
 .btn-generate:hover {
   background: linear-gradient(135deg, #4f46e5 0%, #9333ea 100%);
-  transform: translateY(-2px);
   box-shadow: 0 6px 20px 0 rgba(168, 85, 247, 0.5);
 }
 
@@ -442,7 +432,6 @@ label {
   color: var(--text);
   font-family: inherit;
   font-size: 0.95rem;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .main-input:focus, .custom-select:focus, input:focus, textarea:focus {
@@ -471,7 +460,6 @@ button, .btn-primary, .btn-encrypt, .btn-decrypt, .btn-generate {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -485,7 +473,6 @@ button, .btn-primary, .btn-encrypt, .btn-decrypt, .btn-generate {
 }
 
 .btn-encrypt:hover:not(:disabled) {
-  transform: translateY(-2px);
   filter: brightness(1.1);
   box-shadow: 0 15px 25px -5px var(--primary-glow);
 }
@@ -497,12 +484,11 @@ button, .btn-primary, .btn-encrypt, .btn-decrypt, .btn-generate {
 
 .btn-decrypt:hover:not(:disabled) {
   background: #059669;
-  transform: translateY(-2px);
   box-shadow: 0 6px 20px 0 rgba(16, 185, 129, 0.4);
 }
 
 button:active {
-  transform: translateY(1px);
+  opacity: 0.8;
 }
 
 button:disabled {
@@ -562,14 +548,12 @@ button:disabled {
   width: auto;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
 }
 
 .copy-btn:hover {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
-  transform: translateY(-2px);
 }
 
 .error-message {
@@ -627,7 +611,6 @@ button:disabled {
 .author-footer a {
   color: var(--text-muted);
   text-decoration: none;
-  transition: color 0.2s ease;
 }
 
 .author-footer a:hover {
@@ -651,7 +634,6 @@ button:disabled {
   width: 95%;
   max-width: 1600px;
   margin: 0 auto;
-  animation: fadeIn 0.4s ease-out;
 }
 
 .library-header {
@@ -665,11 +647,9 @@ button:disabled {
   font-weight: 600;
   display: inline-block;
   margin-bottom: 1rem;
-  transition: all 0.2s ease;
 }
 
 .back-link:hover {
-  transform: translateX(-4px);
   color: var(--primary-glow);
 }
 
@@ -716,7 +696,6 @@ button:disabled {
   font-weight: 600;
   font-size: 0.8rem;
   text-decoration: none;
-  transition: all 0.2s ease;
   display: inline-block;
 }
 
@@ -751,7 +730,6 @@ button:disabled {
 .badge-ticket.link:hover {
   background: var(--primary);
   color: white;
-  transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
 }
 
@@ -789,14 +767,12 @@ button:disabled {
   padding: 0.3rem 0.6rem;
   cursor: pointer;
   font-size: 0.8rem;
-  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
 .copy-icon-btn:hover {
   background: var(--primary-glow);
   border-color: var(--primary);
-  transform: translateY(-1px);
 }
 
 .copy-icon-btn.copied {
@@ -827,13 +803,12 @@ button:disabled {
 
 .btn-lib:hover {
   background: #1e293b;
-  transform: translateY(-2px);
   box-shadow: 0 6px 20px 0 rgba(51, 65, 85, 0.5);
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* Password Gate Styles */
@@ -843,7 +818,6 @@ button:disabled {
   align-items: center;
   min-height: 80vh;
   width: 100%;
-  animation: fadeIn 0.4s ease-out;
 }
 
 .password-card {
@@ -890,7 +864,6 @@ button:disabled {
   max-width: 1200px;
   margin: 0 auto;
   padding: 4rem 2rem;
-  animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .hero-section {
@@ -930,7 +903,6 @@ button:disabled {
   border-radius: 2rem;
   text-decoration: none;
   color: var(--text);
-  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -948,12 +920,10 @@ button:disabled {
   bottom: 0;
   background: linear-gradient(135deg, var(--primary) 0%, transparent 100%);
   opacity: 0;
-  transition: opacity 0.4s ease;
   z-index: -1;
 }
 
 .tool-card:hover {
-  transform: translateY(-12px) scale(1.02);
   border-color: var(--primary);
   box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.2);
 }
@@ -988,7 +958,6 @@ button:disabled {
   min-height: 0;
   /* Remove overflow: hidden here to allow the natural growth in stack mode
      to be handled by the parent .card scrollbar */
-  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .workspace-wrapper--side-by-side {
@@ -1063,7 +1032,6 @@ button:disabled {
   align-items: center;
   border: 1px solid rgba(255, 255, 255, 0.1);
   cursor: pointer;
-  transition: all 0.2s ease;
 }
 
 .btn-layout-toggle:hover {
@@ -1088,7 +1056,6 @@ button:disabled {
   border-radius: 1.5rem;
   padding: 2rem;
   margin-bottom: 2rem;
-  transition: all 0.3s ease;
 }
 
 .artifact-group-card:hover {
@@ -1169,14 +1136,12 @@ button:disabled {
   padding: 0.5rem;
   border-radius: 0.5rem;
   cursor: pointer;
-  transition: all 0.2s ease;
   line-height: 1;
 }
 
 .copy-icon-btn:hover {
   background: var(--primary);
   color: white;
-  transform: translateY(-2px);
 }
 
 .copy-icon-btn.copied {

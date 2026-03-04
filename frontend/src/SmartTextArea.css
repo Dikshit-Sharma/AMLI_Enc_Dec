@@ -8,7 +8,6 @@
   overflow: hidden;
   background: rgba(15, 23, 42, 0.3);
   backdrop-filter: blur(8px);
-  transition: all 0.3s ease;
   position: relative;
   width: 100%;
   flex: 1; /* Key for equal heights */
@@ -78,7 +77,6 @@
   border-radius: 0.5rem;
   cursor: pointer;
   width: auto;
-  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -141,7 +139,6 @@
 .smart-editor__gutter-line {
   line-height: 1.6;
   height: 1.6em;
-  transition: all 0.2s ease;
 }
 
 .smart-editor__gutter-line.error {
@@ -167,7 +164,6 @@
   min-height: 120px;
   color: #0f172a;
   font-weight: 500;
-  transition: height 0.15s ease;
   width: 100%;
 }
 
@@ -202,7 +198,6 @@
   font-weight: 500;
   font-family: 'Fira Code', 'Courier New', monospace;
   line-height: 1.4;
-  animation: smartEditorSlideIn 0.2s ease;
 }
 
 .smart-editor--dark .smart-editor__error-badge {
@@ -217,12 +212,7 @@
   line-height: 1.3;
 }
 
-@keyframes smartEditorSlideIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* ─── Sync scrolling ─── */
+/* Sync scrolling */
 .smart-editor__body {
   overflow: hidden;
 }
