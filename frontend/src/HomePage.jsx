@@ -33,6 +33,12 @@ export default function HomePage({ theme, toggleTheme }) {
           <h3>API Library</h3>
           <p>Access your history of generated artifacts. Search, review, and re-download past configurations with ease.</p>
         </Link>
+
+        <a href="https://sharedclip.netlify.app/" className="tool-card" target="_blank" rel="noopener noreferrer">
+          <div className="card-icon">📋</div>
+          <h3>SharedClip</h3>
+          <p>Real-time collaborative clipboard for seamless data sharing across teams and devices. Simple, fast, and secure.</p>
+        </a>
       </div>
 
       <footer className="footer-minimal">

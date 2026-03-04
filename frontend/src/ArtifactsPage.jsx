@@ -218,11 +218,11 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
           ))}
         </div>
 
-        <div className="sticky-footer" style={{ marginTop: 'auto', paddingTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-          <button className="btn-primary full-width" onClick={handleGenerateArtifacts} disabled={loading} style={{ padding: '1.25rem' }}>
-            {loading ? <div className="loader"></div> : '🚀 Generate & Download Artifacts'}
-          </button>
-        </div>
+      </div>
+      <div className="artifacts-actions-centered" style={{ marginTop: '2.5rem', display: 'flex', justifyContent: 'center' }}>
+        <button className="btn-primary" onClick={handleGenerateArtifacts} disabled={loading} style={{ padding: '1.25rem 3rem', width: 'auto' }}>
+          {loading ? <div className="loader"></div> : '🚀 Generate & Download Artifacts'}
+        </button>
       </div>
     </div>
   );
