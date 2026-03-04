@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { logAnalyticsEvent } from './firebase';
 import './App.css';
 import SmartTextArea from './SmartTextArea';
@@ -16,15 +16,31 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState('GCM'); // 'GCM' or 'CBC'
   const [isSideBySide, setIsSideBySide] = useState(true);
-  const [theme, setTheme] = useState(localStorage.getItem('amli-theme') || 'dark');
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
   const [hexKeyConverter, setHexKeyConverter] = useState('');
   const [base64KeyConverter, setBase64KeyConverter] = useState('');
   const [showModal, setShowModal] = useState(false);
 
+  const location = useLocation();
+
+  // Handle Adaptive Layout Body Classes
+  React.useEffect(() => {
+    // Force fixed layout (no page scroll) for ALL Cipher tool modes (Side and Stack)
+    const isCipherPage = location.pathname === '/cipher';
+
+    if (isCipherPage) {
+      document.body.classList.add('layout-fixed');
+    } else {
+      document.body.classList.remove('layout-fixed');
+    }
+
+    return () => document.body.classList.remove('layout-fixed');
+  }, [location.pathname]);
+
   // Apply theme to document
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('amli-theme', theme);
+    localStorage.setItem('theme', theme);
   }, [theme]);
 
   const toggleTheme = () => {
@@ -133,7 +149,7 @@ function App() {
       <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/cipher" element={
         <div className="container">
-          <div className="card">
+          <div className="card workspace-fullscreen">
             <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '1rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                 <Link to="/" className="back-link" style={{ marginBottom: 0 }}>← Back</Link>
@@ -149,7 +165,7 @@ function App() {
               </button>
             </div>
 
-            <h1>CIPHER TOOL</h1>
+            <h1 style={{ textAlign: 'center' }}>CIPHER TOOL</h1>
 
             <div className="mode-toggle" style={{ marginBottom: '2rem' }}>
               <button className={`toggle-btn ${mode === 'GCM' ? 'active' : ''}`} onClick={() => { setMode('GCM'); setError(''); }}>AES/GCM</button>
@@ -223,7 +239,7 @@ function App() {
               </div>
             )}
 
-            <footer className="author-footer" style={{ marginTop: '1rem', padding: '0.5rem 0' }}>
+            <footer className="footer-minimal">
               <p>Built by <strong>Dikshit Sharma</strong> | <a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a></p>
             </footer>
           </div>

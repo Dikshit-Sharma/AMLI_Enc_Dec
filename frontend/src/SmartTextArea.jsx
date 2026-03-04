@@ -185,7 +185,7 @@ export default function SmartTextArea({
 
   // ── Auto-resize (Disabled to prevent page expansion) ───
   // We now rely on CSS flexbox and maxHeight to control the editor's size.
-  /*
+
   const autoResize = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -197,7 +197,7 @@ export default function SmartTextArea({
   useEffect(() => {
     autoResize();
   }, [value, autoResize]);
-  */
+
 
   // ── Sync gutter scroll with textarea ──────────────
   const handleScroll = useCallback(() => {

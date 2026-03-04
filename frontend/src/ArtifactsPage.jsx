@@ -113,7 +113,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
 
   return (
     <div className="container">
-      <div className="card artifact-workspace">
+      <div className="card artifact-workspace workspace-fullscreen">
         <div className="modal-header">
           <div className="top-nav-row" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -128,7 +128,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
           <p className="field-label" style={{ color: 'var(--text-muted)', textTransform: 'none', fontSize: '1rem' }}>Create structured documentation packages for SOA requests.</p>
         </div>
 
-        <div className="modal-body scrollable" style={{ flex: 1, minHeight: 0, marginTop: '1.5rem', paddingRight: '1rem' }}>
+        <div className="modal-body scrollable" style={{ flex: 1, minHeight: 0, marginTop: '1.5rem', paddingRight: '1rem', paddingBottom: '3rem' }}>
           {error && <div className="error-message"><span>⚠️ {error}</span></div>}
 
           <div className="form-group" style={{ maxWidth: '300px' }}>
@@ -217,13 +217,15 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
             </div>
           ))}
         </div>
-
       </div>
-      <div className="artifacts-actions-centered" style={{ marginTop: '2.5rem', display: 'flex', justifyContent: 'center' }}>
-        <button className="btn-primary" onClick={handleGenerateArtifacts} disabled={loading} style={{ padding: '1.25rem 3rem', width: 'auto' }}>
-          {loading ? <div className="loader"></div> : '🚀 Generate & Download Artifacts'}
+      <div className="artifacts-actions-centered">
+        <button className="btn-primary btn-sm-artifacts" onClick={handleGenerateArtifacts} disabled={loading}>
+          {loading ? <div className="loader tiny"></div> : '🚀 Generate & Download Artifacts'}
         </button>
       </div>
+      <footer className="footer-minimal">
+        <p>Built by <strong>Dikshit Sharma</strong> | <a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a></p>
+      </footer>
     </div>
   );
 }
