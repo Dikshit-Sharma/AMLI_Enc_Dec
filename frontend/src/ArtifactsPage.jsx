@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp, query, orderBy, getDocs } from 'firebase/firestore';
 import { db, logAnalyticsEvent } from './firebase';
 import { decrypt, decryptCBC } from './cryptoUtil';
-import { generateAndDownloadZip } from './artifactUtil';
+import { generateAndDownloadZip, generateArtifactText } from './artifactUtil';
 import ArtifactAuditor from './ArtifactAuditor';
 import useSmartPaste from './SmartPaste';
 
@@ -16,6 +16,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   ]);
   const [auditIndex, setAuditIndex] = useState(null);
   const [libraryForPaste, setLibraryForPaste] = useState([]);
+  const [maskedPreviews, setMaskedPreviews] = useState({});
 
   const pasteSuggestion = useSmartPaste(libraryForPaste);
 
@@ -128,6 +129,18 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
     }
   };
 
+  const handleMaskedPreview = async (index) => {
+    if (maskedPreviews[index]) {
+      setMaskedPreviews(prev => ({ ...prev, [index]: null }));
+      return;
+    }
+    try {
+      const text = await generateArtifactText(artifacts[index], decrypt, decryptCBC, true);
+      setMaskedPreviews(prev => ({ ...prev, [index]: text }));
+    } catch (err) {
+      setError('Preview failed: ' + err.message);
+    }
+  };
   return (
     <div className="container">
       <div className="card artifact-workspace workspace-fullscreen">
@@ -168,6 +181,18 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
                   onClick={() => setAuditIndex(index)}
                 >
                   🔍 Audit
+                </button>
+                <button
+                  style={{
+                    background: maskedPreviews[index] ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.08)',
+                    border: `1px solid ${maskedPreviews[index] ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: '0.75rem', padding: '0.4rem 1rem', cursor: 'pointer',
+                    color: maskedPreviews[index] ? 'var(--success)' : 'var(--text-muted)',
+                    fontSize: '0.8rem', fontWeight: 600, width: 'auto', flex: 'none'
+                  }}
+                  onClick={() => handleMaskedPreview(index)}
+                >
+                  👁️ Masked
                 </button>
               </div>
               <div className="form-row">
@@ -261,6 +286,12 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
                   </>
                 )}
               </div>
+              {maskedPreviews[index] && (
+                <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '1rem' }}>
+                  <label className="field-label" style={{ marginBottom: '0.5rem' }}>🔍 Masked Preview</label>
+                  <textarea className="main-input small-area" readOnly value={maskedPreviews[index]} style={{ minHeight: '150px', fontSize: '0.8rem', fontFamily: 'monospace', resize: 'vertical' }} />
+                </div>
+              )}
             </div>
           ))}
         </div>

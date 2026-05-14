@@ -238,3 +238,26 @@ export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC) 
   // Download Masked
   await download(true, '_Masked');
 }
+
+/**
+ * Generates a single ZIP containing original (unmasked) text for multiple artifacts.
+ * Used for bulk export from the Library.
+ */
+export async function generateBulkZip(artifacts, decryptGCM, decryptCBC) {
+  if (!artifacts?.length) return;
+  const zip = new JSZip();
+  for (const art of artifacts) {
+    const content = await generateArtifactText(art, decryptGCM, decryptCBC, false);
+    const fileName = `${art.jiraTicket || 'JIRA'}_${art.apiName || 'API'}.txt`;
+    zip.file(fileName, content);
+  }
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `Bulk_Export_${artifacts.length}_artifacts.zip`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}

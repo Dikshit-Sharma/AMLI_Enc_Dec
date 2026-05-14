@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { Link } from 'react-router-dom';
-import { generateAndDownloadZip } from './artifactUtil';
+import { generateAndDownloadZip, generateBulkZip } from './artifactUtil';
 import { decrypt, decryptCBC } from './cryptoUtil';
 import ArtifactComparator from './ArtifactComparator';
 import LibraryInsights from './LibraryInsights';
@@ -84,16 +84,21 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   const toggleSelect = (id) => {
     setSelectedIds(prev => {
       if (prev.includes(id)) return prev.filter(i => i !== id);
-      if (prev.length >= 2) return [prev[1], id];
       return [...prev, id];
     });
   };
 
   const handleCompare = () => {
-    const [idA, idB] = selectedIds;
+    const [idA, idB] = selectedIds.slice(0, 2);
     const a = artifacts.find(a => a.id === idA);
     const b = artifacts.find(b => b.id === idB);
     if (a && b) setCompareArtifacts({ artifactA: a, artifactB: b });
+  };
+
+  const handleBulkDownload = () => {
+    const selected = artifacts.filter(a => selectedIds.includes(a.id));
+    if (selected.length === 0) return;
+    generateBulkZip(selected, decrypt, decryptCBC).catch(err => alert('Download failed: ' + err.message));
   };
 
   if (!isAuthenticated) {
@@ -136,14 +141,28 @@ const LibraryPage = ({ theme, toggleTheme }) => {
             <span className="badge-ticket" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
               Total: {artifacts.length}
             </span>
-            {selectedIds.length === 2 && (
-              <button
-                className="btn-primary"
-                style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', width: 'auto', flex: 'none' }}
-                onClick={handleCompare}
-              >
-                ↔ Compare ({selectedIds.length})
-              </button>
+            {selectedIds.length > 0 && (
+              <>
+                <button
+                  style={{
+                    background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)',
+                    borderRadius: '0.75rem', padding: '0.5rem 1rem', cursor: 'pointer',
+                    color: 'var(--success)', fontSize: '0.8rem', fontWeight: 600, width: 'auto', flex: 'none'
+                  }}
+                  onClick={handleBulkDownload}
+                >
+                  📦 Download ({selectedIds.length})
+                </button>
+                {selectedIds.length === 2 && (
+                  <button
+                    className="btn-primary"
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', width: 'auto', flex: 'none' }}
+                    onClick={handleCompare}
+                  >
+                    ↔ Compare
+                  </button>
+                )}
+              </>
             )}
             <button
               style={{
