@@ -13,7 +13,7 @@ export async function askGemini(prompt, systemPrompt = '', temperature = 0.2) {
     : prompt;
 
   const response = await fetch(
-    `https://generativeai.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
