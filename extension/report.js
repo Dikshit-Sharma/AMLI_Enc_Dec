@@ -8,7 +8,7 @@ function loadForm() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return JSON.parse(saved);
   } catch {}
-  return { baseUrl: 'https://repo.maxlifeinsurance.com/api/v4', token: '', username: '', startDate: '', endDate: '' };
+  return { baseUrl: 'https://repo.maxlifeinsurance.com/api/v4', token: '', username: '', commitAuthor: '', startDate: '', endDate: '' };
 }
 
 function saveForm(data) {
@@ -30,16 +30,18 @@ const saved = loadForm();
 $('baseUrl').value = saved.baseUrl;
 $('token').value = saved.token;
 $('username').value = saved.username;
+$('commitAuthor').value = saved.commitAuthor || '';
 $('startDate').value = saved.startDate;
 $('endDate').value = saved.endDate;
 
 // Save on input
-['baseUrl','token','username','startDate','endDate'].forEach(id => {
+['baseUrl','token','username','commitAuthor','startDate','endDate'].forEach(id => {
   $(id).addEventListener('input', () => {
     saveForm({
       baseUrl: $('baseUrl').value,
       token: $('token').value,
       username: $('username').value,
+      commitAuthor: $('commitAuthor').value,
       startDate: $('startDate').value,
       endDate: $('endDate').value,
     });
@@ -163,7 +165,15 @@ async function startReport() {
     const user = users[0];
     setProgress(10, `Found user: ${user.name} (ID: ${user.id})`);
 
-    const commitAuthor = user.email || user.public_email || user.username;
+    if (!$('commitAuthor').value) {
+      $('commitAuthor').value = user.email || user.public_email || user.name || user.username;
+      saveForm({
+        baseUrl: $('baseUrl').value, token: $('token').value,
+        username: $('username').value, commitAuthor: $('commitAuthor').value,
+        startDate: $('startDate').value, endDate: $('endDate').value,
+      });
+    }
+    const commitAuthor = $('commitAuthor').value.trim();
 
     // 2. List membership projects
     setProgress(15, 'Fetching projects...');
