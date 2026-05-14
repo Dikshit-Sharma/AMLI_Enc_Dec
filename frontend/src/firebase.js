@@ -36,20 +36,18 @@ export const logAnalyticsEvent = (eventName, params = {}) => {
 
 /**
  * Citrix / firewalled networks:
- * - Memory-only cache (no IndexedDB) avoids stale session issues.
- * - Auto-detect transport: tries WebSocket first, falls back to long-polling.
- * - Disable fetch streaming to avoid proxy issues.
+ * - Force long-polling transport (bypasses broken WebChannel/WebSockets).
+ * - Disable fetch streaming, which some corporate proxies choke on.
+ * - (Optional) auto-detect can help in mixed environments—uncomment if needed.
  *
- * If you still get CORS errors in VDI, have IT add
- *   Access-Control-Allow-Credentials: true
- * to the firewall/proxy for firestore.googleapis.com.
+ * Keep persistence OFF initially; many enterprises block IndexedDB.
+ * If you enable cache later and get errors, comment it back out.
  */
-import { memoryLocalCache } from "firebase/firestore";
-
 export const db = initializeFirestore(app, {
-  experimentalAutoDetectLongPolling: true,
+  experimentalForceLongPolling: true,
+  // experimentalAutoDetectLongPolling: true,
   useFetchStreams: false,
-  localCache: memoryLocalCache(),
+  // cache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }), // OPTIONAL
 });
 
 export { app };
