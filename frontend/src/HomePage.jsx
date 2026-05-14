@@ -59,32 +59,62 @@ function DonutChart({ data }) {
   );
 }
 
-function WeeklyChart({ artifacts }) {
-  const weeks = useMemo(() => {
-    const days = [];
+function ActivityChart({ artifacts }) {
+  const [view, setView] = useState('weekly');
+  const bars = useMemo(() => {
     const now = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      days.push({ key, label: d.toLocaleDateString('en-IN', { weekday: 'short' }), count: 0 });
+    if (view === 'weekly') {
+      const days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        days.push({ key: d.toISOString().slice(0, 10), label: d.toLocaleDateString('en-IN', { weekday: 'short' }), count: 0 });
+      }
+      for (const a of artifacts || []) {
+        const ts = toDate(a.timestamp);
+        if (!ts) continue;
+        const day = days.find((d) => d.key === ts.toISOString().slice(0, 10));
+        if (day) day.count++;
+      }
+      return days;
+    }
+    const weeks = [];
+    for (let i = 3; i >= 0; i--) {
+      const end = new Date(now);
+      end.setDate(end.getDate() - i * 7);
+      const start = new Date(end);
+      start.setDate(start.getDate() - 6);
+      weeks.push({
+        key: `w${i}`, count: 0,
+        label: `${start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
+      });
     }
     for (const a of artifacts || []) {
       const ts = toDate(a.timestamp);
       if (!ts) continue;
-      const key = ts.toISOString().slice(0, 10);
-      const day = days.find((d) => d.key === key);
-      if (day) day.count++;
+      for (const w of weeks) {
+        const end = new Date(now);
+        end.setDate(end.getDate() - (3 - weeks.indexOf(w)) * 7);
+        const start = new Date(end);
+        start.setDate(start.getDate() - 6);
+        if (ts >= start && ts <= end) { w.count++; break; }
+      }
     }
-    return days;
-  }, [artifacts]);
+    return weeks;
+  }, [artifacts, view]);
 
-  const max = Math.max(...weeks.map((d) => d.count), 1);
+  const max = Math.max(...bars.map((d) => d.count), 1);
   return (
     <div className="chart-container">
-      <h3 className="chart-title">Weekly Activity</h3>
+      <div className="chart-title-row">
+        <h3 className="chart-title">{view === 'weekly' ? 'Weekly' : 'Monthly'} Activity</h3>
+        <div className="chart-toggle">
+          <button className={`chart-toggle-btn ${view === 'weekly' ? 'active' : ''}`} onClick={() => setView('weekly')}>Weekly</button>
+          <button className={`chart-toggle-btn ${view === 'monthly' ? 'active' : ''}`} onClick={() => setView('monthly')}>Monthly</button>
+        </div>
+      </div>
       <div className="weekly-bars">
-        {weeks.map((d) => (
+        {bars.map((d) => (
           <div key={d.key} className="weekly-bar-col">
             <span className="weekly-bar-count">{d.count}</span>
             <div className="weekly-bar-track">
@@ -138,7 +168,7 @@ const TOOLS = [
   { href: 'https://sharedclip.netlify.app/', icon: '📋', name: 'SharedClip', desc: 'Real-time collaborative clipboard for teams.', external: true },
 ];
 
-export default function HomePage({ theme, toggleTheme, onOpenCmdPalette }) {
+export default function HomePage({ theme, toggleTheme }) {
   const [recent, setRecent] = useState([]);
   const [allArts, setAllArts] = useState([]);
   const [envData, setEnvData] = useState([]);
@@ -211,11 +241,6 @@ export default function HomePage({ theme, toggleTheme, onOpenCmdPalette }) {
         <div className="sidebar-brand">
           <h2>AMLI</h2>
         </div>
-        <button className="sidebar-search-btn" onClick={onOpenCmdPalette}>
-          <span className="sidebar-search-icon">⌕</span>
-          <span>Quick Search</span>
-          <span className="sidebar-search-shortcut">⌘K</span>
-        </button>
         <nav className="sidebar-nav">
           {TOOLS.map((tool) => {
             const content = (
@@ -251,24 +276,7 @@ export default function HomePage({ theme, toggleTheme, onOpenCmdPalette }) {
       <main className="home-main">
         <div className="home-container">
           <section className="hero-section">
-            <div className="hero-top">
-              <h1>DASHBOARD</h1>
-              <div className="range-picker">
-                {[
-                  { key: '7d', label: '7D' },
-                  { key: '30d', label: '30D' },
-                  { key: 'all', label: 'All' },
-                ].map((r) => (
-                  <button
-                    key={r.key}
-                    className={`range-btn ${range === r.key ? 'active' : ''}`}
-                    onClick={() => setRange(r.key)}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <h1>DASHBOARD</h1>
             <p>
               A suite of professional encryption, decryption, and artifact
               management tools designed for speed, security, and developer
@@ -310,6 +318,23 @@ export default function HomePage({ theme, toggleTheme, onOpenCmdPalette }) {
             )}
           </div>
 
+          <div className="range-bar">
+            <span className="range-bar-label">Show:</span>
+            {[
+              { key: '7d', label: '7 Days' },
+              { key: '30d', label: '30 Days' },
+              { key: 'all', label: 'All Time' },
+            ].map((r) => (
+              <button
+                key={r.key}
+                className={`range-btn ${range === r.key ? 'active' : ''}`}
+                onClick={() => setRange(r.key)}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+
           {!loaded ? (
             <>
               <div className="chart-section">
@@ -327,7 +352,7 @@ export default function HomePage({ theme, toggleTheme, onOpenCmdPalette }) {
                   <DonutChart data={rangeEnvData} />
                 </div>
                 <div className="chart-section">
-                  <WeeklyChart artifacts={filteredArts} />
+                  <ActivityChart artifacts={filteredArts} />
                 </div>
               </div>
               {credStats && (

@@ -166,7 +166,7 @@ function App() {
       <OnboardingBot />
       <QuickAnswerBot />
       <Routes>
-      <Route path="/" element={<HomePage theme={theme} toggleTheme={toggleTheme} onOpenCmdPalette={() => setShowCmdPalette(true)} />} />
+      <Route path="/" element={<HomePage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/artifacts" element={<ArtifactsPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/credentials" element={<CredentialsPage theme={theme} toggleTheme={toggleTheme} />} />
