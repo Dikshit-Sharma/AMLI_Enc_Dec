@@ -248,7 +248,7 @@ export default function LocReport({ theme, toggleTheme }) {
                 netlifyTriedRef.current = false;
                 setProxyStatus(PROXY.NETLIFY);
               }, 2000);
-              pendingRef.current[id] = { resolve: () => { clearTimeout(timeout); bridgeReadyRef.current = true; setProxyStatus(PROXY.LOCAL); }, reject: () => {} };
+              pendingRef.current[id] = { resolve: () => { clearTimeout(timeout); bridgeReadyRef.current = true; setProxyStatus(PROXY.LOCAL); }, reject: () => { clearTimeout(timeout); bridgeReadyRef.current = true; setProxyStatus(PROXY.LOCAL); } };
               bw.postMessage({ id, target: '/ping', token: '' }, '*');
             }, 300);
           }}
