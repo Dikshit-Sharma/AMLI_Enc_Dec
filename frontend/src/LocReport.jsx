@@ -1,6 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import './LocReport.css';
+
+const STORAGE_KEY = 'locr_form';
+
+function loadForm() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch { /* ignore */ void 0; }
+  return {
+    baseUrl: 'https://repo.maxlifeinsurance.com/api/v4',
+    token: '',
+    userId: '',
+    startDate: '',
+    endDate: '',
+    proxyUrl: '/.netlify/functions/gitlab-proxy',
+    internalProxyUrl: '',
+  };
+}
+
+function saveForm(form) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+  } catch { /* ignore */ void 0; }
+}
 
 function formatNumber(n) {
   return n.toLocaleString('en-IN');
@@ -11,26 +35,26 @@ function sumKey(arr, key) {
 }
 
 export default function LocReport({ theme, toggleTheme }) {
-  const [form, setForm] = useState({
-    baseUrl: 'https://repo.maxlifeinsurance.com/api/v4',
-    token: '',
-    userId: '',
-    startDate: '',
-    endDate: '',
-  });
+  const [form, setForm] = useState(loadForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [report, setReport] = useState(null);
+  const [proxyLabel, setProxyLabel] = useState('');
+
+  useEffect(() => { saveForm(form); }, [form]);
 
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
-  const proxyFetch = async (target) => {
-    const res = await fetch('/.netlify/functions/gitlab-proxy', {
+  const proxyFetch = async (target, proxyUrl) => {
+    const res = await fetch(proxyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ target, token: form.token }),
     });
-    const result = await res.json();
+    let result;
+    try { result = await res.json(); } catch {
+      throw new Error(`Proxy returned non-JSON (${res.status}). If using Netlify proxy, it may not reach your corporate network. Try an internal proxy instead.`);
+    }
     if (!res.ok) throw new Error(`Proxy error: ${result.error}`);
     if (result.status >= 400) {
       if (result.status === 404) return null;
@@ -39,9 +63,79 @@ export default function LocReport({ theme, toggleTheme }) {
     return result.data;
   };
 
+  const runWithProxy = async (proxyUrl, label, base, since, until) => {
+    const projects = await proxyFetch(`${base}/projects?membership=true&per_page=100&simple=true`, proxyUrl);
+    if (!projects || !projects.length) {
+      throw new Error('No projects found for this token. Check membership.');
+    }
+
+    const projectRows = [];
+    const commitRows = [];
+    const processedProjects = [];
+    const seenCommits = new Set();
+
+    for (const proj of projects) {
+      const pid = proj.id;
+      const pname = proj.name || proj.path_with_namespace || `Project ${pid}`;
+
+      let page = 1;
+      let projectCommits = [];
+      while (true) {
+        const url = `${base}/projects/${pid}/repository/commits?since=${since}&until=${until}&author=${encodeURIComponent(form.userId)}&per_page=100&page=${page}`;
+        const commits = await proxyFetch(url, proxyUrl);
+        if (!commits || !commits.length) break;
+        projectCommits = projectCommits.concat(commits);
+        if (commits.length < 100) break;
+        page++;
+        await new Promise(r => setTimeout(r, 100));
+      }
+
+      if (!projectCommits.length) continue;
+
+      let added = 0, deleted = 0;
+      for (const c of projectCommits) {
+        const stats = c.stats || { additions: 0, deletions: 0 };
+        const add = stats.additions || 0;
+        const del = stats.deletions || 0;
+        added += add;
+        deleted += del;
+
+        if (!seenCommits.has(c.id)) {
+          seenCommits.add(c.id);
+          commitRows.push({
+            project: pname,
+            sha: c.id?.substring(0, 8),
+            message: (c.title || c.message || '').split('\n')[0],
+            date: c.committed_date || c.created_at || '',
+            added: add,
+            deleted: del,
+          });
+        }
+      }
+
+      processedProjects.push({ project: pname, commits: projectCommits.length, added, deleted });
+      projectRows.push({ project: pname, commits: projectCommits.length, added, deleted });
+
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    if (!processedProjects.length) {
+      throw new Error(`No commits found for user "${form.userId}" in the given date range.`);
+    }
+
+    const totalAdded = sumKey(projectRows, 'added');
+    const totalDeleted = sumKey(projectRows, 'deleted');
+    const totalCommits = commitRows.length;
+    const netLoc = totalAdded - totalDeleted;
+
+    setProxyLabel(label);
+    setReport({ totalCommits, totalAdded, totalDeleted, netLoc, projects: processedProjects, commits: commitRows });
+  };
+
   const fetchReport = async () => {
     setError('');
     setReport(null);
+    setProxyLabel('');
     if (!form.token || !form.userId || !form.startDate || !form.endDate) {
       setError('All fields are required');
       return;
@@ -53,80 +147,20 @@ export default function LocReport({ theme, toggleTheme }) {
       const since = `${form.startDate}T00:00:00Z`;
       const until = `${form.endDate}T23:59:59Z`;
 
-      // 1. Fetch all projects (membership)
-      const projects = await proxyFetch(`${base}/projects?membership=true&per_page=100&simple=true`);
-      if (!projects || !projects.length) {
-        throw new Error('No projects found for this token. Check membership.');
-      }
+      const primary = form.proxyUrl.trim();
+      const fallback = form.internalProxyUrl.trim();
 
-      // 2. For each project, fetch commits by author
-      const projectRows = [];
-      const commitRows = [];
-      const processedProjects = [];
-      const seenCommits = new Set();
-
-      for (const proj of projects) {
-        const pid = proj.id;
-        const pname = proj.name || proj.path_with_namespace || `Project ${pid}`;
-
-        let page = 1;
-        let projectCommits = [];
-        while (true) {
-          const url = `${base}/projects/${pid}/repository/commits?since=${since}&until=${until}&author=${encodeURIComponent(form.userId)}&per_page=100&page=${page}`;
-          const commits = await proxyFetch(url);
-          if (!commits || !commits.length) break;
-          projectCommits = projectCommits.concat(commits);
-          if (commits.length < 100) break;
-          page++;
-          await new Promise(r => setTimeout(r, 100));
+      if (primary && fallback && primary !== fallback) {
+        try {
+          await runWithProxy(primary, 'Netlify', base, since, until);
+        } catch {
+          await runWithProxy(fallback, 'Internal', base, since, until);
         }
-
-        if (!projectCommits.length) continue;
-
-        let added = 0, deleted = 0;
-        for (const c of projectCommits) {
-          const stats = c.stats || { additions: 0, deletions: 0 };
-          const add = stats.additions || 0;
-          const del = stats.deletions || 0;
-          added += add;
-          deleted += del;
-
-          if (!seenCommits.has(c.id)) {
-            seenCommits.add(c.id);
-            commitRows.push({
-              project: pname,
-              sha: c.id?.substring(0, 8),
-              message: (c.title || c.message || '').split('\n')[0],
-              date: c.committed_date || c.created_at || '',
-              added: add,
-              deleted: del,
-            });
-          }
-        }
-
-        processedProjects.push({ project: pname, commits: projectCommits.length, added, deleted });
-        projectRows.push({ project: pname, commits: projectCommits.length, added, deleted });
-
-        await new Promise(r => setTimeout(r, 100));
+      } else if (primary) {
+        await runWithProxy(primary, primary.includes('netlify') ? 'Netlify' : 'Proxy', base, since, until);
+      } else {
+        setError('Proxy URL is required.');
       }
-
-      if (!processedProjects.length) {
-        throw new Error(`No commits found for user "${form.userId}" in the given date range.`);
-      }
-
-      const totalAdded = sumKey(projectRows, 'added');
-      const totalDeleted = sumKey(projectRows, 'deleted');
-      const totalCommits = commitRows.length;
-      const netLoc = totalAdded - totalDeleted;
-
-      setReport({
-        totalCommits,
-        totalAdded,
-        totalDeleted,
-        netLoc,
-        projects: processedProjects,
-        commits: commitRows,
-      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -156,6 +190,20 @@ export default function LocReport({ theme, toggleTheme }) {
             <label className="field-label">GitLab Base URL</label>
             <input type="text" className="main-input" value={form.baseUrl} onChange={e => updateField('baseUrl', e.target.value)} />
           </div>
+          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+            <label className="field-label">Proxy URL</label>
+            <input type="text" className="main-input" value={form.proxyUrl} onChange={e => updateField('proxyUrl', e.target.value)} placeholder="/.netlify/functions/gitlab-proxy" />
+            <p className="hint-text" style={{ fontStyle: 'normal', marginTop: '0.35rem' }}>
+              Netlify proxy (default). Fetches via <code>/.netlify/functions/gitlab-proxy</code>.
+            </p>
+          </div>
+          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+            <label className="field-label">Internal Proxy URL (fallback)</label>
+            <input type="text" className="main-input" value={form.internalProxyUrl} onChange={e => updateField('internalProxyUrl', e.target.value)} placeholder="http://internal-server:8080/proxy" />
+            <p className="hint-text" style={{ fontStyle: 'normal', marginTop: '0.35rem' }}>
+              Optional fallback when Netlify proxy fails. Deploy <code>internal-server.py</code> on a corporate server and enter its URL here. Auto-retries with this URL if the primary proxy returns 502.
+            </p>
+          </div>
           <div className="form-group">
             <label className="field-label">Private Token</label>
             <input type="password" className="main-input" placeholder="glpat-..." value={form.token} onChange={e => updateField('token', e.target.value)} />
@@ -179,6 +227,20 @@ export default function LocReport({ theme, toggleTheme }) {
         <button className="btn-primary" onClick={fetchReport} disabled={loading} style={{ width: '100%', marginBottom: '2rem' }}>
           {loading ? <div className="loader tiny" /> : '📊 Fetch Report'}
         </button>
+
+        {proxyLabel && (
+          <div style={{
+            textAlign: 'center',
+            fontSize: '0.8rem',
+            color: 'var(--text-muted)',
+            marginBottom: '0.75rem',
+            padding: '0.3rem 0.75rem',
+            display: 'inline-block',
+            width: '100%',
+          }}>
+            Proxy used: <strong>{proxyLabel}</strong>
+          </div>
+        )}
 
         {report && (
           <div className="locr-results">

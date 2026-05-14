@@ -1,3 +1,4 @@
+/* eslint-env node */
 // Proxy for GitLab API — avoids CORS/Private Network Access restrictions
 // when the GitLab instance is on an internal/corporate network.
 
@@ -10,6 +11,14 @@ const handler = async (event) => {
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: corsHeaders, body: '' };
+  }
+
+  if (event.httpMethod === 'GET') {
+    return {
+      statusCode: 200,
+      headers: corsHeaders,
+      body: JSON.stringify({ ok: true, message: 'gitlab-proxy is alive' }),
+    };
   }
 
   if (event.httpMethod !== 'POST') {
@@ -27,7 +36,10 @@ const handler = async (event) => {
   }
 
   try {
-    const res = await fetch(target, { headers: { 'PRIVATE-TOKEN': token } });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    const res = await fetch(target, { headers: { 'PRIVATE-TOKEN': token }, signal: controller.signal });
+    clearTimeout(timeout);
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); } catch { data = text; }
@@ -41,7 +53,9 @@ const handler = async (event) => {
     return {
       statusCode: 502,
       headers: corsHeaders,
-      body: JSON.stringify({ error: err.message }),
+      body: JSON.stringify({
+        error: err.name === 'AbortError' ? 'Request timed out (25s). GitLab might be unreachable from Netlify cloud.' : err.message,
+      }),
     };
   }
 };
