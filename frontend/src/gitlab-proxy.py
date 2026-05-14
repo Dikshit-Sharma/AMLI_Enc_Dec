@@ -29,7 +29,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         if self.path == '/health':
             self._json(200, {'ok': True, 'message': 'local proxy is alive'})
             return
-        if self.path == '/bridge.html':
+        if self.path.startswith('/bridge.html'):
             html = '''<!DOCTYPE html>
 <html><body><script>
 window.addEventListener("message", async (e) => {
@@ -101,6 +101,7 @@ window.addEventListener("message", async (e) => {
         self.send_header('Content-Length', str(len(content)))
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Private-Network', 'true')
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         self.end_headers()
         self.wfile.write(content)
 

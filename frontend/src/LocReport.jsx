@@ -236,9 +236,23 @@ export default function LocReport({ theme, toggleTheme }) {
           </span>
         </div>
 
-        <iframe ref={iframeRef} src={BRIDGE_URL}
-          onLoad={() => { bridgeReadyRef.current = true; setProxyStatus(PROXY.LOCAL); }}
-          onError={() => { setProxyStatus(PROXY.NETLIFY); }}
+        <iframe ref={iframeRef} src={`${BRIDGE_URL}?t=${Date.now()}`}
+          onLoad={() => {
+            setTimeout(() => {
+              const id = ++msgId;
+              const bw = iframeRef.current?.contentWindow;
+              if (!bw) { setProxyStatus(PROXY.NETLIFY); return; }
+              const timeout = setTimeout(() => {
+                delete pendingRef.current[id];
+                bridgeReadyRef.current = false;
+                netlifyTriedRef.current = false;
+                setProxyStatus(PROXY.NETLIFY);
+              }, 2000);
+              pendingRef.current[id] = { resolve: () => { clearTimeout(timeout); bridgeReadyRef.current = true; setProxyStatus(PROXY.LOCAL); }, reject: () => {} };
+              bw.postMessage({ id, target: '/ping', token: '' }, '*');
+            }, 300);
+          }}
+          onError={() => { bridgeReadyRef.current = false; setProxyStatus(PROXY.NETLIFY); }}
           style={{ position: 'absolute', width: '1px', height: '1px', left: '-9999px', border: 'none' }} title="proxy-bridge" />
 
         <h1>LOC REPORT</h1>
