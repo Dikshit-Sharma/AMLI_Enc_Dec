@@ -28,21 +28,24 @@ const handler = async (event) => {
       const params = event.queryStringParameters || {};
       const env = params.env;
 
-      let query = db.collection('credentials').orderBy('timestamp', 'desc');
-
-      if (env) {
-        query = query.where('env', '==', env);
-      }
-
-      const snapshot = await query.get();
-
-      const credentials = snapshot.docs.map((doc) => {
+      const snapshot = await db.collection('credentials').get();
+      let credentials = snapshot.docs.map((doc) => {
         const data = doc.data();
         return {
           id: doc.id,
           ...data,
           timestamp: data.timestamp?.toDate?.().toISOString() ?? null,
         };
+      });
+
+      if (env) {
+        credentials = credentials.filter((c) => c.env === env);
+      }
+
+      credentials.sort((a, b) => {
+        if (!a.timestamp) return 1;
+        if (!b.timestamp) return -1;
+        return b.timestamp.localeCompare(a.timestamp);
       });
 
       return {
