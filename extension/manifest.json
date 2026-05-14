@@ -1,15 +1,26 @@
 {
   "manifest_version": 3,
   "name": "GitLab LOC Report",
-  "version": "1.0.0",
-  "description": "Generate Lines of Code reports from GitLab commits. Enter your GitLab credentials and date range, then see added/deleted LOC across all your projects.",
+  "version": "1.1.0",
+  "description": "Generate GitLab LOC reports by MR or commit. Enter credentials and date range to see added/deleted lines across your projects.",
   "permissions": [
-    "storage"
+    "storage",
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "https://repo.maxlifeinsurance.com/*",
-    "https://*.gitlab.com/*"
+    "https://*.gitlab.com/*",
+    "https://firestore.googleapis.com/*"
   ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "firestore_cors_fix",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "GitLab LOC Report"

@@ -35,6 +35,28 @@ export const logAnalyticsEvent = (eventName, params = {}) => {
 };
 
 /**
+ * Citrix proxy workaround: Firestore WebChannel uses `withCredentials=true` by default,
+ * which requires `Access-Control-Allow-Credentials: true` in the response. Citrix ADC
+ * proxies strip this header, causing CORS failures. Firestore sends auth via the
+ * Authorization header (not cookies), so `withCredentials` is unnecessary.
+ *
+ * This patch makes `withCredentials` a no-op for all XHR to firestore.googleapis.com,
+ * eliminating the CORS credentials requirement entirely.
+ */
+const _origXhrOpen = XMLHttpRequest.prototype.open;
+XMLHttpRequest.prototype.open = function (method, url) {
+  const urlStr = typeof url === 'string' ? url : (url && url.href);
+  if (urlStr && urlStr.indexOf('firestore.googleapis.com') !== -1) {
+    Object.defineProperty(this, 'withCredentials', {
+      get: () => false,
+      set: () => {},
+      configurable: true,
+    });
+  }
+  return _origXhrOpen.apply(this, arguments);
+};
+
+/**
  * Citrix / firewalled networks:
  * - Force long-polling transport (bypasses broken WebChannel/WebSockets).
  * - Disable fetch streaming, which some corporate proxies choke on.
