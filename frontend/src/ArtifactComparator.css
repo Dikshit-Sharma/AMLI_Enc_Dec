@@ -72,7 +72,75 @@
   font-weight: 700;
 }
 
-/* ─── AI Summary Section ─── */
+.comparator-section {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+}
+
+.comparator-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: var(--input-bg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.comparator-section-body {
+  max-height: 400px;
+  overflow: auto;
+}
+
+.comparator-diff-lines {
+  font-family: monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.comparator-diff-line {
+  display: grid;
+  grid-template-columns: 36px 1fr 1fr;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.comparator-diff-line.changed {
+  background: rgba(255,255,255,0.02);
+}
+
+.comparator-diff-line-num {
+  color: var(--text-muted);
+  padding: 0.15rem 0.4rem;
+  text-align: right;
+  border-right: 1px solid var(--border);
+  user-select: none;
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.comparator-diff-line-value {
+  padding: 0.15rem 0.5rem;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.comparator-diff-line-value.from {
+  background: rgba(244,63,94,0.08);
+}
+
+.comparator-diff-line-value.to {
+  background: rgba(16,185,129,0.08);
+}
+
 .comparator-ai-section {
   margin-top: 1.5rem;
   border-top: 1px solid var(--border);

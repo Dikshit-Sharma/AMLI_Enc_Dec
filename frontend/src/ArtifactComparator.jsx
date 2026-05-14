@@ -15,15 +15,58 @@ function getFieldDiff(a, b) {
   return diffs;
 }
 
-function curlDiff(a, b) {
-  const d = [];
-  if ((a.curl || '') !== (b.curl || '')) {
-    d.push({ field: 'curl', from: a.curl?.substring(0, 100) + '...', to: b.curl?.substring(0, 100) + '...' });
+function lineDiff(aText, bText) {
+  const aLines = (aText || '').split('\n');
+  const bLines = (bText || '').split('\n');
+  const maxLen = Math.max(aLines.length, bLines.length);
+  const lines = [];
+  for (let i = 0; i < maxLen; i++) {
+    const aLine = aLines[i] ?? null;
+    const bLine = bLines[i] ?? null;
+    if (aLine === bLine) {
+      lines.push({ type: 'same', a: aLine, b: bLine });
+    } else {
+      lines.push({ type: 'diff', a: aLine, b: bLine });
+    }
   }
-  if ((a.response || '') !== (b.response || '')) {
-    d.push({ field: 'response', from: 'differs', to: 'differs' });
-  }
-  return d;
+  return lines;
+}
+
+function CollapsibleDiff({ label, aText, bText, defaultOpen }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const diffs = lineDiff(aText, bText);
+  const changeCount = diffs.filter((l) => l.type === 'diff').length;
+  const hasContent = aText || bText;
+
+  if (!hasContent) return null;
+
+  return (
+    <div className="comparator-section">
+      <button className="comparator-section-header" onClick={() => setOpen(!open)}>
+        <span>{open ? '▼' : '▶'} {label}</span>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+          {diffs.length} lines{changeCount > 0 ? `, ${changeCount} changed` : ''}
+        </span>
+      </button>
+      {open && (
+        <div className="comparator-section-body">
+          <div className="comparator-diff-lines">
+            {diffs.map((line, i) => (
+              <div key={i} className={`comparator-diff-line ${line.type === 'diff' ? 'changed' : ''}`}>
+                <div className="comparator-diff-line-num">{i + 1}</div>
+                <div className={`comparator-diff-line-value ${line.type === 'diff' ? 'from' : ''}`}>
+                  {line.a !== null ? line.a : ''}
+                </div>
+                <div className={`comparator-diff-line-value ${line.type === 'diff' ? 'to' : ''}`}>
+                  {line.b !== null ? line.b : ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function ArtifactComparator({ artifactA, artifactB, onClose }) {
@@ -31,8 +74,6 @@ export default function ArtifactComparator({ artifactA, artifactB, onClose }) {
   const [aiSummary, setAiSummary] = useState(null);
 
   const fieldDiffs = getFieldDiff(artifactA, artifactB);
-  const curlDiffs = curlDiff(artifactA, artifactB);
-  const allDiffs = [...fieldDiffs, ...curlDiffs];
 
   const handleAICompare = async () => {
     const result = await callAI(
@@ -54,26 +95,25 @@ export default function ArtifactComparator({ artifactA, artifactB, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '960px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0 }}>Artifact Comparator</h2>
           <button className="close-modal" onClick={onClose}>&times;</button>
         </div>
         <div className="modal-body scrollable" style={{ padding: '1.5rem 2rem' }}>
-          {allDiffs.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--success)', fontWeight: 600 }}>
-              These artifacts are identical.
-            </div>
-          ) : (
-            <>
-              <div className="comparator-header">
-                <div className="comparator-label">Artifact A: {artifactA.apiName || 'Unnamed'}</div>
-                <div className="comparator-vs">vs</div>
-                <div className="comparator-label">Artifact B: {artifactB.apiName || 'Unnamed'}</div>
-              </div>
+          <div className="comparator-header">
+            <div className="comparator-label">Artifact A: {artifactA.apiName || 'Unnamed'}</div>
+            <div className="comparator-vs">vs</div>
+            <div className="comparator-label">Artifact B: {artifactB.apiName || 'Unnamed'}</div>
+          </div>
 
-              <div className="comparator-diffs">
-                {allDiffs.map((diff, i) => (
+          {fieldDiffs.length > 0 && (
+            <>
+              <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Field Differences
+              </h3>
+              <div className="comparator-diffs" style={{ marginBottom: '1.5rem' }}>
+                {fieldDiffs.map((diff, i) => (
                   <div key={i} className="comparator-diff-row">
                     <div className="comparator-diff-field">{diff.field}</div>
                     <div className="comparator-diff-value from">{diff.from}</div>
@@ -85,11 +125,20 @@ export default function ArtifactComparator({ artifactA, artifactB, onClose }) {
             </>
           )}
 
+          {fieldDiffs.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--success)', fontWeight: 600, marginBottom: '1rem' }}>
+              All fields match.
+            </div>
+          )}
+
+          <CollapsibleDiff label="Curl Command" aText={artifactA.curl} bText={artifactB.curl} defaultOpen />
+          <CollapsibleDiff label="Response" aText={artifactA.response} bText={artifactB.response} defaultOpen={false} />
+
           <div className="comparator-ai-section">
             {!aiSummary ? (
               <button
                 className="btn-ai"
-                disabled={aiLoading || allDiffs.length === 0}
+                disabled={aiLoading}
                 onClick={handleAICompare}
               >
                 {aiLoading ? <div className="loader tiny" /> : '🤖  AI Summary of Changes'}

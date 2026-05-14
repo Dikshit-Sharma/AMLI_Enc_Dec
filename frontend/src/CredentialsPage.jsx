@@ -226,6 +226,7 @@ export default function CredentialsPage({ theme, toggleTheme }) {
   const [expandForm, setExpandForm] = useState(false);
   const [revealedIds, setRevealedIds] = useState(new Set());
   const [copiedId, setCopiedId] = useState(null);
+  const [credSearch, setCredSearch] = useState('');
 
   const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
@@ -344,7 +345,11 @@ export default function CredentialsPage({ theme, toggleTheme }) {
     );
   }
 
-  const creds = allCreds[activeEnv] || [];
+  const creds = (allCreds[activeEnv] || []).filter((c) => {
+    if (!credSearch) return true;
+    const q = credSearch.toLowerCase();
+    return c.soaAppId?.toLowerCase().includes(q) || c.apiName?.toLowerCase().includes(q);
+  });
 
   return (
     <div className="container">
@@ -400,8 +405,20 @@ export default function CredentialsPage({ theme, toggleTheme }) {
           ))}
         </div>
 
+        <div className="form-group" style={{ marginBottom: '1rem' }}>
+          <input
+            type="text"
+            className="main-input"
+            placeholder="Search by SOA App ID or API Name..."
+            value={credSearch}
+            onChange={(e) => setCredSearch(e.target.value)}
+            style={{ fontSize: '0.95rem', padding: '0.75rem 1rem' }}
+          />
+        </div>
+
         <div style={{ marginBottom: '1rem', color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center' }}>
           {creds.length} unique entr{creds.length === 1 ? 'y' : 'ies'} in {activeEnv}
+          {credSearch && ` matching "${credSearch}"`}
         </div>
 
         {expandForm && <AddForm env={activeEnv} onAdded={() => { loadAll(); setExpandForm(false); }} />}

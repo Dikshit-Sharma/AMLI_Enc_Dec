@@ -78,10 +78,16 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     }
   };
 
-  const filteredArtifacts = artifacts.filter((art) =>
-    art.apiName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    art.jiraTicket?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredArtifacts = artifacts.filter((art) => {
+    if (!searchTerm) return true;
+    const q = searchTerm.toLowerCase();
+    return (
+      art.apiName?.toLowerCase().includes(q) ||
+      art.jiraTicket?.toLowerCase().includes(q) ||
+      art.env?.toLowerCase().includes(q) ||
+      art.curl?.toLowerCase().includes(q)
+    );
+  });
 
   const [copyStatus, setCopyStatus] = useState({});
   const [downloadingStatus, setDownloadingStatus] = useState({});
@@ -283,11 +289,16 @@ const LibraryPage = ({ theme, toggleTheme }) => {
           <input
             type="text"
             className="main-input"
-            placeholder="Search by API Name or Jira Ticket..."
+            placeholder="Search by API Name, Jira Ticket, ENV, or Curl..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ fontSize: '1.1rem', padding: '1.25rem' }}
           />
+          {searchTerm && (
+            <div style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+              {filteredArtifacts.length} of {artifacts.length} on this page match
+            </div>
+          )}
         </div>
 
         <div className="scrollable" style={{ flex: 1, minHeight: 0 }}>
