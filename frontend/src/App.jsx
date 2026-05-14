@@ -18,7 +18,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState('GCM'); // 'GCM' or 'CBC'
   const [isSideBySide, setIsSideBySide] = useState(true);
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const [hexKeyConverter, setHexKeyConverter] = useState('');
   const [base64KeyConverter, setBase64KeyConverter] = useState('');
   const [showModal, setShowModal] = useState(false);
