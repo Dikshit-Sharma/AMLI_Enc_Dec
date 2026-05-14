@@ -59,17 +59,23 @@ export default function LibraryInsights({ onClose }) {
   }, []);
 
   const handleAISummary = async () => {
-    if (!data || total <= 5) return;
+    if (!data || data.total <= 5) return;
     const result = await callAI(
       JSON.stringify(data, null, 2),
       SYSTEM_PROMPTS.libraryInsights
     );
     if (result) {
       try {
-        setAiSummary(JSON.parse(result.replace(/```(?:json)?\n?/g, '').trim()));
+        const cleaned = result.replace(/```(?:json)?\n?/g, '').trim();
+        setAiSummary(JSON.parse(cleaned));
       } catch {
         setAiSummary({ aiSummary: result, recommendation: '' });
       }
+    } else {
+      setAiSummary({
+        aiSummary: 'AI insights are currently unavailable. The Gemini API key may be missing or invalid. Set VITE_GEMINI_API_KEY in your environment to enable AI-powered analysis.',
+        recommendation: 'Configure Gemini API key for AI insights.'
+      });
     }
   };
 

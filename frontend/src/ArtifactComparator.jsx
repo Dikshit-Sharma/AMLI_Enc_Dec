@@ -40,10 +40,13 @@ export default function ArtifactComparator({ artifactA, artifactB, onClose }) {
     );
     if (result) {
       try {
-        setAiSummary(JSON.parse(result.replace(/```(?:json)?\n?/g, '').trim()));
+        const cleaned = result.replace(/```(?:json)?\n?/g, '').trim();
+        setAiSummary(JSON.parse(cleaned));
       } catch {
-        setAiSummary({ summary: result });
+        setAiSummary({ summary: result, aiDifferences: [] });
       }
+    } else {
+      setAiSummary({ summary: 'AI summary unavailable. Set VITE_GEMINI_API_KEY to enable.', aiDifferences: [] });
     }
   };
 
