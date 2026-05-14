@@ -1129,17 +1129,56 @@ button:disabled {
 
 .hero-section {
   text-align: center;
-  margin-bottom: 5rem;
+  margin-bottom: 3rem;
+}
+
+.hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .hero-section h1 {
   font-size: 4.5rem;
   font-weight: 800;
-  margin-bottom: 1.5rem;
   background: linear-gradient(135deg, var(--text-primary) 30%, #4f46e5 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+}
+
+.range-picker {
+  display: flex;
+  gap: 0.35rem;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 0.25rem;
+}
+
+.range-btn {
+  padding: 0.4rem 0.9rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  letter-spacing: 0.04em;
+}
+
+.range-btn.active {
+  background: var(--primary);
+  color: white;
+}
+
+.range-btn:hover:not(.active) {
+  color: var(--text);
 }
 
 .hero-section p {
@@ -1737,6 +1776,45 @@ button:disabled {
   padding: 0 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border);
   margin-bottom: 0.5rem;
+}
+
+.sidebar-search-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0.75rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  width: auto;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.sidebar-search-btn:hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.sidebar-search-icon {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.sidebar-search-shortcut {
+  margin-left: auto;
+  font-size: 0.6rem;
+  padding: 0.15rem 0.4rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  opacity: 0.7;
 }
 
 .sidebar-brand h2 {

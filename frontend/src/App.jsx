@@ -12,6 +12,7 @@ import HotkeyHelp from './HotkeyHelp';
 import useHotkeys from './hooks/useHotkeys';
 import OnboardingBot from './OnboardingBot';
 import QuickAnswerBot from './QuickAnswerBot';
+import CommandPalette from './CommandPalette';
 
 function App() {
   const [inputText, setInputText] = useState('');
@@ -26,6 +27,7 @@ function App() {
   const [base64KeyConverter, setBase64KeyConverter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showHotkeys, setShowHotkeys] = useState(false);
+  const [showCmdPalette, setShowCmdPalette] = useState(false);
 
   const location = useLocation();
 
@@ -33,6 +35,17 @@ function App() {
     onToggleHelp: () => setShowHotkeys((p) => !p),
     onEscape: () => setShowHotkeys(false),
   });
+
+  React.useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCmdPalette((p) => !p);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   React.useEffect(() => {
     const isCipherPage = location.pathname === '/cipher';
@@ -153,7 +166,7 @@ function App() {
       <OnboardingBot />
       <QuickAnswerBot />
       <Routes>
-      <Route path="/" element={<HomePage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/" element={<HomePage theme={theme} toggleTheme={toggleTheme} onOpenCmdPalette={() => setShowCmdPalette(true)} />} />
       <Route path="/artifacts" element={<ArtifactsPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/credentials" element={<CredentialsPage theme={theme} toggleTheme={toggleTheme} />} />
@@ -258,6 +271,7 @@ function App() {
       } />
     </Routes>
 
+    <CommandPalette open={showCmdPalette} onClose={() => setShowCmdPalette(false)} />
     {showHotkeys && <HotkeyHelp onClose={() => setShowHotkeys(false)} />}
     </>
   );

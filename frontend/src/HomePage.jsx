@@ -138,13 +138,14 @@ const TOOLS = [
   { href: 'https://sharedclip.netlify.app/', icon: '📋', name: 'SharedClip', desc: 'Real-time collaborative clipboard for teams.', external: true },
 ];
 
-export default function HomePage({ theme, toggleTheme }) {
+export default function HomePage({ theme, toggleTheme, onOpenCmdPalette }) {
   const [recent, setRecent] = useState([]);
   const [allArts, setAllArts] = useState([]);
   const [envData, setEnvData] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [credStats, setCredStats] = useState(null);
+  const [range, setRange] = useState('all');
 
   useEffect(() => {
     Promise.all([
@@ -181,12 +182,40 @@ export default function HomePage({ theme, toggleTheme }) {
     }).catch(() => setLoaded(true));
   }, []);
 
+  const filteredArts = React.useMemo(() => {
+    if (range === 'all' || !allArts.length) return allArts;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - (range === '7d' ? 7 : 30));
+    return allArts.filter((a) => {
+      const ts = toDate(a.timestamp);
+      return ts && ts >= cutoff;
+    });
+  }, [allArts, range]);
+
+  const rangeEnvData = React.useMemo(() => {
+    const map = {};
+    for (const a of filteredArts) {
+      const e = a.env || 'DEV';
+      map[e] = (map[e] || 0) + 1;
+    }
+    return Object.entries(map).map(([label, value]) => ({ label, value }));
+  }, [filteredArts]);
+
+  const rangeRecent = React.useMemo(() =>
+    filteredArts.slice(0, 5), [filteredArts]
+  );
+
   return (
     <div className="home-layout">
       <aside className="home-sidebar">
         <div className="sidebar-brand">
           <h2>AMLI</h2>
         </div>
+        <button className="sidebar-search-btn" onClick={onOpenCmdPalette}>
+          <span className="sidebar-search-icon">⌕</span>
+          <span>Quick Search</span>
+          <span className="sidebar-search-shortcut">⌘K</span>
+        </button>
         <nav className="sidebar-nav">
           {TOOLS.map((tool) => {
             const content = (
@@ -222,7 +251,24 @@ export default function HomePage({ theme, toggleTheme }) {
       <main className="home-main">
         <div className="home-container">
           <section className="hero-section">
-            <h1>DASHBOARD</h1>
+            <div className="hero-top">
+              <h1>DASHBOARD</h1>
+              <div className="range-picker">
+                {[
+                  { key: '7d', label: '7D' },
+                  { key: '30d', label: '30D' },
+                  { key: 'all', label: 'All' },
+                ].map((r) => (
+                  <button
+                    key={r.key}
+                    className={`range-btn ${range === r.key ? 'active' : ''}`}
+                    onClick={() => setRange(r.key)}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <p>
               A suite of professional encryption, decryption, and artifact
               management tools designed for speed, security, and developer
@@ -241,7 +287,7 @@ export default function HomePage({ theme, toggleTheme }) {
               </>
             ) : (
               <>
-                {envData.map((d) => (
+                {rangeEnvData.map((d) => (
                   <div key={d.label} className="stat-card">
                     <div className="stat-card-icon">{ENV_ICONS[d.label]}</div>
                     <span className="stat-value">{d.value}</span>
@@ -278,16 +324,16 @@ export default function HomePage({ theme, toggleTheme }) {
             <>
               <div className="chart-grid-2">
                 <div className="chart-section">
-                  <DonutChart data={envData} />
+                  <DonutChart data={rangeEnvData} />
                 </div>
                 <div className="chart-section">
-                  <WeeklyChart artifacts={allArts} />
+                  <WeeklyChart artifacts={filteredArts} />
                 </div>
               </div>
               {credStats && (
                 <div className="chart-grid-2">
                   <div className="chart-section">
-                    <TopApis artifacts={allArts} />
+                    <TopApis artifacts={filteredArts} />
                   </div>
                   <div className="chart-section">
                     <div className="chart-container">
@@ -327,9 +373,9 @@ export default function HomePage({ theme, toggleTheme }) {
                 <SkeletonRecentCard />
                 <SkeletonRecentCard />
               </div>
-            ) : recent.length > 0 ? (
+            ) : rangeRecent.length > 0 ? (
               <div className="recent-grid">
-                {recent.map((art) => (
+                {rangeRecent.map((art) => (
                   <Link key={art.id} to="/library" className="recent-card">
                     <div className="recent-card-top">
                       <span className="badge-env" data-env={art.env}>
@@ -350,7 +396,7 @@ export default function HomePage({ theme, toggleTheme }) {
               </div>
             ) : (
               <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
-                No artifacts yet. Generate one in the Artifacts tool.
+                No artifacts in this period.
               </p>
             )}
           </div>
