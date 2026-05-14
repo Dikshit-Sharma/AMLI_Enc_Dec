@@ -10,11 +10,20 @@
   <div class="report-page">
     <div class="report-header">
       <h1>GitLab LOC Report</h1>
-      <p>Lines of Code by merge requests in a date range</p>
+      <p>Lines of Code by merge requests or commits in a date range</p>
     </div>
 
     <!-- Form -->
     <div class="card" id="formSection">
+      <div class="form-row">
+        <div class="form-group full-width">
+          <label>Report Type</label>
+          <select id="reportType" class="main-select">
+            <option value="mr">BY MR</option>
+            <option value="commit">BY COMMIT</option>
+          </select>
+        </div>
+      </div>
       <div class="form-row">
         <div class="form-group full-width">
           <label>GitLab Base URL</label>
@@ -27,8 +36,14 @@
           <input type="password" id="token" placeholder="glpat-...">
         </div>
         <div class="form-group">
-          <label>Username / User ID</label>
+          <label>Username</label>
           <input type="text" id="username" placeholder="DLBPR02929">
+        </div>
+      </div>
+      <div class="form-row" id="commitAuthorRow" style="display:none">
+        <div class="form-group full-width">
+          <label>Commit Author (email or name)</label>
+          <input type="text" id="commitAuthor" placeholder="Auto-filled after user lookup, or enter manually">
         </div>
       </div>
       <div class="form-row">
@@ -60,10 +75,9 @@
 
     <!-- Results -->
     <div id="resultsSection" style="display:none">
-      <!-- Summary cards -->
       <div class="summary-grid" id="summaryGrid"></div>
 
-      <!-- Per-project breakdown -->
+      <!-- Per-project -->
       <div class="card" id="projectSection" style="display:none">
         <div class="section-title">Per-Project Summary</div>
         <div class="table-wrap">
@@ -71,9 +85,10 @@
             <thead>
               <tr>
                 <th>Project</th>
-                <th>Commits</th>
+                <th id="projectCountHeader">MRs</th>
                 <th>Added</th>
                 <th>Deleted</th>
+                <th>Modified</th>
                 <th>Net</th>
               </tr>
             </thead>
@@ -82,7 +97,7 @@
         </div>
       </div>
 
-      <!-- MRs table -->
+      <!-- MR table (BY MR mode) -->
       <div class="card" id="mrSection" style="display:none">
         <div class="section-title">Merge Requests</div>
         <div class="table-wrap">
@@ -104,17 +119,36 @@
         </div>
       </div>
 
-      <!-- Per-file details -->
-      <div class="card" id="fileSection" style="display:none">
-        <div class="section-title">
-          Per-File Breakdown
+      <!-- Commit table (BY COMMIT mode) -->
+      <div class="card" id="commitSection" style="display:none">
+        <div class="section-title">Commits</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Commit</th>
+                <th>Message</th>
+                <th>Date</th>
+                <th>Added</th>
+                <th>Deleted</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody id="commitBody"></tbody>
+          </table>
         </div>
+      </div>
+
+      <!-- Per-file -->
+      <div class="card" id="fileSection" style="display:none">
+        <div class="section-title">Per-File Breakdown</div>
         <div class="table-wrap" id="fileTableWrap" style="display:none">
           <table>
             <thead>
               <tr>
                 <th>Project</th>
-                <th>MR</th>
+                <th id="fileIdHeader">MR</th>
                 <th>File</th>
                 <th>Added</th>
                 <th>Deleted</th>
@@ -126,6 +160,12 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      Developed by Dikshit Sharma &bull;
+      <a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a>
     </div>
   </div>
   <script src="report.js"></script>
