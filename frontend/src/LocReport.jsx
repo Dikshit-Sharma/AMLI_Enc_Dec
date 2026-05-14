@@ -46,6 +46,7 @@ export default function LocReport({ theme, toggleTheme }) {
   const [error, setError] = useState('');
   const [report, setReport] = useState(null);
   const [proxyStatus, setProxyStatus] = useState(PROXY.CHECKING);
+  const [statusMsg, setStatusMsg] = useState('');
   const iframeRef = useRef(null);
   const pendingRef = useRef({});
   const bridgeReadyRef = useRef(false);
@@ -59,13 +60,8 @@ export default function LocReport({ theme, toggleTheme }) {
     return new Promise((resolve, reject) => {
       const id = ++msgId;
       pendingRef.current[id] = { resolve, reject };
-      const timeout = setTimeout(() => {
-        delete pendingRef.current[id];
-        reject(new Error(`Bridge request timed out for: ${target.split('?')[0]}`));
-      }, 90000);
-      pendingRef.current[id].timeout = timeout;
       const bw = iframeRef.current?.contentWindow;
-      if (!bw) { clearTimeout(timeout); reject(new Error('Bridge iframe not ready')); return; }
+      if (!bw) { reject(new Error('Bridge iframe not ready')); return; }
       bw.postMessage({ id, target, token }, '*');
     });
   }, []);
@@ -93,7 +89,6 @@ export default function LocReport({ theme, toggleTheme }) {
       if (e.source !== iframeRef.current?.contentWindow) return;
       const pending = pendingRef.current[e.data.id];
       if (!pending) return;
-      clearTimeout(pending.timeout);
       delete pendingRef.current[e.data.id];
       if (e.data.ok) {
         if (e.data.data.status >= 400) {
@@ -119,6 +114,8 @@ export default function LocReport({ theme, toggleTheme }) {
 
   const runWithLabels = useCallback(async (label, base, since, until) => {
     const token = form.token;
+
+    setStatusMsg('Fetching project list...');
     const projects = await proxyFetch(`${base}/projects?membership=true&per_page=100&simple=true`, token);
     if (!projects || !projects.length) {
       throw new Error('No projects found for this token. Check membership.');
@@ -137,6 +134,7 @@ export default function LocReport({ theme, toggleTheme }) {
       let projectCommits = [];
       while (true) {
         const url = `${base}/projects/${pid}/repository/commits?since=${since}&until=${until}&author=${encodeURIComponent(form.userId)}&per_page=100&page=${page}`;
+        setStatusMsg(`Fetching ${pname} (page ${page})...`);
         const commits = await proxyFetch(url, token);
         if (!commits || !commits.length) break;
         projectCommits = projectCommits.concat(commits);
@@ -145,7 +143,11 @@ export default function LocReport({ theme, toggleTheme }) {
         await new Promise(r => setTimeout(r, 100));
       }
 
-      if (!projectCommits.length) continue;
+      if (!projectCommits.length) {
+        setStatusMsg(`No commits found in ${pname}, skipping...`);
+        await new Promise(r => setTimeout(r, 50));
+        continue;
+      }
 
       let added = 0, deleted = 0;
       for (const c of projectCommits) {
@@ -171,7 +173,8 @@ export default function LocReport({ theme, toggleTheme }) {
       processedProjects.push({ project: pname, commits: projectCommits.length, added, deleted });
       projectRows.push({ project: pname, commits: projectCommits.length, added, deleted });
 
-      await new Promise(r => setTimeout(r, 100));
+      setStatusMsg(`${pname}: ${projectCommits.length} commits, +${added}/-${deleted} lines`);
+      await new Promise(r => setTimeout(r, 50));
     }
 
     if (!processedProjects.length) {
@@ -184,6 +187,7 @@ export default function LocReport({ theme, toggleTheme }) {
     const netLoc = totalAdded - totalDeleted;
 
     setProxyStatus(label);
+    setStatusMsg('');
     setReport({ totalCommits, totalAdded, totalDeleted, netLoc, projects: processedProjects, commits: commitRows });
   }, [form.userId, form.token, proxyFetch]);
 
@@ -268,7 +272,7 @@ export default function LocReport({ theme, toggleTheme }) {
         {error && <div className="error-message"><span>⚠️ {error}</span></div>}
 
         <button className="btn-primary" onClick={fetchReport} disabled={loading} style={{ width: '100%', marginBottom: '2rem' }}>
-          {loading ? <div className="loader tiny" /> : '📊 Fetch Report'}
+          {loading ? (statusMsg || 'Working...') : '📊 Fetch Report'}
         </button>
 
         {report && (
