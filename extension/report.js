@@ -185,13 +185,6 @@ async function startReport() {
     const user = users[0];
     setProgress(5, `Found user: ${user.name} (ID: ${user.id})`);
 
-    if (reportType === 'commit') {
-      if (!$('commitAuthor').value.trim()) {
-        $('commitAuthor').value = user.email || user.public_email || user.name || user.username;
-        saveAll();
-      }
-    }
-
     setProgress(8, 'Fetching projects...');
     const projects = await paginate(baseUrl, '/projects', { membership: true }, token, signal);
     if (projects.length === 0) throw new Error('No membership projects found.');
