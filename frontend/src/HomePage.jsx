@@ -34,6 +34,12 @@ export default function HomePage({ theme, toggleTheme }) {
           <p>Access your history of generated artifacts. Search, review, and re-download past configurations with ease.</p>
         </Link>
 
+        <Link to="/loc-report" className="tool-card">
+          <div className="card-icon">📊</div>
+          <h3>LOC Report</h3>
+          <p>Calculate lines of code written by a GitLab user over a date range using commit history. Filter by project membership.</p>
+        </Link>
+
         <a href="https://sharedclip.netlify.app/" className="tool-card" target="_blank" rel="noopener noreferrer">
           <div className="card-icon">📋</div>
           <h3>SharedClip</h3>
