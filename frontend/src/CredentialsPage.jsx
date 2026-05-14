@@ -203,7 +203,7 @@ export default function CredentialsPage({ theme, toggleTheme }) {
     return (
       <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <div className="card" style={{ maxWidth: '500px', flex: 'none', height: 'auto' }}>
-          <Link to="/library" className="back-link">← Back to Library</Link>
+          <Link to="/" className="back-link">← Back (Home)</Link>
           <h2 style={{ marginTop: '1.5rem' }}>Credentials Protected</h2>
           <p className="field-label" style={{ color: 'var(--text-muted)', textTransform: 'none', marginBottom: '2rem' }}>
             Enter the library password to access stored credentials.
@@ -238,7 +238,7 @@ export default function CredentialsPage({ theme, toggleTheme }) {
       <div className="card">
         <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <Link to="/library" className="back-link" style={{ marginBottom: 0 }}>← Back to Library</Link>
+            <Link to="/" className="back-link" style={{ marginBottom: 0 }}>← Back (Home)</Link>
             <button className="theme-toggle" onClick={toggleTheme}>
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
