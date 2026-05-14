@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import './LocReport.css';
 
 const STORAGE_KEY = 'locr_form';
+const LOCAL_PROXY_URL = 'http://localhost:8080';
+const LOCAL_HEALTH_URL = `${LOCAL_PROXY_URL}/health`;
+const LOCAL_PROXY_ENDPOINT = `${LOCAL_PROXY_URL}/proxy`;
+const NETLIFY_PROXY = '/.netlify/functions/gitlab-proxy';
 
 function loadForm() {
   try {
@@ -15,8 +19,6 @@ function loadForm() {
     userId: '',
     startDate: '',
     endDate: '',
-    proxyUrl: '/.netlify/functions/gitlab-proxy',
-    internalProxyUrl: '',
   };
 }
 
@@ -34,14 +36,31 @@ function sumKey(arr, key) {
   return arr.reduce((s, p) => s + (p[key] || 0), 0);
 }
 
+const NETLIFY = 0;
+const LOCAL = 1;
+const NONE = 2;
+
+const PROXY_LABELS = { [NETLIFY]: 'Netlify', [LOCAL]: 'Local (VPN)', [NONE]: 'None' };
+
 export default function LocReport({ theme, toggleTheme }) {
   const [form, setForm] = useState(loadForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [report, setReport] = useState(null);
-  const [proxyLabel, setProxyLabel] = useState('');
+  const [proxyStatus, setProxyStatus] = useState(NONE);
+  const [proxyResolved, setProxyResolved] = useState(false);
+  const detectedRef = useRef(null);
 
   useEffect(() => { saveForm(form); }, [form]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    fetch(LOCAL_HEALTH_URL, { signal: controller.signal, mode: 'cors' })
+      .then(r => { if (r.ok && !cancelled) { detectedRef.current = LOCAL; setProxyStatus(LOCAL); setProxyResolved(true); } })
+      .catch(() => { if (!cancelled) { detectedRef.current = NETLIFY; setProxyStatus(NETLIFY); setProxyResolved(true); } });
+    return () => { cancelled = true; controller.abort(); };
+  }, []);
 
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -53,7 +72,7 @@ export default function LocReport({ theme, toggleTheme }) {
     });
     let result;
     try { result = await res.json(); } catch {
-      throw new Error(`Proxy returned non-JSON (${res.status}). If using Netlify proxy, it may not reach your corporate network. Try an internal proxy instead.`);
+      throw new Error(`Proxy returned non-JSON (${res.status}).`);
     }
     if (!res.ok) throw new Error(`Proxy error: ${result.error}`);
     if (result.status >= 400) {
@@ -128,14 +147,14 @@ export default function LocReport({ theme, toggleTheme }) {
     const totalCommits = commitRows.length;
     const netLoc = totalAdded - totalDeleted;
 
-    setProxyLabel(label);
+    setProxyStatus(label);
     setReport({ totalCommits, totalAdded, totalDeleted, netLoc, projects: processedProjects, commits: commitRows });
   };
 
   const fetchReport = async () => {
     setError('');
     setReport(null);
-    setProxyLabel('');
+    setProxyStatus(NONE);
     if (!form.token || !form.userId || !form.startDate || !form.endDate) {
       setError('All fields are required');
       return;
@@ -147,19 +166,18 @@ export default function LocReport({ theme, toggleTheme }) {
       const since = `${form.startDate}T00:00:00Z`;
       const until = `${form.endDate}T23:59:59Z`;
 
-      const primary = form.proxyUrl.trim();
-      const fallback = form.internalProxyUrl.trim();
-
-      if (primary && fallback && primary !== fallback) {
+      if (detectedRef.current === LOCAL) {
         try {
-          await runWithProxy(primary, 'Netlify', base, since, until);
+          await runWithProxy(LOCAL_PROXY_ENDPOINT, LOCAL, base, since, until);
         } catch {
-          await runWithProxy(fallback, 'Internal', base, since, until);
+          throw new Error('Local proxy at localhost:8080 is not responding. Make sure gitlab-proxy.py is running.');
         }
-      } else if (primary) {
-        await runWithProxy(primary, primary.includes('netlify') ? 'Netlify' : 'Proxy', base, since, until);
       } else {
-        setError('Proxy URL is required.');
+        try {
+          await runWithProxy(NETLIFY_PROXY, NETLIFY, base, since, until);
+        } catch {
+          throw new Error('Netlify proxy cannot reach your corporate GitLab. Connect to VPN and run gitlab-proxy.py on your machine.');
+        }
       }
     } catch (err) {
       setError(err.message);
@@ -178,6 +196,15 @@ export default function LocReport({ theme, toggleTheme }) {
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
           </div>
+          {proxyResolved && proxyStatus !== null && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%', display: 'inline-block',
+                background: proxyStatus === LOCAL ? '#2ecc71' : proxyStatus === NETLIFY ? '#f39c12' : '#e74c3c',
+              }} />
+              {PROXY_LABELS[proxyStatus]}
+            </span>
+          )}
         </div>
 
         <h1>LOC REPORT</h1>
@@ -189,20 +216,6 @@ export default function LocReport({ theme, toggleTheme }) {
           <div className="form-group" style={{ gridColumn: '1 / -1' }}>
             <label className="field-label">GitLab Base URL</label>
             <input type="text" className="main-input" value={form.baseUrl} onChange={e => updateField('baseUrl', e.target.value)} />
-          </div>
-          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-            <label className="field-label">Proxy URL</label>
-            <input type="text" className="main-input" value={form.proxyUrl} onChange={e => updateField('proxyUrl', e.target.value)} placeholder="/.netlify/functions/gitlab-proxy" />
-            <p className="hint-text" style={{ fontStyle: 'normal', marginTop: '0.35rem' }}>
-              Netlify proxy (default). Fetches via <code>/.netlify/functions/gitlab-proxy</code>.
-            </p>
-          </div>
-          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-            <label className="field-label">Internal Proxy URL (fallback)</label>
-            <input type="text" className="main-input" value={form.internalProxyUrl} onChange={e => updateField('internalProxyUrl', e.target.value)} placeholder="http://internal-server:8080/proxy" />
-            <p className="hint-text" style={{ fontStyle: 'normal', marginTop: '0.35rem' }}>
-              Optional fallback when Netlify proxy fails. Deploy <code>internal-server.py</code> on a corporate server and enter its URL here. Auto-retries with this URL if the primary proxy returns 502.
-            </p>
           </div>
           <div className="form-group">
             <label className="field-label">Private Token</label>
@@ -227,20 +240,6 @@ export default function LocReport({ theme, toggleTheme }) {
         <button className="btn-primary" onClick={fetchReport} disabled={loading} style={{ width: '100%', marginBottom: '2rem' }}>
           {loading ? <div className="loader tiny" /> : '📊 Fetch Report'}
         </button>
-
-        {proxyLabel && (
-          <div style={{
-            textAlign: 'center',
-            fontSize: '0.8rem',
-            color: 'var(--text-muted)',
-            marginBottom: '0.75rem',
-            padding: '0.3rem 0.75rem',
-            display: 'inline-block',
-            width: '100%',
-          }}>
-            Proxy used: <strong>{proxyLabel}</strong>
-          </div>
-        )}
 
         {report && (
           <div className="locr-results">

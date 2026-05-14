@@ -20,9 +20,15 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
+
+    def do_GET(self):
+        if self.path == '/health':
+            self._json(200, {'ok': True, 'message': 'local proxy is alive'})
+            return
+        self._json(404, {'error': 'Not found'})
 
     def do_POST(self):
         if self.path != '/proxy':
@@ -75,7 +81,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
 if __name__ == '__main__':
     server = http.server.HTTPServer(('0.0.0.0', PROXY_PORT), ProxyHandler)
     print(f'GitLab proxy running on http://localhost:{PROXY_PORT}/proxy')
-    print('In LOC Report page, set "Proxy URL" to http://localhost:{}/proxy'.format(PROXY_PORT))
+    print('The LOC Report page will auto-detect this proxy.')
+    print('Connect to VPN, run this script, and open the webpage.')
     print('Press Ctrl+C to stop.')
     try:
         server.serve_forever()
