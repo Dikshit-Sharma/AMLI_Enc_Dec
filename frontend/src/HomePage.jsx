@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchArtifacts, fetchCredentials, toDate } from './api';
 import { SkeletonStatCard, SkeletonRecentCard, SkeletonChart } from './Skeleton';
+import { extractFromArtifact } from './credentialExtract';
 
 const ENVS = ['DEV', 'UAT', 'PROD'];
 const ENV_COLORS = { DEV: '#10b981', UAT: '#f59e0b', PROD: '#ef4444' };
@@ -163,7 +164,19 @@ export default function HomePage({ theme, toggleTheme }) {
       }
       setEnvData(Object.entries(map).map(([label, value]) => ({ label, value })));
       const credMap = Object.fromEntries(credRes);
-      setCredStats(credMap);
+      const extracted = {};
+      for (const env of ENVS) extracted[env] = [];
+      for (const art of arts) {
+        const entry = extractFromArtifact(art);
+        if (entry && ENVS.includes(entry.env)) {
+          extracted[entry.env].push(entry);
+        }
+      }
+      const merged = {};
+      for (const env of ENVS) {
+        merged[env] = [...(credMap[env] || []), ...(extracted[env] || [])];
+      }
+      setCredStats(merged);
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, []);
