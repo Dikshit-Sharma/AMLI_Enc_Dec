@@ -6,7 +6,7 @@
 
 [[redirects]]
   from = "/api/*"
-  to = "https://us-central1-YOUR_PROJECT_ID.cloudfunctions.net/artifacts"
+  to = "https://us-central1-apilib-5f40d.cloudfunctions.net/artifacts"
   status = 200
 
 [[redirects]]

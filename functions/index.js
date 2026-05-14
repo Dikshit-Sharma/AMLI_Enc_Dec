@@ -4,7 +4,7 @@ admin.initializeApp();
 
 const db = admin.firestore();
 
-exports.artifacts = functions.https.onRequest(async (req, res) => {
+exports.artifacts = functions.region('us-central1').https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type');
