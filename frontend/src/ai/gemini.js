@@ -1,5 +1,5 @@
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const MODEL = 'gemini-1.5-flash';
+const MODEL = 'gemini-pro';
 
 export const aiAvailable = !!GEMINI_API_KEY;
 
