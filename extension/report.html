@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitLab LOC Report</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="report-page">
+    <div class="report-header">
+      <h1>GitLab LOC Report</h1>
+      <p>Lines of Code by commits in a date range</p>
+    </div>
+
+    <!-- Form -->
+    <div class="card" id="formSection">
+      <div class="form-row">
+        <div class="form-group full-width">
+          <label>GitLab Base URL</label>
+          <input type="text" id="baseUrl" value="https://repo.maxlifeinsurance.com/api/v4" placeholder="https://gitlab.example.com/api/v4">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Private Token</label>
+          <input type="password" id="token" placeholder="glpat-...">
+        </div>
+        <div class="form-group">
+          <label>Username / User ID</label>
+          <input type="text" id="username" placeholder="DLBPR02929">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Start Date</label>
+          <input type="date" id="startDate">
+        </div>
+        <div class="form-group">
+          <label>End Date</label>
+          <input type="date" id="endDate">
+        </div>
+      </div>
+      <button class="btn-primary" id="fetchBtn">Generate Report</button>
+    </div>
+
+    <!-- Progress -->
+    <div class="card" id="progressSection" style="display:none">
+      <div class="progress-section">
+        <div class="progress-text" id="progressText">Starting...</div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progressBar" style="width:0%"></div>
+        </div>
+        <button class="btn-secondary" id="cancelBtn">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div id="errorSection" style="display:none"></div>
+
+    <!-- Results -->
+    <div id="resultsSection" style="display:none">
+      <!-- Summary cards -->
+      <div class="summary-grid" id="summaryGrid"></div>
+
+      <!-- Per-project breakdown -->
+      <div class="card" id="projectSection" style="display:none">
+        <div class="section-title">Per-Project Summary</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Commits</th>
+                <th>Added</th>
+                <th>Deleted</th>
+                <th>Net</th>
+              </tr>
+            </thead>
+            <tbody id="projectBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Commits table -->
+      <div class="card" id="commitSection" style="display:none">
+        <div class="section-title">Commits</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Commit</th>
+                <th>Message</th>
+                <th>Date</th>
+                <th>Added</th>
+                <th>Deleted</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody id="commitBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Per-file details -->
+      <div class="card" id="fileSection" style="display:none">
+        <div class="section-title">
+          Per-File Breakdown
+          <span style="font-weight:400;font-size:12px;color:#999;margin-left:8px">
+            — one extra API call per commit
+          </span>
+        </div>
+        <button class="btn-secondary" id="fetchFilesBtn" style="margin-bottom:12px">
+          Fetch Per-File Details
+        </button>
+        <div class="table-wrap" id="fileTableWrap" style="display:none">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Commit</th>
+                <th>File</th>
+                <th>Added</th>
+                <th>Deleted</th>
+                <th>Modified</th>
+                <th>Net</th>
+              </tr>
+            </thead>
+            <tbody id="fileBody"></tbody>
+          </table>
+        </div>
+        <div id="fileProgress" class="progress-text" style="display:none;margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+  <script src="report.js"></script>
+</body>
+</html>
