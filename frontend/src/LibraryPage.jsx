@@ -25,6 +25,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   const [nextCursor, setNextCursor] = useState(null);
   const [pageNum, setPageNum] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
 
   const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
@@ -35,6 +36,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
       setArtifacts(res.artifacts || []);
       setNextCursor(res.nextCursor);
       setHasMore(!!res.nextCursor);
+      if (res.total !== undefined) setTotalCount(res.total);
     } catch (err) {
       console.error('Failed to load artifacts:', err);
     } finally {
@@ -218,7 +220,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                 border: '1px solid rgba(255,255,255,0.1)',
               }}
             >
-              Total: {artifacts.length}
+              Total: {totalCount}
             </span>
             {selectedIds.length > 0 && (
               <>

@@ -26,17 +26,15 @@ const handler = async (event) => {
   try {
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};
-      const limit = Math.min(parseInt(params.limit) || 50, 100);
+      const limit = params.limit ? Math.min(parseInt(params.limit), 200) : null;
       const cursor = params.cursor || null;
 
-      let query = db
-        .collection('artifacts')
-        .orderBy('timestamp', 'desc')
-        .limit(limit);
+      const countSnap = await db.collection('artifacts').count().get();
+      const total = countSnap.data().count;
 
-      if (cursor) {
-        query = query.startAfter(new Date(cursor));
-      }
+      let query = db.collection('artifacts').orderBy('timestamp', 'desc');
+      if (limit) query = query.limit(limit);
+      if (cursor) query = query.startAfter(new Date(cursor));
 
       const snapshot = await query.get();
 
@@ -50,7 +48,7 @@ const handler = async (event) => {
       });
 
       const nextCursor =
-        snapshot.docs.length === limit
+        limit && snapshot.docs.length === limit
           ? snapshot.docs[snapshot.docs.length - 1]
               .data()
               .timestamp?.toDate?.()
@@ -60,7 +58,7 @@ const handler = async (event) => {
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ artifacts, nextCursor }),
+        body: JSON.stringify({ artifacts, nextCursor, total }),
       };
     }
 

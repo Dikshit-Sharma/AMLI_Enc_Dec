@@ -1,8 +1,51 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchCredentials, addCredential, deleteCredential } from './api';
+import { fetchCredentials, addCredential, deleteCredential, fetchArtifacts } from './api';
 
 const ENVS = ['DEV', 'UAT', 'PROD'];
+
+function parseCurlForHeaders(curlString) {
+  const headers = {};
+  if (!curlString) return headers;
+  const headerRegex = /-(?:H|-header)\s+["']([^"']+)["']/g;
+  let match;
+  while ((match = headerRegex.exec(curlString)) !== null) {
+    const [key, ...values] = match[1].split(':');
+    if (key && values.length) {
+      headers[key.trim()] = values.join(':').trim();
+    }
+  }
+  return headers;
+}
+
+const TARGET_HEADERS = ['x-api-key', 'clientid', 'clientsecret', 'client_id', 'client_secret'];
+
+function extractFromArtifact(art) {
+  if (!art.env) return null;
+  const parsed = parseCurlForHeaders(art.curl);
+  const lowerParsed = {};
+  for (const [k, v] of Object.entries(parsed)) {
+    lowerParsed[k.toLowerCase()] = v;
+  }
+
+  const xApiKey = TARGET_HEADERS.reduce((found, h) => found || lowerParsed[h] || '', '');
+  const clientId = lowerParsed['clientid'] || lowerParsed['client_id'] || '';
+  const clientSecret = lowerParsed['clientsecret'] || lowerParsed['client_secret'] || '';
+
+  if (!xApiKey && !clientId && !clientSecret && !art.aesKey) return null;
+
+  return {
+    id: `art_${art.id}`,
+    soaAppId: art.jiraTicket || 'Unknown',
+    apiName: art.apiName || '',
+    env: art.env,
+    xApiKey,
+    clientId,
+    clientSecret,
+    aesKey: art.aesKey || '',
+    _source: 'artifact',
+  };
+}
 
 function deduplicate(list) {
   const seen = new Set();
@@ -120,13 +163,27 @@ export default function CredentialsPage({ theme, toggleTheme }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const results = await Promise.all(
-        ENVS.map((env) => fetchCredentials(env).then((r) => [env, r.credentials || []]))
-      );
-      const grouped = Object.fromEntries(results);
-      for (const env of ENVS) {
-        grouped[env] = deduplicate(grouped[env] || []);
+      const [manualRes, artRes] = await Promise.all([
+        Promise.all(ENVS.map((env) => fetchCredentials(env).then((r) => [env, r.credentials || []]))),
+        fetchArtifacts(),
+      ]);
+
+      const manual = Object.fromEntries(manualRes);
+      const extracted = {};
+      for (const env of ENVS) extracted[env] = [];
+
+      for (const art of artRes.artifacts || []) {
+        const entry = extractFromArtifact(art);
+        if (entry && ENVS.includes(entry.env)) {
+          extracted[entry.env].push(entry);
+        }
       }
+
+      const grouped = {};
+      for (const env of ENVS) {
+        grouped[env] = deduplicate([...(manual[env] || []), ...extracted[env]]);
+      }
+
       setAllCreds(grouped);
     } catch (err) {
       console.error('Failed to load credentials:', err);
@@ -151,6 +208,10 @@ export default function CredentialsPage({ theme, toggleTheme }) {
   };
 
   const handleDelete = async (id) => {
+    if (id.startsWith('art_')) {
+      alert('This credential was extracted from an artifact. Delete the artifact in the Library to remove it.');
+      return;
+    }
     if (!window.confirm('Delete this credential entry?')) return;
     setDeleting(id);
     try {
@@ -260,7 +321,7 @@ export default function CredentialsPage({ theme, toggleTheme }) {
           </div>
         ) : creds.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>
-            No credentials stored for {activeEnv}. Click "+ New" to add one.
+            No credentials found for {activeEnv}. Click "+ New" to add one manually.
           </div>
         ) : (
           <div className="table-responsive">
@@ -273,6 +334,7 @@ export default function CredentialsPage({ theme, toggleTheme }) {
                   <th>Client ID</th>
                   <th>Client Secret</th>
                   <th>AES Key</th>
+                  <th>Source</th>
                   <th></th>
                 </tr>
               </thead>
@@ -294,12 +356,23 @@ export default function CredentialsPage({ theme, toggleTheme }) {
                       {c.aesKey ? `${c.aesKey.slice(0, 8)}...` : '--'}
                     </td>
                     <td>
+                      {c._source === 'artifact' ? (
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', background: 'var(--output-bg)', padding: '0.2rem 0.5rem', borderRadius: '0.3rem' }}>
+                          artifact
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.7rem', color: 'var(--primary)', background: 'var(--primary-glow)', padding: '0.2rem 0.5rem', borderRadius: '0.3rem' }}>
+                          manual
+                        </span>
+                      )}
+                    </td>
+                    <td>
                       <button
                         className="copy-icon-btn"
                         onClick={() => handleDelete(c.id)}
                         disabled={deleting === c.id}
-                        title="Delete"
-                        style={{ color: 'var(--error)', borderColor: 'rgba(244,63,94,0.3)' }}
+                        title={c._source === 'artifact' ? 'From artifact' : 'Delete'}
+                        style={{ color: c._source === 'artifact' ? 'var(--text-muted)' : 'var(--error)', borderColor: 'rgba(244,63,94,0.3)' }}
                       >
                         {deleting === c.id ? <div className="loader tiny" /> : '🗑'}
                       </button>
