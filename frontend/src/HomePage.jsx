@@ -27,6 +27,14 @@ function EnvBarChart({ data }) {
   );
 }
 
+const TOOLS = [
+  { path: '/cipher', icon: '🔐', name: 'Cipher Tool', desc: 'AES encryption/decryption with GCM and CBC modes.' },
+  { path: '/artifacts', icon: '💎', name: 'Artifacts', desc: 'Generate structured documentation packages and ZIP archives.' },
+  { path: '/library', icon: '📚', name: 'API Library', desc: 'Browse, search, and re-download past artifact configurations.' },
+  { path: '/credentials', icon: '🔑', name: 'Credentials', desc: 'Manage secrets for DEV, UAT, and PROD environments.' },
+  { href: 'https://sharedclip.netlify.app/', icon: '📋', name: 'SharedClip', desc: 'Real-time collaborative clipboard for teams.', external: true },
+];
+
 export default function HomePage({ theme, toggleTheme }) {
   const [recent, setRecent] = useState([]);
   const [envData, setEnvData] = useState([]);
@@ -34,7 +42,7 @@ export default function HomePage({ theme, toggleTheme }) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetchArtifacts({ limit: 50 }).then((res) => {
+    fetchArtifacts().then((res) => {
       const arts = res.artifacts || [];
       setRecent(arts.slice(0, 5));
       setTotalCount(res.total ?? arts.length);
@@ -51,159 +59,138 @@ export default function HomePage({ theme, toggleTheme }) {
   }, []);
 
   return (
-    <>
-      <div
-        className="theme-toggle-wrapper"
-        style={{
-          position: 'fixed', top: '2rem', right: '2rem',
-          zIndex: 100, display: 'flex', gap: '0.5rem',
-        }}
-      >
-        <button className="theme-toggle" onClick={toggleTheme}>
-          {theme === 'light' ? '🌙' : '☀️'}
-        </button>
-      </div>
-      <div className="home-container">
-        <section className="hero-section">
-          <h1>AMLI TOOLS</h1>
-          <p>
-            A suite of professional encryption, decryption, and artifact
-            management tools designed for speed, security, and developer
-            productivity.
-          </p>
-        </section>
-
-        <div className="dashboard-stats">
-          {!loaded ? (
-            <>
-              <SkeletonStatCard />
-              <SkeletonStatCard />
-              <SkeletonStatCard />
-              <SkeletonStatCard />
-            </>
-          ) : (
-            <>
-              {envData.map((d) => (
-                <div key={d.label} className="stat-card">
-                  <div className="stat-card-icon">
-                    {d.label === 'DEV' ? '🛠' : d.label === 'UAT' ? '🧪' : '🚀'}
-                  </div>
-                  <span className="stat-value">{d.value}</span>
-                  <span className="stat-label">{d.label}</span>
+    <div className="home-layout">
+      <aside className="home-sidebar">
+        <div className="sidebar-brand">
+          <h2>AMLI</h2>
+        </div>
+        <nav className="sidebar-nav">
+          {TOOLS.map((tool) => {
+            const content = (
+              <>
+                <span className="sidebar-icon">{tool.icon}</span>
+                <div className="sidebar-item-text">
+                  <span className="sidebar-item-name">{tool.name}</span>
+                  <span className="sidebar-item-desc">{tool.desc}</span>
                 </div>
-              ))}
-              <Link to="/library" className="stat-card stat-card--link">
-                <div className="stat-card-icon">📚</div>
-                <span className="stat-value">{totalCount}</span>
-                <span className="stat-label">Total</span>
+              </>
+            );
+            if (tool.external) {
+              return (
+                <a key={tool.name} href={tool.href} target="_blank" rel="noopener noreferrer" className="sidebar-link">
+                  {content}
+                </a>
+              );
+            }
+            return (
+              <Link key={tool.name} to={tool.path} className="sidebar-link">
+                {content}
               </Link>
-              <Link to="/credentials" className="stat-card stat-card--link">
-                <div className="stat-card-icon">🔑</div>
-                <span className="stat-value">{'>>'}</span>
-                <span className="stat-label">Credentials</span>
-              </Link>
-            </>
-          )}
+            );
+          })}
+        </nav>
+        <div className="sidebar-footer">
+          <button className="theme-toggle sidebar-theme-btn" onClick={toggleTheme}>
+            {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
+          </button>
         </div>
+      </aside>
 
-        {!loaded ? (
-          <div className="chart-section">
-            <SkeletonChart />
-          </div>
-        ) : envData.length > 0 && (
-          <div className="chart-section">
-            <EnvBarChart data={envData} />
-          </div>
-        )}
+      <main className="home-main">
+        <div className="home-container">
+          <section className="hero-section">
+            <h1>DASHBOARD</h1>
+            <p>
+              A suite of professional encryption, decryption, and artifact
+              management tools designed for speed, security, and developer
+              productivity.
+            </p>
+          </section>
 
-        <div className="tools-grid">
-          <Link to="/cipher" className="tool-card">
-            <div className="card-icon">🔐</div>
-            <h3>Cipher Tool</h3>
-            <p>
-              Secure AES encryption and decryption with support for GCM and CBC
-              modes. Advanced auto-formatting and validation built-in.
-            </p>
-          </Link>
-          <Link to="/artifacts" className="tool-card">
-            <div className="card-icon">💎</div>
-            <h3>Artifacts</h3>
-            <p>
-              Generate highly-structured documentation packages and ZIP archives
-              for SOA requests with automated encryption support.
-            </p>
-          </Link>
-          <Link to="/library" className="tool-card">
-            <div className="card-icon">📚</div>
-            <h3>API Library</h3>
-            <p>
-              Access your history of generated artifacts. Search, review, and
-              re-download past configurations with ease.
-            </p>
-          </Link>
-          <Link to="/credentials" className="tool-card">
-            <div className="card-icon">🔑</div>
-            <h3>Credentials</h3>
-            <p>
-              Manage environment variables and secrets for DEV, UAT, and PROD.
-              Store API keys, client secrets, and AES keys securely.
-            </p>
-          </Link>
-          <a
-            href="https://sharedclip.netlify.app/"
-            className="tool-card"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <div className="card-icon">📋</div>
-            <h3>SharedClip</h3>
-            <p>
-              Real-time collaborative clipboard for seamless data sharing across
-              teams and devices. Simple, fast, and secure.
-            </p>
-          </a>
-        </div>
-
-        <div className="recent-section">
-          <h2 className="recent-title">Recent Artifacts</h2>
-          {!loaded ? (
-            <div className="recent-grid">
-              <SkeletonRecentCard />
-              <SkeletonRecentCard />
-              <SkeletonRecentCard />
-            </div>
-          ) : recent.length > 0 ? (
-            <div className="recent-grid">
-              {recent.map((art) => (
-                <Link key={art.id} to="/library" className="recent-card">
-                  <div className="recent-card-top">
-                    <span className="badge-env" data-env={art.env}>
-                      {art.env || 'DEV'}
-                    </span>
-                    <span className="recent-date">
-                      {toDate(art.timestamp)?.toLocaleDateString('en-IN', {
-                        day: '2-digit', month: 'short',
-                      }) || ''}
-                    </span>
+          <div className="dashboard-stats">
+            {!loaded ? (
+              <>
+                <SkeletonStatCard />
+                <SkeletonStatCard />
+                <SkeletonStatCard />
+                <SkeletonStatCard />
+              </>
+            ) : (
+              <>
+                {envData.map((d) => (
+                  <div key={d.label} className="stat-card">
+                    <div className="stat-card-icon">
+                      {d.label === 'DEV' ? '🛠' : d.label === 'UAT' ? '🧪' : '🚀'}
+                    </div>
+                    <span className="stat-value">{d.value}</span>
+                    <span className="stat-label">{d.label}</span>
                   </div>
-                  <div className="recent-card-body">
-                    <strong>{art.apiName || 'Unnamed'}</strong>
-                    <span className="recent-ticket">{art.jiraTicket}</span>
-                  </div>
+                ))}
+                <Link to="/library" className="stat-card stat-card--link">
+                  <div className="stat-card-icon">📚</div>
+                  <span className="stat-value">{totalCount}</span>
+                  <span className="stat-label">Total</span>
                 </Link>
-              ))}
-            </div>
-          ) : (
-            <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
-              No artifacts yet. Generate one in the Artifacts tool.
-            </p>
-          )}
-        </div>
+                <Link to="/credentials" className="stat-card stat-card--link">
+                  <div className="stat-card-icon">🔑</div>
+                  <span className="stat-value">{'>>'}</span>
+                  <span className="stat-label">Credentials</span>
+                </Link>
+              </>
+            )}
+          </div>
 
-        <footer className="footer-minimal">
-          Built by <strong>Dikshit Sharma</strong> | dikshit.sharma2580@gmail.com
-        </footer>
-      </div>
-    </>
+          {!loaded ? (
+            <div className="chart-section">
+              <SkeletonChart />
+            </div>
+          ) : envData.length > 0 && (
+            <div className="chart-section">
+              <EnvBarChart data={envData} />
+            </div>
+          )}
+
+          <div className="recent-section">
+            <h2 className="recent-title">Recent Artifacts</h2>
+            {!loaded ? (
+              <div className="recent-grid">
+                <SkeletonRecentCard />
+                <SkeletonRecentCard />
+                <SkeletonRecentCard />
+              </div>
+            ) : recent.length > 0 ? (
+              <div className="recent-grid">
+                {recent.map((art) => (
+                  <Link key={art.id} to="/library" className="recent-card">
+                    <div className="recent-card-top">
+                      <span className="badge-env" data-env={art.env}>
+                        {art.env || 'DEV'}
+                      </span>
+                      <span className="recent-date">
+                        {toDate(art.timestamp)?.toLocaleDateString('en-IN', {
+                          day: '2-digit', month: 'short',
+                        }) || ''}
+                      </span>
+                    </div>
+                    <div className="recent-card-body">
+                      <strong>{art.apiName || 'Unnamed'}</strong>
+                      <span className="recent-ticket">{art.jiraTicket}</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '2rem' }}>
+                No artifacts yet. Generate one in the Artifacts tool.
+              </p>
+            )}
+          </div>
+
+          <footer className="footer-minimal">
+            Built by <strong>Dikshit Sharma</strong> | dikshit.sharma2580@gmail.com
+          </footer>
+        </div>
+      </main>
+    </div>
   );
 }

@@ -1541,6 +1541,125 @@ button:disabled {
   color: var(--text);
 }
 
+/* ─── Home Layout: Sidebar + Main ─── */
+.home-layout {
+  display: flex;
+  min-height: 100vh;
+  height: 100%;
+}
+
+.home-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 0;
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.sidebar-brand {
+  padding: 0 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+}
+
+.sidebar-brand h2 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--primary) 0%, #4f46e5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 0.1em;
+}
+
+.sidebar-nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0 0.75rem;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 0.75rem;
+  border-radius: 0.75rem;
+  text-decoration: none;
+  color: var(--text);
+  transition: all 0.15s ease;
+}
+
+.sidebar-link:hover {
+  background: var(--primary-glow);
+  color: var(--primary);
+}
+
+.sidebar-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.sidebar-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.sidebar-item-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.sidebar-item-desc {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sidebar-footer {
+  padding: 1rem 0.75rem 0;
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+}
+
+.sidebar-theme-btn {
+  width: 100%;
+  padding: 0.65rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.sidebar-theme-btn:hover {
+  background: var(--primary-glow);
+  border-color: var(--primary);
+}
+
+.home-main {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 100vh;
+}
+
 .footer-minimal {
   text-align: center;
   padding: 2rem 0;
