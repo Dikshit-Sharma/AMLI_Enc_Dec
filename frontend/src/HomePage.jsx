@@ -148,7 +148,9 @@ export default function HomePage({ theme, toggleTheme }) {
   useEffect(() => {
     Promise.all([
       fetchArtifacts(),
-      Promise.all(ENVS.map((e) => fetchCredentials(e).then((r) => [e, r.credentials || []]))),
+      Promise.all(ENVS.map((e) =>
+        fetchCredentials(e).then((r) => [e, r.credentials || []]).catch(() => [e, []])
+      )),
     ]).then(([artRes, credRes]) => {
       const arts = artRes.artifacts || [];
       setAllArts(arts);
