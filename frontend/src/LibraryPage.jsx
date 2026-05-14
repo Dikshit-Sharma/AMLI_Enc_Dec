@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
 import { Link } from 'react-router-dom';
+import { fetchArtifacts, toDate } from './api';
 import { generateAndDownloadZip, generateBulkZip } from './artifactUtil';
 import { decrypt, decryptCBC } from './cryptoUtil';
 import ArtifactComparator from './ArtifactComparator';
@@ -25,20 +24,24 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const q = query(collection(db, 'artifacts'), orderBy('timestamp', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setArtifacts(docs);
-      setLoading(false);
-    }, (error) => {
-      console.error("Firestore Error:", error.code, error.message);
-      setLoading(false);
-    });
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const docs = await fetchArtifacts();
+        if (!cancelled) {
+          setArtifacts(docs);
+          setLoading(false);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load artifacts:', err);
+          setLoading(false);
+        }
+      }
+    };
+    load();
 
-    return () => unsubscribe();
+    return () => { cancelled = true; };
   }, [isAuthenticated]);
 
   const handlePasswordSubmit = (e) => {
@@ -236,7 +239,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                           </a>
                         </td>
                         <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                          {art.timestamp?.toDate ? art.timestamp.toDate().toLocaleString('en-IN', { dateStyle: 'medium' }) : 'Unknown'}
+                          {toDate(art.timestamp)?.toLocaleString('en-IN', { dateStyle: 'medium' }) || 'Unknown'}
                         </td>
                         <td onClick={e => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: '0.5rem' }}>

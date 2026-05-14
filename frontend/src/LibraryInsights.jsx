@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, getDocs } from 'firebase/firestore';
-import { db } from './firebase';
 import { SYSTEM_PROMPTS } from './ai/prompts';
 import useAI from './ai/useAI';
 import { extractJson } from './ai/extractJson';
+import { fetchArtifacts, toDate } from './api';
 import './LibraryInsights.css';
 
 function aggregate(artifacts) {
@@ -23,7 +22,7 @@ function aggregate(artifacts) {
 
     if (art.encryption === 'Enabled') encryptedCount++;
 
-    const ts = art.timestamp?.toDate?.();
+    const ts = toDate(art.timestamp);
     if (ts) {
       const key = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}`;
       monthlyCount[key] = (monthlyCount[key] || 0) + 1;
@@ -44,11 +43,9 @@ export default function LibraryInsights({ onClose }) {
   const [aiSummary, setAiSummary] = useState(null);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const loadData = async () => {
       try {
-        const q = query(collection(db, 'artifacts'), orderBy('timestamp', 'desc'));
-        const snapshot = await getDocs(q);
-        const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        const docs = await fetchArtifacts();
         setData(aggregate(docs));
       } catch (err) {
         console.error('Failed to load insights:', err);
@@ -56,7 +53,7 @@ export default function LibraryInsights({ onClose }) {
         setLoading(false);
       }
     };
-    fetchData();
+    loadData();
   }, []);
 
   const handleAISummary = async () => {

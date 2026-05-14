@@ -7,7 +7,7 @@ import HomePage from './HomePage';
 import ArtifactsPage from './ArtifactsPage';
 import { encrypt, decrypt, encryptCBC, decryptCBC, generateAESKeyHex, hexToBase64, base64ToHex } from './cryptoUtil';
 import LibraryPage from './LibraryPage';
-import LocReport from './LocReport';
+
 import OnboardingBot from './OnboardingBot';
 import QuickAnswerBot from './QuickAnswerBot';
 
@@ -153,7 +153,7 @@ function App() {
       <Route path="/" element={<HomePage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/artifacts" element={<ArtifactsPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
-      <Route path="/loc-report" element={<LocReport theme={theme} toggleTheme={toggleTheme} />} />
+
       <Route path="/cipher" element={
         <div className="container">
           <div className="card workspace-fullscreen">

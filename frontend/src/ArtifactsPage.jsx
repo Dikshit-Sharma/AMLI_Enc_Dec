@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp, query, orderBy, getDocs } from 'firebase/firestore';
-import { db, logAnalyticsEvent } from './firebase';
+import { logAnalyticsEvent } from './firebase';
+import { fetchArtifacts, addArtifacts } from './api';
 import { decrypt, decryptCBC } from './cryptoUtil';
 import { generateAndDownloadZip, generateArtifactText } from './artifactUtil';
 import ArtifactAuditor from './ArtifactAuditor';
@@ -23,9 +23,8 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   React.useEffect(() => {
     const loadLibrary = async () => {
       try {
-        const q = query(collection(db, 'artifacts'), orderBy('timestamp', 'desc'));
-        const snap = await getDocs(q);
-        setLibraryForPaste(snap.docs.map(d => d.data()));
+        const docs = await fetchArtifacts();
+        setLibraryForPaste(docs);
       } catch { /* library load is non-critical */ }
     };
     loadLibrary();
@@ -87,13 +86,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Database write timed out")), 5000)
       );
-      for (const art of artifactsToPush) {
-        const writePromise = addDoc(collection(db, 'artifacts'), {
-          ...art,
-          timestamp: serverTimestamp()
-        });
-        await Promise.race([writePromise, timeoutPromise]);
-      }
+      await Promise.race([addArtifacts(artifactsToPush), timeoutPromise]);
     } catch (e) {
       console.error("Error adding to library: ", e);
     }
