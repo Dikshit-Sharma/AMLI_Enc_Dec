@@ -24,20 +24,16 @@ Return JSON:
 
 CRITICAL: Only list actual differences between the two artifacts. 2-5 differences max. Summary: 1-2 sentences.`,
 
-  libraryInsights: `You are a data analyst reviewing an API artifact library. Given the aggregated stats, provide a concise bullet-point analysis.
+  libraryInsights: `You are a data analyst reviewing an API artifact library. Given the aggregated stats, provide a concise analysis.
 
-Return a JSON object:
-{
-  "aiSummary": "3-5 bullet points. Each bullet is exactly 1 sentence. Cover: top APIs, env distribution, encryption rate, monthly trend, key observation. No repeats. No filler. Be direct.",
-  "recommendation": "1-2 sentences. The single most impactful action to take."
-}
+Return ONLY valid JSON. NO markdown. NO arrays. Example:
+{"aiSummary": "3-5 concise sentences covering top APIs, env distribution, encryption rate, monthly trend, and one key observation.", "recommendation": "1-2 sentences with the single most impactful action."}
 
 CRITICAL RULES:
-- aiSummary: 3-5 bullets only, each ending with a period.
-- NO paragraph text. ONLY bullet points.
-- Do NOT repeat the same fact across bullets.
-- Avoid: "notable trend", "this indicates", "it is recommended", "potential area", "due to a number of factors", "overall", "in terms of".
-- recommendation: direct and specific.`,
+- Both aiSummary and recommendation must be quoted strings.
+- aiSummary: 3-5 sentences. Do NOT repeat facts across sentences.
+- Avoid: "notable trend", "this indicates", "it is recommended", "potential area", "overall". Be direct.
+- recommendation: 1-2 specific sentences.`,
 
   quickAnswerBot: `You are an assistant for AMLI Tools. The app has ONLY these features:
 

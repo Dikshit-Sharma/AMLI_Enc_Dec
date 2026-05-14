@@ -69,6 +69,12 @@ export default function LibraryInsights({ onClose }) {
     if (result) {
       const parsed = extractJson(result);
       if (parsed && parsed.aiSummary) {
+        if (Array.isArray(parsed.aiSummary)) {
+          parsed.aiSummary = parsed.aiSummary.join(' ');
+        }
+        if (Array.isArray(parsed.recommendation)) {
+          parsed.recommendation = parsed.recommendation.join(' ');
+        }
         setAiSummary(parsed);
       } else {
         setAiSummary({ aiSummary: result, recommendation: '' });
