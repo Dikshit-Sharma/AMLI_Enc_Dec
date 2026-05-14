@@ -10,7 +10,7 @@
   <div class="report-page">
     <div class="report-header">
       <h1>GitLab LOC Report</h1>
-      <p>Lines of Code by commits in a date range</p>
+      <p>Lines of Code by merge requests in a date range</p>
     </div>
 
     <!-- Form -->
@@ -29,12 +29,6 @@
         <div class="form-group">
           <label>Username / User ID</label>
           <input type="text" id="username" placeholder="DLBPR02929">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group full-width">
-          <label>Commit Author (email or name)</label>
-          <input type="text" id="commitAuthor" placeholder="Auto-filled after user lookup, or enter manually">
         </div>
       </div>
       <div class="form-row">
@@ -88,23 +82,24 @@
         </div>
       </div>
 
-      <!-- Commits table -->
-      <div class="card" id="commitSection" style="display:none">
-        <div class="section-title">Commits</div>
+      <!-- MRs table -->
+      <div class="card" id="mrSection" style="display:none">
+        <div class="section-title">Merge Requests</div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Project</th>
-                <th>Commit</th>
-                <th>Message</th>
-                <th>Date</th>
+                <th>MR</th>
+                <th>Title</th>
+                <th>Merged</th>
                 <th>Added</th>
                 <th>Deleted</th>
-                <th>Total</th>
+                <th>Modified</th>
+                <th>Net</th>
               </tr>
             </thead>
-            <tbody id="commitBody"></tbody>
+            <tbody id="mrBody"></tbody>
           </table>
         </div>
       </div>
@@ -113,19 +108,13 @@
       <div class="card" id="fileSection" style="display:none">
         <div class="section-title">
           Per-File Breakdown
-          <span style="font-weight:400;font-size:12px;color:#999;margin-left:8px">
-            — one extra API call per commit
-          </span>
         </div>
-        <button class="btn-secondary" id="fetchFilesBtn" style="margin-bottom:12px">
-          Fetch Per-File Details
-        </button>
         <div class="table-wrap" id="fileTableWrap" style="display:none">
           <table>
             <thead>
               <tr>
                 <th>Project</th>
-                <th>Commit</th>
+                <th>MR</th>
                 <th>File</th>
                 <th>Added</th>
                 <th>Deleted</th>
@@ -136,7 +125,6 @@
             <tbody id="fileBody"></tbody>
           </table>
         </div>
-        <div id="fileProgress" class="progress-text" style="display:none;margin-top:8px"></div>
       </div>
     </div>
   </div>

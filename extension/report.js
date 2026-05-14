@@ -8,7 +8,7 @@ function loadForm() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) return JSON.parse(saved);
   } catch {}
-  return { baseUrl: 'https://repo.maxlifeinsurance.com/api/v4', token: '', username: '', commitAuthor: '', startDate: '', endDate: '' };
+  return { baseUrl: 'https://repo.maxlifeinsurance.com/api/v4', token: '', username: '', startDate: '', endDate: '' };
 }
 
 function saveForm(data) {
@@ -30,18 +30,16 @@ const saved = loadForm();
 $('baseUrl').value = saved.baseUrl;
 $('token').value = saved.token;
 $('username').value = saved.username;
-$('commitAuthor').value = saved.commitAuthor || '';
 $('startDate').value = saved.startDate;
 $('endDate').value = saved.endDate;
 
 // Save on input
-['baseUrl','token','username','commitAuthor','startDate','endDate'].forEach(id => {
+['baseUrl','token','username','startDate','endDate'].forEach(id => {
   $(id).addEventListener('input', () => {
     saveForm({
       baseUrl: $('baseUrl').value,
       token: $('token').value,
       username: $('username').value,
-      commitAuthor: $('commitAuthor').value,
       startDate: $('startDate').value,
       endDate: $('endDate').value,
     });
@@ -59,9 +57,6 @@ $('cancelBtn').addEventListener('click', () => {
   }
 });
 
-// Fetch per-file button
-$('fetchFilesBtn').addEventListener('click', fetchPerFileDetails);
-
 // --- GitLab API ---
 
 async function apiFetch(baseUrl, endpoint, params, token, signal) {
@@ -78,7 +73,7 @@ async function apiFetch(baseUrl, endpoint, params, token, signal) {
   if (!res.ok) {
     let body;
     try { body = await res.text(); } catch { body = ''; }
-    throw new Error(`GitLab API ${res.status}${body ? ': ' + body.slice(0, 200) : ''}`);
+    throw new Error(`GitLab API ${res.status} ${url.pathname}${body ? ': ' + body.slice(0, 200) : ''}`);
   }
   return res;
 }
@@ -88,6 +83,7 @@ async function paginate(baseUrl, endpoint, params, token, signal) {
   let page = 1;
   const perPage = 100;
   while (true) {
+    if (signal && signal.aborted) throw new Error('Cancelled');
     const res = await apiFetch(baseUrl, endpoint, { ...params, page, per_page: perPage }, token, signal);
     const data = await res.json();
     if (!Array.isArray(data) || data.length === 0) break;
@@ -103,16 +99,19 @@ function setProgress(pct, text) {
   $('progressText').textContent = text;
 }
 
-// --- Diff parser ---
+// --- LOC Calculator (same logic as Python gitlab_loc_report.py) ---
+
+const DIFF_HEADERS = ['diff --git', 'index ', '--- ', '+++ ', '@@', '\\ No newline at end of file', 'Binary files '];
+const isHeader = l => DIFF_HEADERS.some(p => l.startsWith(p));
+
 function countDiff(diffText) {
   const lines = diffText.split('\n');
   let additions = 0, deletions = 0, modified = 0;
-  const headers = ['diff --git', 'index ', '--- ', '+++ ', '@@', '\\ No newline at end of file', 'Binary files '];
-  const isH = l => headers.some(p => l.startsWith(p));
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (isH(line) || line.startsWith(' ') || line === '') continue;
+    if (isHeader(line) || line.startsWith(' ') || line === '') continue;
+
     if (line.startsWith('-') && !line.startsWith('---')) {
       if (i + 1 < lines.length && lines[i + 1].startsWith('+') && !lines[i + 1].startsWith('+++')) {
         modified++;
@@ -127,7 +126,18 @@ function countDiff(diffText) {
   return { additions, deletions, modified };
 }
 
-// --- Main report ---
+function parseFileChanges(changes) {
+  const results = [];
+  for (const change of (changes || [])) {
+    const filePath = change.new_path || change.old_path || 'UNKNOWN';
+    const diffText = change.diff || '';
+    const { additions, deletions, modified } = countDiff(diffText);
+    results.push({ file: filePath, added: additions, deleted: deletions, modified, net: additions + modified - deletions });
+  }
+  return results;
+}
+
+// --- Main report (MR-based) ---
 
 async function startReport() {
   const baseUrl = $('baseUrl').value.trim();
@@ -155,103 +165,125 @@ async function startReport() {
   $('fetchBtn').disabled = true;
 
   try {
-    // 1. Find user
-    setProgress(5, 'Searching for user...');
+    // 1. Find user by username
+    setProgress(3, 'Searching for user...');
     const usersRes = await apiFetch(baseUrl, '/users', { search: username }, token, signal);
     const users = await usersRes.json();
     if (!Array.isArray(users) || users.length === 0) {
       throw new Error(`User not found: ${username}`);
     }
     const user = users[0];
-    setProgress(10, `Found user: ${user.name} (ID: ${user.id})`);
-
-    if (!$('commitAuthor').value) {
-      $('commitAuthor').value = user.email || user.public_email || user.name || user.username;
-      saveForm({
-        baseUrl: $('baseUrl').value, token: $('token').value,
-        username: $('username').value, commitAuthor: $('commitAuthor').value,
-        startDate: $('startDate').value, endDate: $('endDate').value,
-      });
-    }
-    const commitAuthor = $('commitAuthor').value.trim();
+    const userId = user.id;
+    setProgress(5, `Found user: ${user.name} (ID: ${userId})`);
 
     // 2. List membership projects
-    setProgress(15, 'Fetching projects...');
+    setProgress(8, 'Fetching projects...');
     const projects = await paginate(baseUrl, '/projects', { membership: true }, token, signal);
     if (projects.length === 0) {
       throw new Error('No membership projects found.');
     }
-    setProgress(20, `Found ${projects.length} projects. Fetching commits...`);
+    setProgress(10, `Found ${projects.length} projects. Scanning MRs...`);
 
-    // 3. For each project, get commits by author in date range
-    const commitRows = [];
+    // 3. For each project, find merged MRs by author in date range
+    const start = new Date(startDate + 'T00:00:00Z');
+    const end = new Date(endDate + 'T23:59:59Z');
+
+    const mrRows = [];
+    const fileRows = [];
     const projectMap = {};
-    let totalAdd = 0, totalDel = 0;
-    let completedProjects = 0;
+    let grandAdded = 0, grandDeleted = 0, grandModified = 0;
+    let scannedProjects = 0, totalMatchingMRs = 0;
 
     for (const proj of projects) {
       if (signal.aborted) throw new Error('Cancelled');
 
-      const pct = 20 + Math.round((completedProjects / projects.length) * 70);
-      setProgress(pct, `[${completedProjects + 1}/${projects.length}] Checking ${proj.name || proj.path_with_namespace}...`);
-
-      const commits = await paginate(baseUrl, `/projects/${proj.id}/repository/commits`, {
-        author: commitAuthor,
-        since: startDate + 'T00:00:00Z',
-        until: endDate + 'T23:59:59Z',
-        with_stats: 'true',
-      }, token, signal);
+      const pct = 10 + Math.round((scannedProjects / projects.length) * 70);
+      setProgress(pct, `[${scannedProjects + 1}/${projects.length}] ${proj.name || proj.path_with_namespace}...`);
 
       const projName = proj.name || proj.path_with_namespace || `Project ${proj.id}`;
 
-      if (!projectMap[proj.id]) {
-        projectMap[proj.id] = { name: projName, commitCount: 0, added: 0, deleted: 0 };
-      }
+      // Fetch merged MRs by this author
+      const mrs = await paginate(baseUrl, `/projects/${proj.id}/merge_requests`, {
+        author_id: userId,
+        state: 'merged',
+        per_page: 100,
+      }, token, signal);
 
-      for (const commit of commits) {
+      let projectAdded = 0, projectDeleted = 0, projectModified = 0, projectMRs = 0;
+
+      for (const mr of mrs) {
         if (signal.aborted) throw new Error('Cancelled');
-        const stats = commit.stats || { additions: 0, deletions: 0, total: 0 };
-        totalAdd += stats.additions;
-        totalDel += stats.deletions;
 
-        projectMap[proj.id].commitCount++;
-        projectMap[proj.id].added += stats.additions;
-        projectMap[proj.id].deleted += stats.deletions;
+        const mergedAt = mr.merged_at;
+        if (!mergedAt) continue;
 
-        commitRows.push({
+        const mergedDate = new Date(mergedAt);
+        if (mergedDate < start || mergedDate > end) continue;
+
+        // Fetch MR changes (diffs)
+        const changesRes = await apiFetch(baseUrl, `/projects/${proj.id}/merge_requests/${mr.iid}/changes`, {}, token, signal);
+        const changesData = await changesRes.json();
+        const fileStats = parseFileChanges(changesData.changes || []);
+
+        const mrAdded = fileStats.reduce((s, f) => s + f.added, 0);
+        const mrDeleted = fileStats.reduce((s, f) => s + f.deleted, 0);
+        const mrModified = fileStats.reduce((s, f) => s + f.modified, 0);
+        const mrNet = mrAdded + mrModified - mrDeleted;
+
+        grandAdded += mrAdded;
+        grandDeleted += mrDeleted;
+        grandModified += mrModified;
+        projectAdded += mrAdded;
+        projectDeleted += mrDeleted;
+        projectModified += mrModified;
+        projectMRs++;
+        totalMatchingMRs++;
+
+        mrRows.push({
           project_name: projName,
           project_id: proj.id,
-          commit_id: commit.id,
-          commit_short: commit.short_id || commit.id.slice(0, 8),
-          commit_title: commit.title || '',
-          committed_at: commit.created_at || '',
-          additions: stats.additions,
-          deletions: stats.deletions,
-          total: stats.total,
+          mr_iid: mr.iid,
+          mr_title: mr.title || '',
+          merged_at: mergedAt,
+          added: mrAdded,
+          deleted: mrDeleted,
+          modified: mrModified,
+          net_loc: mrNet,
         });
+
+        for (const fs of fileStats) {
+          fileRows.push({
+            project_name: projName,
+            project_id: proj.id,
+            mr_iid: mr.iid,
+            file: fs.file,
+            added: fs.added,
+            deleted: fs.deleted,
+            modified: fs.modified,
+            net: fs.net,
+          });
+        }
       }
 
-      completedProjects++;
+      if (projectMRs > 0) {
+        projectMap[proj.id] = { name: projName, mrs: projectMRs, added: projectAdded, deleted: projectDeleted, modified: projectModified };
+      }
+
+      scannedProjects++;
     }
 
-    setProgress(93, 'Building report...');
+    setProgress(95, 'Building report...');
 
     const totals = {
-      total_added: totalAdd,
-      total_deleted: totalDel,
-      total_net: totalAdd - totalDel,
-      total_commits: commitRows.length,
+      total_added: grandAdded,
+      total_deleted: grandDeleted,
+      total_modified: grandModified,
+      total_net: grandAdded + grandModified - grandDeleted,
+      total_mrs: totalMatchingMRs,
       total_projects: Object.keys(projectMap).length,
     };
 
-    reportData = {
-      baseUrl,
-      token,
-      commit_rows: commitRows,
-      project_map: projectMap,
-      totals,
-      projects: Object.values(projectMap).map(p => p.name),
-    };
+    reportData = { mr_rows: mrRows, file_rows: fileRows, totals, project_map: projectMap };
 
     hide('progressSection');
     show('resultsSection');
@@ -274,7 +306,7 @@ async function startReport() {
 // --- Render results ---
 
 function renderResults(data) {
-  const { totals, commit_rows, project_map } = data;
+  const { totals, mr_rows, file_rows, project_map } = data;
 
   // Summary cards
   $('summaryGrid').innerHTML = `
@@ -286,141 +318,89 @@ function renderResults(data) {
       <div class="summary-value">${fmt(totals.total_deleted)}</div>
       <div class="summary-label">Lines Deleted</div>
     </div>
+    <div class="summary-card" style="border-top-color:#3498db">
+      <div class="summary-value">${fmt(totals.total_modified)}</div>
+      <div class="summary-label">Lines Modified</div>
+    </div>
     <div class="summary-card summary-card--net">
       <div class="summary-value">${fmt(totals.total_net)}</div>
       <div class="summary-label">Net LOC</div>
     </div>
     <div class="summary-card summary-card--commits">
-      <div class="summary-value">${fmt(totals.total_commits)}</div>
-      <div class="summary-label">Commits</div>
-    </div>
-    <div class="summary-card summary-card--projects">
-      <div class="summary-value">${fmt(totals.total_projects)}</div>
-      <div class="summary-label">Projects</div>
+      <div class="summary-value">${fmt(totals.total_mrs)}</div>
+      <div class="summary-label">Merge Requests</div>
     </div>
   `;
 
   // Per-project table
-  const projEntries = Object.entries(project_map).sort((a, b) => b[1].added - a[1].added);
-  $('projectBody').innerHTML = projEntries.map(([id, p]) => `
-    <tr>
-      <td>${escHtml(p.name)}</td>
-      <td>${p.commitCount}</td>
-      <td class="text-added">+${fmt(p.added)}</td>
-      <td class="text-deleted">-${fmt(p.deleted)}</td>
-      <td>${fmt(p.added - p.deleted)}</td>
-    </tr>
-  `).join('');
-  show('projectSection');
-
-  // Commits table
-  if (commit_rows.length > 0) {
-    $('commitBody').innerHTML = commit_rows.map(r => `
+  const projEntries = Object.values(project_map).sort((a, b) => b.added - a.added);
+  if (projEntries.length > 0) {
+    $('projectBody').innerHTML = projEntries.map(p => `
       <tr>
-        <td>${escHtml(r.project_name)}</td>
-        <td style="font-family:monospace;font-size:12px">${escHtml(r.commit_short)}</td>
-        <td class="text-truncate" title="${escHtml(r.commit_title)}">${escHtml(r.commit_title)}</td>
-        <td class="text-muted">${r.committed_at ? new Date(r.committed_at).toLocaleDateString('en-IN') : '-'}</td>
-        <td class="text-added">+${fmt(r.additions)}</td>
-        <td class="text-deleted">-${fmt(r.deletions)}</td>
-        <td>${fmt(r.total)}</td>
+        <td>${escHtml(p.name)}</td>
+        <td>${p.mrs}</td>
+        <td class="text-added">+${fmt(p.added)}</td>
+        <td class="text-deleted">-${fmt(p.deleted)}</td>
+        <td>${fmt(p.added + p.modified - p.deleted)}</td>
       </tr>
     `).join('');
-    show('commitSection');
-
-    if (commit_rows.length > 500) {
-      $('commitSection').querySelector('.section-title').textContent =
-        `Commits (showing ${commit_rows.length})`;
-    }
+    show('projectSection');
   }
 
-  // Per-file section (show button, data loaded on demand)
-  if (commit_rows.length > 0) {
+  // MRs table
+  if (mr_rows.length > 0) {
+    $('mrBody').innerHTML = mr_rows.map(r => `
+      <tr>
+        <td style="font-size:13px">${escHtml(r.project_name)}</td>
+        <td>!${r.mr_iid}</td>
+        <td class="text-truncate" title="${escHtml(r.mr_title)}">${escHtml(r.mr_title)}</td>
+        <td class="text-muted">${r.merged_at ? new Date(r.merged_at).toLocaleDateString('en-IN') : '-'}</td>
+        <td class="text-added">+${fmt(r.added)}</td>
+        <td class="text-deleted">-${fmt(r.deleted)}</td>
+        <td style="color:#3498db">~${fmt(r.modified)}</td>
+        <td style="font-weight:600">${fmt(r.net_loc)}</td>
+      </tr>
+    `).join('');
+    show('mrSection');
+  }
+
+  // Per-file table
+  if (file_rows.length > 0 && file_rows.length <= 500) {
+    $('fileBody').innerHTML = file_rows.map(r => `
+      <tr>
+        <td style="font-size:12px">${escHtml(r.project_name)}</td>
+        <td>!${r.mr_iid}</td>
+        <td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(r.file)}">${escHtml(r.file)}</td>
+        <td class="text-added">+${fmt(r.added)}</td>
+        <td class="text-deleted">-${fmt(r.deleted)}</td>
+        <td style="color:#3498db">~${fmt(r.modified)}</td>
+        <td>${fmt(r.net)}</td>
+      </tr>
+    `).join('');
+    show('fileTableWrap');
     show('fileSection');
+  } else if (file_rows.length > 500) {
+    show('fileSection');
+    $('fileTableWrap').style.display = 'none';
+    const note = document.createElement('p');
+    note.className = 'info-note';
+    note.textContent = `${file_rows.length} file changes found. First 500 shown in the table below.`;
+    // Show first 500
+    $('fileBody').innerHTML = file_rows.slice(0, 500).map(r => `
+      <tr>
+        <td style="font-size:12px">${escHtml(r.project_name)}</td>
+        <td>!${r.mr_iid}</td>
+        <td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(r.file)}">${escHtml(r.file)}</td>
+        <td class="text-added">+${fmt(r.added)}</td>
+        <td class="text-deleted">-${fmt(r.deleted)}</td>
+        <td style="color:#3498db">~${fmt(r.modified)}</td>
+        <td>${fmt(r.net)}</td>
+      </tr>
+    `).join('');
+    show('fileTableWrap');
   }
 
-  // Scroll to results
   $('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// --- Per-file details ---
-
-let fileDetailsLoading = false;
-
-async function fetchPerFileDetails() {
-  if (fileDetailsLoading) return;
-  if (!reportData) return;
-
-  fileDetailsLoading = true;
-  $('fetchFilesBtn').disabled = true;
-  $('fetchFilesBtn').textContent = 'Loading...';
-  show('fileProgress');
-  $('fileProgress').textContent = 'Fetching diffs for each commit...';
-  hide('fileTableWrap');
-
-  const signal = abortController ? abortController.signal : new AbortController().signal;
-  const { baseUrl, token, commit_rows } = reportData;
-  const fileRows = [];
-  let completed = 0;
-
-  try {
-    for (const commit of commit_rows) {
-      if (signal.aborted) throw new Error('Cancelled');
-
-      $('fileProgress').textContent = `[${completed + 1}/${commit_rows.length}] ${commit.project_name}: ${commit.commit_short}`;
-
-      const res = await apiFetch(baseUrl, `/projects/${commit.project_id}/repository/commits/${commit.commit_id}/diff`, {}, token, signal);
-      const diffs = await res.json();
-
-      if (Array.isArray(diffs)) {
-        for (const diff of diffs) {
-          const filePath = diff.new_path || diff.old_path || 'UNKNOWN';
-          const result = countDiff(diff.diff || '');
-          fileRows.push({
-            project_name: commit.project_name,
-            commit_short: commit.commit_short,
-            file: filePath,
-            added: result.additions,
-            deleted: result.deletions,
-            modified: result.modified,
-            net: result.additions + result.modified - result.deletions,
-          });
-        }
-      }
-
-      completed++;
-    }
-
-    // Render file table
-    if (fileRows.length > 0) {
-      $('fileBody').innerHTML = fileRows.map(r => `
-        <tr>
-          <td>${escHtml(r.project_name)}</td>
-          <td style="font-family:monospace;font-size:12px">${escHtml(r.commit_short)}</td>
-          <td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(r.file)}">${escHtml(r.file)}</td>
-          <td class="text-added">+${r.added}</td>
-          <td class="text-deleted">-${r.deleted}</td>
-          <td style="color:#3498db">~${r.modified}</td>
-          <td>${r.net}</td>
-        </tr>
-      `).join('');
-      show('fileTableWrap');
-      $('fileProgress').textContent = `${fileRows.length} file changes across ${commit_rows.length} commits.`;
-    } else {
-      $('fileProgress').textContent = 'No file changes found.';
-    }
-
-  } catch (err) {
-    if (err.message === 'Cancelled') {
-      $('fileProgress').textContent = 'Cancelled.';
-    } else {
-      $('fileProgress').textContent = `Error: ${err.message}`;
-    }
-  } finally {
-    fileDetailsLoading = false;
-    $('fetchFilesBtn').disabled = false;
-    $('fetchFilesBtn').textContent = 'Fetch Per-File Details';
-  }
 }
 
 // --- Helpers ---
