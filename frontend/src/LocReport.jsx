@@ -24,6 +24,21 @@ export default function LocReport({ theme, toggleTheme }) {
 
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
+  const proxyFetch = async (target) => {
+    const res = await fetch('/.netlify/functions/gitlab-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target, token: form.token }),
+    });
+    const result = await res.json();
+    if (!res.ok) throw new Error(`Proxy error: ${result.error}`);
+    if (result.status >= 400) {
+      if (result.status === 404) return null;
+      throw new Error(`GitLab API error (${result.status}): ${JSON.stringify(result.data).slice(0, 200)}`);
+    }
+    return result.data;
+  };
+
   const fetchReport = async () => {
     setError('');
     setReport(null);
@@ -35,18 +50,12 @@ export default function LocReport({ theme, toggleTheme }) {
     setLoading(true);
     try {
       const base = form.baseUrl.replace(/\/+$/, '');
-      const headers = { 'PRIVATE-TOKEN': form.token };
       const since = `${form.startDate}T00:00:00Z`;
       const until = `${form.endDate}T23:59:59Z`;
 
       // 1. Fetch all projects (membership)
-      const projRes = await fetch(`${base}/projects?membership=true&per_page=100&simple=true`, { headers });
-      if (!projRes.ok) {
-        const body = await projRes.text().catch(() => '');
-        throw new Error(`Failed to fetch projects (${projRes.status}): ${body.slice(0, 200)}`);
-      }
-      const projects = await projRes.json();
-      if (!projects.length) {
+      const projects = await proxyFetch(`${base}/projects?membership=true&per_page=100&simple=true`);
+      if (!projects || !projects.length) {
         throw new Error('No projects found for this token. Check membership.');
       }
 
@@ -64,18 +73,12 @@ export default function LocReport({ theme, toggleTheme }) {
         let projectCommits = [];
         while (true) {
           const url = `${base}/projects/${pid}/repository/commits?since=${since}&until=${until}&author=${encodeURIComponent(form.userId)}&per_page=100&page=${page}`;
-          const res = await fetch(url, { headers });
-          if (!res.ok) {
-            if (res.status === 404) break; // repo may not exist
-            const body = await res.text().catch(() => '');
-            throw new Error(`Failed to fetch commits for ${pname} (${res.status}): ${body.slice(0, 200)}`);
-          }
-          const commits = await res.json();
-          if (!commits.length) break;
+          const commits = await proxyFetch(url);
+          if (!commits || !commits.length) break;
           projectCommits = projectCommits.concat(commits);
           if (commits.length < 100) break;
           page++;
-          await new Promise(r => setTimeout(r, 100)); // rate limit backoff
+          await new Promise(r => setTimeout(r, 100));
         }
 
         if (!projectCommits.length) continue;
@@ -104,7 +107,7 @@ export default function LocReport({ theme, toggleTheme }) {
         processedProjects.push({ project: pname, commits: projectCommits.length, added, deleted });
         projectRows.push({ project: pname, commits: projectCommits.length, added, deleted });
 
-        await new Promise(r => setTimeout(r, 100)); // rate limit backoff
+        await new Promise(r => setTimeout(r, 100));
       }
 
       if (!processedProjects.length) {
@@ -115,14 +118,12 @@ export default function LocReport({ theme, toggleTheme }) {
       const totalDeleted = sumKey(projectRows, 'deleted');
       const totalCommits = commitRows.length;
       const netLoc = totalAdded - totalDeleted;
-      const modified = commitRows.filter(c => c.added > 0 && c.deleted > 0).length;
 
       setReport({
         totalCommits,
         totalAdded,
         totalDeleted,
         netLoc,
-        modified,
         projects: processedProjects,
         commits: commitRows,
       });
