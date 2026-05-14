@@ -31,8 +31,9 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             return
         if self.path == '/bridge.html':
             html = '''<!DOCTYPE html>
-<script>
+<html><body><script>
 window.addEventListener("message", async (e) => {
+  if (!e.data.target) return;
   try {
     const r = await fetch("/proxy", {
       method:"POST",
@@ -47,7 +48,7 @@ window.addEventListener("message", async (e) => {
     e.source.postMessage({id:e.data.id, ok:false, error:err.message}, "*");
   }
 });
-</script>'''
+</script></body></html>'''
             self._send(200, html, 'text/html')
             return
         self._json(404, {'error': 'Not found'})

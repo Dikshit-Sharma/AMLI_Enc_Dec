@@ -61,10 +61,12 @@ export default function LocReport({ theme, toggleTheme }) {
       pendingRef.current[id] = { resolve, reject };
       const timeout = setTimeout(() => {
         delete pendingRef.current[id];
-        reject(new Error('Bridge request timed out'));
-      }, 30000);
+        reject(new Error(`Bridge request timed out for: ${target.split('?')[0]}`));
+      }, 90000);
       pendingRef.current[id].timeout = timeout;
-      iframeRef.current?.contentWindow?.postMessage({ id, target, token }, '*');
+      const bw = iframeRef.current?.contentWindow;
+      if (!bw) { clearTimeout(timeout); reject(new Error('Bridge iframe not ready')); return; }
+      bw.postMessage({ id, target, token }, '*');
     });
   }, []);
 
@@ -233,7 +235,7 @@ export default function LocReport({ theme, toggleTheme }) {
         <iframe ref={iframeRef} src={BRIDGE_URL}
           onLoad={() => { bridgeReadyRef.current = true; setProxyStatus(PROXY.LOCAL); }}
           onError={() => { setProxyStatus(PROXY.NETLIFY); }}
-          style={{ display: 'none' }} title="proxy-bridge" />
+          style={{ position: 'absolute', width: '1px', height: '1px', left: '-9999px', border: 'none' }} title="proxy-bridge" />
 
         <h1>LOC REPORT</h1>
         <p className="field-label" style={{ color: 'var(--text-muted)', textTransform: 'none', fontSize: '1rem', marginBottom: '2rem' }}>
