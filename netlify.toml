@@ -5,8 +5,8 @@
   functions = "netlify/functions"
 
 [[redirects]]
-  from = "/api/*"
-  to = "https://us-central1-apilib-5f40d.cloudfunctions.net/artifacts"
+  from = "/api/artifacts"
+  to = "/.netlify/functions/artifacts"
   status = 200
 
 [[redirects]]
