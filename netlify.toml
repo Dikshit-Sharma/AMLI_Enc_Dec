@@ -10,6 +10,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/credentials"
+  to = "/.netlify/functions/credentials"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

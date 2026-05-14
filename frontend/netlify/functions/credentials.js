@@ -15,7 +15,7 @@ const db = admin.firestore();
 const handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
   };
 
@@ -26,21 +26,17 @@ const handler = async (event) => {
   try {
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};
-      const limit = Math.min(parseInt(params.limit) || 50, 100);
-      const cursor = params.cursor || null;
+      const env = params.env;
 
-      let query = db
-        .collection('artifacts')
-        .orderBy('timestamp', 'desc')
-        .limit(limit);
+      let query = db.collection('credentials').orderBy('timestamp', 'desc');
 
-      if (cursor) {
-        query = query.startAfter(new Date(cursor));
+      if (env) {
+        query = query.where('env', '==', env);
       }
 
       const snapshot = await query.get();
 
-      const artifacts = snapshot.docs.map((doc) => {
+      const credentials = snapshot.docs.map((doc) => {
         const data = doc.data();
         return {
           id: doc.id,
@@ -49,44 +45,60 @@ const handler = async (event) => {
         };
       });
 
-      const nextCursor =
-        snapshot.docs.length === limit
-          ? snapshot.docs[snapshot.docs.length - 1]
-              .data()
-              .timestamp?.toDate?.()
-              ?.toISOString() ?? null
-          : null;
-
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ artifacts, nextCursor }),
+        body: JSON.stringify({ credentials }),
       };
     }
 
     if (event.httpMethod === 'POST') {
-      const { artifacts } = JSON.parse(event.body || '{}');
-      if (!Array.isArray(artifacts) || artifacts.length === 0) {
+      const { soaAppId, env, apiName, xApiKey, clientId, clientSecret, aesKey } =
+        JSON.parse(event.body || '{}');
+
+      if (!soaAppId || !env) {
         return {
           statusCode: 400,
           headers,
-          body: JSON.stringify({ error: 'artifacts array is required' }),
+          body: JSON.stringify({ error: 'soaAppId and env are required' }),
         };
       }
 
-      const ids = [];
-      for (const art of artifacts) {
-        const ref = await db.collection('artifacts').add({
-          ...art,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        ids.push(ref.id);
-      }
+      const ref = await db.collection('credentials').add({
+        soaAppId,
+        env,
+        apiName: apiName || '',
+        xApiKey: xApiKey || '',
+        clientId: clientId || '',
+        clientSecret: clientSecret || '',
+        aesKey: aesKey || '',
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids, count: ids.length }),
+        body: JSON.stringify({ id: ref.id }),
+      };
+    }
+
+    if (event.httpMethod === 'DELETE') {
+      const { id } = JSON.parse(event.body || '{}');
+
+      if (!id) {
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'id is required' }),
+        };
+      }
+
+      await db.collection('credentials').doc(id).delete();
+
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ ok: true }),
       };
     }
 

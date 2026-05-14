@@ -45,8 +45,8 @@ export default function LibraryInsights({ onClose }) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const docs = await fetchArtifacts();
-        setData(aggregate(docs));
+        const res = await fetchArtifacts();
+        setData(aggregate(res.artifacts));
       } catch (err) {
         console.error('Failed to load insights:', err);
       } finally {

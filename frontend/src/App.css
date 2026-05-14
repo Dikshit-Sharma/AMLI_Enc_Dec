@@ -1008,6 +1008,118 @@ button:disabled {
   height: 100% !important;
 }
 
+/* ─── Dashboard Stats ─── */
+.dashboard-stats {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-bottom: 3rem;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  padding: 1.25rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 100px;
+  transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 8px 24px var(--primary-glow);
+}
+
+.stat-card--link {
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+}
+
+.stat-value {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--primary);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ─── Recent Section ─── */
+.recent-section {
+  margin-top: 3rem;
+}
+
+.recent-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--text);
+}
+
+.recent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.recent-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 1rem;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.recent-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 16px var(--primary-glow);
+}
+
+.recent-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.recent-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.recent-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.recent-card-body strong {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.recent-ticket {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 600;
+}
+
 /* ─── HomePage Styles ─── */
 .home-container {
   max-width: 1450px;

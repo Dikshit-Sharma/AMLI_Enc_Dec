@@ -7,7 +7,9 @@ import HomePage from './HomePage';
 import ArtifactsPage from './ArtifactsPage';
 import { encrypt, decrypt, encryptCBC, decryptCBC, generateAESKeyHex, hexToBase64, base64ToHex } from './cryptoUtil';
 import LibraryPage from './LibraryPage';
-
+import CredentialsPage from './CredentialsPage';
+import HotkeyHelp from './HotkeyHelp';
+import useHotkeys from './hooks/useHotkeys';
 import OnboardingBot from './OnboardingBot';
 import QuickAnswerBot from './QuickAnswerBot';
 
@@ -17,30 +19,31 @@ function App() {
   const [outputResult, setOutputResult] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState('GCM'); // 'GCM' or 'CBC'
+  const [mode, setMode] = useState('GCM');
   const [isSideBySide, setIsSideBySide] = useState(true);
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const [hexKeyConverter, setHexKeyConverter] = useState('');
   const [base64KeyConverter, setBase64KeyConverter] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showHotkeys, setShowHotkeys] = useState(false);
 
   const location = useLocation();
 
-  // Handle Adaptive Layout Body Classes
-  React.useEffect(() => {
-    // Force fixed layout (no page scroll) for ALL Cipher tool modes (Side and Stack)
-    const isCipherPage = location.pathname === '/cipher';
+  useHotkeys({
+    onToggleHelp: () => setShowHotkeys((p) => !p),
+    onEscape: () => setShowHotkeys(false),
+  });
 
+  React.useEffect(() => {
+    const isCipherPage = location.pathname === '/cipher';
     if (isCipherPage) {
       document.body.classList.add('layout-fixed');
     } else {
       document.body.classList.remove('layout-fixed');
     }
-
     return () => document.body.classList.remove('layout-fixed');
   }, [location.pathname]);
 
-  // Apply theme to document
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
@@ -153,6 +156,7 @@ function App() {
       <Route path="/" element={<HomePage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/artifacts" element={<ArtifactsPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/credentials" element={<CredentialsPage theme={theme} toggleTheme={toggleTheme} />} />
 
       <Route path="/cipher" element={
         <div className="container">
@@ -253,6 +257,8 @@ function App() {
         </div>
       } />
     </Routes>
+
+    {showHotkeys && <HotkeyHelp onClose={() => setShowHotkeys(false)} />}
     </>
   );
 }

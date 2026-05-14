@@ -6,6 +6,8 @@ import { decrypt, decryptCBC } from './cryptoUtil';
 import ArtifactComparator from './ArtifactComparator';
 import LibraryInsights from './LibraryInsights';
 
+const PAGE_SIZE = 20;
+
 const LibraryPage = ({ theme, toggleTheme }) => {
   const [artifacts, setArtifacts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,30 +21,49 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   const [compareArtifacts, setCompareArtifacts] = useState(null);
   const [showInsights, setShowInsights] = useState(false);
 
+  const [cursorStack, setCursorStack] = useState([]);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [pageNum, setPageNum] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+
   const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
+
+  const loadPage = async (cursor) => {
+    setLoading(true);
+    try {
+      const res = await fetchArtifacts({ limit: PAGE_SIZE, cursor });
+      setArtifacts(res.artifacts || []);
+      setNextCursor(res.nextCursor);
+      setHasMore(!!res.nextCursor);
+    } catch (err) {
+      console.error('Failed to load artifacts:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!isAuthenticated) return;
-
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const docs = await fetchArtifacts();
-        if (!cancelled) {
-          setArtifacts(docs);
-          setLoading(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error('Failed to load artifacts:', err);
-          setLoading(false);
-        }
-      }
-    };
-    load();
-
-    return () => { cancelled = true; };
+    loadPage(null);
+    setCursorStack([]);
+    setPageNum(1);
   }, [isAuthenticated]);
+
+  const handleNextPage = () => {
+    if (!nextCursor) return;
+    setCursorStack((prev) => [...prev, nextCursor]);
+    setPageNum((p) => p + 1);
+    loadPage(nextCursor);
+  };
+
+  const handlePrevPage = () => {
+    if (cursorStack.length === 0) return;
+    const prev = cursorStack.slice(0, -1);
+    const prevCursor = prev.length > 0 ? prev[prev.length - 1] : null;
+    setCursorStack(prev);
+    setPageNum((p) => p - 1);
+    loadPage(prevCursor);
+  };
 
   const handlePasswordSubmit = (e) => {
     e.preventDefault();
@@ -55,7 +76,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     }
   };
 
-  const filteredArtifacts = artifacts.filter(art =>
+  const filteredArtifacts = artifacts.filter((art) =>
     art.apiName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     art.jiraTicket?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -65,52 +86,65 @@ const LibraryPage = ({ theme, toggleTheme }) => {
 
   const handleCopyCurl = (id, curl) => {
     navigator.clipboard.writeText(curl).then(() => {
-      setCopyStatus(prev => ({ ...prev, [id]: true }));
+      setCopyStatus((prev) => ({ ...prev, [id]: true }));
       setTimeout(() => {
-        setCopyStatus(prev => ({ ...prev, [id]: false }));
+        setCopyStatus((prev) => ({ ...prev, [id]: false }));
       }, 2000);
     });
   };
 
   const handleDownload = async (art) => {
-    setDownloadingStatus(prev => ({ ...prev, [art.id]: true }));
+    setDownloadingStatus((prev) => ({ ...prev, [art.id]: true }));
     try {
       await generateAndDownloadZip([art], decrypt, decryptCBC);
     } catch (err) {
-      console.error("Re-download failed:", err);
-      alert("Re-download failed: " + err.message);
+      console.error('Re-download failed:', err);
+      alert('Re-download failed: ' + err.message);
     } finally {
-      setDownloadingStatus(prev => ({ ...prev, [art.id]: false }));
+      setDownloadingStatus((prev) => ({ ...prev, [art.id]: false }));
     }
   };
 
   const toggleSelect = (id) => {
-    setSelectedIds(prev => {
-      if (prev.includes(id)) return prev.filter(i => i !== id);
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) return prev.filter((i) => i !== id);
       return [...prev, id];
     });
   };
 
   const handleCompare = () => {
     const [idA, idB] = selectedIds.slice(0, 2);
-    const a = artifacts.find(a => a.id === idA);
-    const b = artifacts.find(b => b.id === idB);
+    const a = artifacts.find((a) => a.id === idA);
+    const b = artifacts.find((b) => b.id === idB);
     if (a && b) setCompareArtifacts({ artifactA: a, artifactB: b });
   };
 
   const handleBulkDownload = () => {
-    const selected = artifacts.filter(a => selectedIds.includes(a.id));
+    const selected = artifacts.filter((a) => selectedIds.includes(a.id));
     if (selected.length === 0) return;
-    generateBulkZip(selected, decrypt, decryptCBC).catch(err => alert('Download failed: ' + err.message));
+    generateBulkZip(selected, decrypt, decryptCBC).catch((err) =>
+      alert('Download failed: ' + err.message)
+    );
   };
 
   if (!isAuthenticated) {
     return (
       <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <div className="card" style={{ maxWidth: '500px', flex: 'none', height: 'auto' }}>
-          <Link to="/" className="back-link">← Back to Home</Link>
+          <Link to="/" className="back-link">
+            ← Back to Home
+          </Link>
           <h2 style={{ marginTop: '1.5rem' }}>Library Protected</h2>
-          <p className="field-label" style={{ color: 'var(--text-muted)', textTransform: 'none', marginBottom: '2rem' }}>Please enter the secret password to access the API Library.</p>
+          <p
+            className="field-label"
+            style={{
+              color: 'var(--text-muted)',
+              textTransform: 'none',
+              marginBottom: '2rem',
+            }}
+          >
+            Please enter the secret password to access the API Library.
+          </p>
           <form onSubmit={handlePasswordSubmit}>
             <div className="form-group">
               <input
@@ -122,8 +156,18 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                 autoFocus
               />
             </div>
-            {passError && <div className="error-message"><span>⚠️ {passError}</span></div>}
-            <button type="submit" className="btn-primary full-width" style={{ marginTop: '2rem' }}>Unlock Library</button>
+            {passError && (
+              <div className="error-message">
+                <span>⚠️ {passError}</span>
+              </div>
+            )}
+            <button
+              type="submit"
+              className="btn-primary full-width"
+              style={{ marginTop: '2rem' }}
+            >
+              Unlock Library
+            </button>
           </form>
         </div>
       </div>
@@ -133,24 +177,63 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   return (
     <div className="container">
       <div className="card">
-        <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '1rem' }}>
+        <div
+          className="top-nav-row"
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '1.5rem',
+            gap: '1rem',
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <Link to="/" className="back-link" style={{ marginBottom: 0 }}>← Back</Link>
+            <Link to="/" className="back-link" style={{ marginBottom: 0 }}>
+              ← Back
+            </Link>
             <button className="theme-toggle" onClick={toggleTheme}>
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-            <span className="badge-ticket" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <Link
+              to="/credentials"
+              className="badge-ticket link"
+              style={{
+                padding: '0.5rem 1rem',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                background: 'rgba(16,185,129,0.15)',
+                border: '1px solid rgba(16,185,129,0.3)',
+                color: 'var(--success)',
+                borderRadius: '0.75rem',
+              }}
+            >
+              🔑 Credentials
+            </Link>
+            <span
+              className="badge-ticket"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+              }}
+            >
               Total: {artifacts.length}
             </span>
             {selectedIds.length > 0 && (
               <>
                 <button
                   style={{
-                    background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)',
-                    borderRadius: '0.75rem', padding: '0.5rem 1rem', cursor: 'pointer',
-                    color: 'var(--success)', fontSize: '0.8rem', fontWeight: 600, width: 'auto', flex: 'none'
+                    background: 'rgba(16,185,129,0.15)',
+                    border: '1px solid rgba(16,185,129,0.3)',
+                    borderRadius: '0.75rem',
+                    padding: '0.5rem 1rem',
+                    cursor: 'pointer',
+                    color: 'var(--success)',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    width: 'auto',
+                    flex: 'none',
                   }}
                   onClick={handleBulkDownload}
                 >
@@ -159,7 +242,12 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                 {selectedIds.length === 2 && (
                   <button
                     className="btn-primary"
-                    style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', width: 'auto', flex: 'none' }}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      fontSize: '0.8rem',
+                      width: 'auto',
+                      flex: 'none',
+                    }}
                     onClick={handleCompare}
                   >
                     ↔ Compare
@@ -169,9 +257,16 @@ const LibraryPage = ({ theme, toggleTheme }) => {
             )}
             <button
               style={{
-                background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)',
-                borderRadius: '0.75rem', padding: '0.5rem 1rem', cursor: 'pointer',
-                color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 600, width: 'auto', flex: 'none'
+                background: 'rgba(99,102,241,0.15)',
+                border: '1px solid rgba(99,102,241,0.3)',
+                borderRadius: '0.75rem',
+                padding: '0.5rem 1rem',
+                cursor: 'pointer',
+                color: 'var(--primary)',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                width: 'auto',
+                flex: 'none',
               }}
               onClick={() => setShowInsights(true)}
             >
@@ -197,7 +292,9 @@ const LibraryPage = ({ theme, toggleTheme }) => {
           {loading ? (
             <div className="loading-state" style={{ textAlign: 'center', padding: '4rem' }}>
               <div className="loader" style={{ margin: '0 auto' }}></div>
-              <p style={{ marginTop: '1.5rem', color: 'var(--text-muted)' }}>Loading library...</p>
+              <p style={{ marginTop: '1.5rem', color: 'var(--text-muted)' }}>
+                Loading library...
+              </p>
             </div>
           ) : (
             <div className="table-responsive">
@@ -216,18 +313,31 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                 <tbody>
                   {filteredArtifacts.length > 0 ? (
                     filteredArtifacts.map((art, index) => (
-                      <tr key={art.id} style={{ cursor: 'pointer' }} onClick={() => toggleSelect(art.id)}>
-                        <td onClick={e => e.stopPropagation()}>
+                      <tr
+                        key={art.id}
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => toggleSelect(art.id)}
+                      >
+                        <td onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             checked={selectedIds.includes(art.id)}
                             onChange={() => toggleSelect(art.id)}
-                            style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                            style={{
+                              width: '16px',
+                              height: '16px',
+                              cursor: 'pointer',
+                              accentColor: 'var(--primary)',
+                            }}
                           />
                         </td>
-                        <td>{index + 1}</td>
+                        <td>{(pageNum - 1) * PAGE_SIZE + index + 1}</td>
                         <td style={{ fontWeight: 600 }}>{art.apiName}</td>
-                        <td><span className="badge-env" data-env={art.env}>{art.env || 'DEV'}</span></td>
+                        <td>
+                          <span className="badge-env" data-env={art.env}>
+                            {art.env || 'DEV'}
+                          </span>
+                        </td>
                         <td>
                           <a
                             href={`https://axismaxlife.atlassian.net/browse/${art.jiraTicket}`}
@@ -239,9 +349,11 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                           </a>
                         </td>
                         <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                          {toDate(art.timestamp)?.toLocaleString('en-IN', { dateStyle: 'medium' }) || 'Unknown'}
+                          {toDate(art.timestamp)?.toLocaleString('en-IN', {
+                            dateStyle: 'medium',
+                          }) || 'Unknown'}
                         </td>
-                        <td onClick={e => e.stopPropagation()}>
+                        <td onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <button
                               className={`copy-icon-btn ${copyStatus[art.id] ? 'copied' : ''}`}
@@ -256,7 +368,11 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                               disabled={downloadingStatus[art.id]}
                               title="Download ZIP"
                             >
-                              {downloadingStatus[art.id] ? <div className="loader tiny"></div> : '📦'}
+                              {downloadingStatus[art.id] ? (
+                                <div className="loader tiny"></div>
+                              ) : (
+                                '📦'
+                              )}
                             </button>
                           </div>
                         </td>
@@ -264,13 +380,78 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No results found.</td>
+                      <td
+                        colSpan="7"
+                        style={{
+                          textAlign: 'center',
+                          padding: '3rem',
+                          color: 'var(--text-muted)',
+                        }}
+                      >
+                        No results found.
+                      </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
           )}
+
+          <div
+            className="pagination-bar"
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              gap: '1rem',
+              marginTop: '1.5rem',
+              padding: '1rem 0',
+            }}
+          >
+            <button
+              className="btn-pagination"
+              disabled={cursorStack.length === 0}
+              onClick={handlePrevPage}
+              style={{
+                background: cursorStack.length === 0
+                  ? 'rgba(255,255,255,0.05)'
+                  : 'var(--input-bg)',
+                border: '1px solid var(--border)',
+                borderRadius: '0.75rem',
+                padding: '0.5rem 1.25rem',
+                cursor: cursorStack.length === 0 ? 'not-allowed' : 'pointer',
+                color: cursorStack.length === 0 ? 'var(--text-muted)' : 'var(--text)',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                opacity: cursorStack.length === 0 ? 0.5 : 1,
+              }}
+            >
+              ← Prev
+            </button>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Page {pageNum}
+            </span>
+            <button
+              className="btn-pagination"
+              disabled={!hasMore}
+              onClick={handleNextPage}
+              style={{
+                background: !hasMore
+                  ? 'rgba(255,255,255,0.05)'
+                  : 'var(--input-bg)',
+                border: '1px solid var(--border)',
+                borderRadius: '0.75rem',
+                padding: '0.5rem 1.25rem',
+                cursor: !hasMore ? 'not-allowed' : 'pointer',
+                color: !hasMore ? 'var(--text-muted)' : 'var(--text)',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                opacity: !hasMore ? 0.5 : 1,
+              }}
+            >
+              Next →
+            </button>
+          </div>
         </div>
       </div>
 
@@ -278,7 +459,10 @@ const LibraryPage = ({ theme, toggleTheme }) => {
         <ArtifactComparator
           artifactA={compareArtifacts.artifactA}
           artifactB={compareArtifacts.artifactB}
-          onClose={() => { setCompareArtifacts(null); setSelectedIds([]); }}
+          onClose={() => {
+            setCompareArtifacts(null);
+            setSelectedIds([]);
+          }}
         />
       )}
 

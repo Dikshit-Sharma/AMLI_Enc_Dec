@@ -23,8 +23,8 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   React.useEffect(() => {
     const loadLibrary = async () => {
       try {
-        const docs = await fetchArtifacts();
-        setLibraryForPaste(docs);
+        const res = await fetchArtifacts();
+        setLibraryForPaste(res.artifacts);
       } catch { /* library load is non-critical */ }
     };
     loadLibrary();
