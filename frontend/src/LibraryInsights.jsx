@@ -216,11 +216,10 @@ export default function LibraryInsights({ onClose }) {
                 </div>
                 <div className="insights-ai-summary">{aiSummary.aiSummary.replace(/^[\s]*[-*•]\s+/gm, '').replace(/^[\s]*\d+[.)]\s+/gm, '').replace(/\n{2,}/g, '\n').replace(/\n/g, ' ')}</div>
                 {aiSummary.recommendation && (
-                  <div className="insights-ai-recommendation">
-                    <span className="insights-ai-rec-icon">💡</span>
-                    <div>
-                      <div className="insights-ai-rec-label">Recommendation</div>
-                      <div className="insights-ai-rec-text">{aiSummary.recommendation}</div>
+                  <div className="insights-ai-recs">
+                    <div className="insights-ai-recs-title">Recommendation</div>
+                    <div className="insights-ai-recs-list">
+                      <div className="insights-ai-rec-row">{aiSummary.recommendation}</div>
                     </div>
                   </div>
                 )}

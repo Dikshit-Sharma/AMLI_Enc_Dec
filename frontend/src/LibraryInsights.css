@@ -194,33 +194,30 @@
   white-space: pre-wrap;
 }
 
-.insights-ai-recommendation {
-  margin: 0.75rem;
-  padding: 0.85rem 1rem;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  border-radius: 0.75rem;
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-start;
+.insights-ai-recs {
+  padding: 0 1rem 1rem;
 }
 
-.insights-ai-rec-icon {
-  font-size: 1.25rem;
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-}
-
-.insights-ai-rec-label {
+.insights-ai-recs-title {
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--success);
-  margin-bottom: 0.25rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
 }
 
-.insights-ai-rec-text {
+.insights-ai-recs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.insights-ai-rec-row {
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 0.5rem;
   font-size: 0.85rem;
   line-height: 1.5;
   color: var(--text);
