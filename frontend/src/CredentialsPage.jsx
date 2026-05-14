@@ -4,6 +4,13 @@ import { fetchCredentials, addCredential, deleteCredential, fetchArtifacts } fro
 
 const ENVS = ['DEV', 'UAT', 'PROD'];
 
+const CREDENTIAL_KEYS = [
+  'x-api-key', 'x-apigw-api-id', 'xapigwapiid',
+  'clientid', 'client_id', 'client-id',
+  'clientsecret', 'client_secret', 'client-secret',
+  'appid', 'soaappid',
+];
+
 function parseCurlForHeaders(curlString) {
   const headers = {};
   if (!curlString) return headers;
@@ -18,21 +25,61 @@ function parseCurlForHeaders(curlString) {
   return headers;
 }
 
-const TARGET_HEADERS = ['x-api-key', 'clientid', 'clientsecret', 'client_id', 'client_secret'];
+function parseCurlBody(curlString) {
+  if (!curlString) return null;
+  const bodyMatch = curlString.match(/-(?:d|-data(?:-raw)?)\s+["']({[\s\S]+?})["']/);
+  if (!bodyMatch) return null;
+  try {
+    return JSON.parse(bodyMatch[1]);
+  } catch {
+    return null;
+  }
+}
+
+function findCredentialsInObject(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 3) return {};
+  const found = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const lk = key.toLowerCase();
+    if (typeof value === 'string' && value.length > 0) {
+      for (const ck of CREDENTIAL_KEYS) {
+        if (lk === ck) {
+          found[ck] = value;
+        }
+      }
+    }
+    if (typeof value === 'object') {
+      const nested = findCredentialsInObject(value, depth + 1);
+      Object.assign(found, nested);
+    }
+  }
+  return found;
+}
 
 function extractFromArtifact(art) {
   if (!art.env) return null;
-  const parsed = parseCurlForHeaders(art.curl);
-  const lowerParsed = {};
-  for (const [k, v] of Object.entries(parsed)) {
-    lowerParsed[k.toLowerCase()] = v;
+
+  const found = {};
+
+  const headers = parseCurlForHeaders(art.curl);
+  for (const [k, v] of Object.entries(headers)) {
+    const lk = k.toLowerCase();
+    for (const ck of CREDENTIAL_KEYS) {
+      if (lk === ck) found[ck] = v;
+    }
   }
 
-  const xApiKey = TARGET_HEADERS.reduce((found, h) => found || lowerParsed[h] || '', '');
-  const clientId = lowerParsed['clientid'] || lowerParsed['client_id'] || '';
-  const clientSecret = lowerParsed['clientsecret'] || lowerParsed['client_secret'] || '';
+  const body = parseCurlBody(art.curl);
+  if (body) {
+    Object.assign(found, findCredentialsInObject(body));
+  }
 
-  if (!xApiKey && !clientId && !clientSecret && !art.aesKey) return null;
+  const xApiKey = found['x-api-key'] || found['x-apigw-api-id'] || found['xapigwapiid'] || '';
+  const clientId = found['clientid'] || found['client_id'] || found['client-id'] || '';
+  const clientSecret = found['clientsecret'] || found['client_secret'] || found['client-secret'] || '';
+  const aesKey = art.aesKey || found['aeskey'] || '';
+
+  if (!xApiKey && !clientId && !clientSecret && !aesKey) return null;
 
   return {
     id: `art_${art.id}`,
@@ -42,7 +89,7 @@ function extractFromArtifact(art) {
     xApiKey,
     clientId,
     clientSecret,
-    aesKey: art.aesKey || '',
+    aesKey,
     _source: 'artifact',
   };
 }
@@ -185,6 +232,7 @@ export default function CredentialsPage({ theme, toggleTheme }) {
       }
 
       setAllCreds(grouped);
+      console.log(`Loaded ${artRes?.artifacts?.length || 0} artifacts, extracted credentials per env:`, Object.fromEntries(ENVS.map(e => [e, extracted[e]?.length || 0])));
     } catch (err) {
       console.error('Failed to load credentials:', err);
     } finally {

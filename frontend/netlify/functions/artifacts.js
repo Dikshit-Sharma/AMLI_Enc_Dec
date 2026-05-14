@@ -29,8 +29,11 @@ const handler = async (event) => {
       const limit = params.limit ? Math.min(parseInt(params.limit), 200) : null;
       const cursor = params.cursor || null;
 
-      const countSnap = await db.collection('artifacts').count().get();
-      const total = countSnap.data().count;
+      let total = 0;
+      try {
+        const countSnap = await db.collection('artifacts').count().get();
+        total = countSnap.data().count;
+      } catch (_) { /* count aggregation may not be available */ }
 
       let query = db.collection('artifacts').orderBy('timestamp', 'desc');
       if (limit) query = query.limit(limit);
