@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchCredentials, addCredential, deleteCredential, fetchArtifacts } from './api';
+import { SkeletonTableRows } from './Skeleton';
 
 const ENVS = ['DEV', 'UAT', 'PROD'];
 
@@ -424,9 +425,24 @@ export default function CredentialsPage({ theme, toggleTheme }) {
         {expandForm && <AddForm env={activeEnv} onAdded={() => { loadAll(); setExpandForm(false); }} />}
 
         {loading ? (
-          <div className="loading-state" style={{ textAlign: 'center', padding: '4rem' }}>
-            <div className="loader" style={{ margin: '0 auto' }}></div>
-            <p style={{ marginTop: '1.5rem', color: 'var(--text-muted)' }}>Loading credentials...</p>
+          <div className="table-responsive">
+            <table className="api-table">
+              <thead>
+                <tr>
+                  <th>SOA App ID</th>
+                  <th>API Name</th>
+                  <th>x-api-key</th>
+                  <th>Client ID</th>
+                  <th>Client Secret</th>
+                  <th>AES Key</th>
+                  <th>Source</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <SkeletonTableRows rows={6} cols={8} />
+              </tbody>
+            </table>
           </div>
         ) : creds.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>

@@ -1423,6 +1423,124 @@ button:disabled {
   border-color: var(--success);
 }
 
+/* ─── Chart Styles ─── */
+.chart-section {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+}
+
+.chart-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.chart-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2rem;
+  height: 180px;
+  padding: 0 1rem;
+}
+
+.chart-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  max-width: 100px;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.chart-bar-label-top {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.chart-bar {
+  width: 100%;
+  max-width: 60px;
+  border-radius: 0.5rem 0.5rem 0.25rem 0.25rem;
+  background: var(--input-bg);
+  position: relative;
+  min-height: 8px;
+  transition: height 0.5s ease;
+}
+
+.chart-bar-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, var(--primary) 0%, #4f46e5 100%);
+  opacity: 0.8;
+}
+
+.chart-bar-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+
+.stat-card-icon {
+  font-size: 1.5rem;
+  margin-bottom: 0.25rem;
+}
+
+/* ─── Expandable Row ─── */
+.expanded-row-content {
+  background: var(--output-bg);
+  border-top: 1px solid var(--border);
+  padding: 0;
+  overflow: hidden;
+}
+
+.expanded-row-inner {
+  padding: 1rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.expanded-row-inner .field-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.expanded-row-inner .curl-preview,
+.expanded-row-inner .response-preview {
+  font-family: monospace;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow: auto;
+  background: var(--input-bg);
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
 .footer-minimal {
   text-align: center;
   padding: 2rem 0;

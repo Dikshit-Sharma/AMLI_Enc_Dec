@@ -5,6 +5,7 @@ import { generateAndDownloadZip, generateBulkZip } from './artifactUtil';
 import { decrypt, decryptCBC } from './cryptoUtil';
 import ArtifactComparator from './ArtifactComparator';
 import LibraryInsights from './LibraryInsights';
+import { SkeletonTableRows } from './Skeleton';
 
 const PAGE_SIZE = 20;
 
@@ -20,6 +21,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [compareArtifacts, setCompareArtifacts] = useState(null);
   const [showInsights, setShowInsights] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
 
   const [cursorStack, setCursorStack] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
@@ -303,11 +305,23 @@ const LibraryPage = ({ theme, toggleTheme }) => {
 
         <div className="scrollable" style={{ flex: 1, minHeight: 0 }}>
           {loading ? (
-            <div className="loading-state" style={{ textAlign: 'center', padding: '4rem' }}>
-              <div className="loader" style={{ margin: '0 auto' }}></div>
-              <p style={{ marginTop: '1.5rem', color: 'var(--text-muted)' }}>
-                Loading library...
-              </p>
+            <div className="table-responsive">
+              <table className="api-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '40px' }}></th>
+                    <th>Sr.</th>
+                    <th>API NAME</th>
+                    <th>ENV</th>
+                    <th>JIRA TICKET</th>
+                    <th>DATE</th>
+                    <th>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <SkeletonTableRows rows={6} cols={7} />
+                </tbody>
+              </table>
             </div>
           ) : (
             <div className="table-responsive">
@@ -326,70 +340,91 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                 <tbody>
                   {filteredArtifacts.length > 0 ? (
                     filteredArtifacts.map((art, index) => (
-                      <tr
-                        key={art.id}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => toggleSelect(art.id)}
-                      >
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.includes(art.id)}
-                            onChange={() => toggleSelect(art.id)}
-                            style={{
-                              width: '16px',
-                              height: '16px',
-                              cursor: 'pointer',
-                              accentColor: 'var(--primary)',
-                            }}
-                          />
-                        </td>
-                        <td>{(pageNum - 1) * PAGE_SIZE + index + 1}</td>
-                        <td style={{ fontWeight: 600 }}>{art.apiName}</td>
-                        <td>
-                          <span className="badge-env" data-env={art.env}>
-                            {art.env || 'DEV'}
-                          </span>
-                        </td>
-                        <td>
-                          <a
-                            href={`https://axismaxlife.atlassian.net/browse/${art.jiraTicket}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="badge-ticket link"
-                          >
-                            {art.jiraTicket}
-                          </a>
-                        </td>
-                        <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                          {toDate(art.timestamp)?.toLocaleString('en-IN', {
-                            dateStyle: 'medium',
-                          }) || 'Unknown'}
-                        </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          <div style={{ display: 'flex', gap: '0.5rem' }}>
-                            <button
-                              className={`copy-icon-btn ${copyStatus[art.id] ? 'copied' : ''}`}
-                              onClick={() => handleCopyCurl(art.id, art.curl)}
-                              title="Copy Curl"
+                      <React.Fragment key={art.id}>
+                        <tr
+                          style={{ cursor: 'pointer' }}
+                          onClick={() =>
+                            setExpandedId(expandedId === art.id ? null : art.id)
+                          }
+                        >
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(art.id)}
+                              onChange={() => toggleSelect(art.id)}
+                              style={{
+                                width: '16px',
+                                height: '16px',
+                                cursor: 'pointer',
+                                accentColor: 'var(--primary)',
+                              }}
+                            />
+                          </td>
+                          <td>{(pageNum - 1) * PAGE_SIZE + index + 1}</td>
+                          <td style={{ fontWeight: 600 }}>
+                            {expandedId === art.id ? '▼' : '▶'} {art.apiName}
+                          </td>
+                          <td>
+                            <span className="badge-env" data-env={art.env}>
+                              {art.env || 'DEV'}
+                            </span>
+                          </td>
+                          <td>
+                            <a
+                              href={`https://axismaxlife.atlassian.net/browse/${art.jiraTicket}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="badge-ticket link"
                             >
-                              {copyStatus[art.id] ? '✓' : '📋'}
-                            </button>
-                            <button
-                              className="copy-icon-btn download-btn"
-                              onClick={() => handleDownload(art)}
-                              disabled={downloadingStatus[art.id]}
-                              title="Download ZIP"
-                            >
-                              {downloadingStatus[art.id] ? (
-                                <div className="loader tiny"></div>
-                              ) : (
-                                '📦'
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                              {art.jiraTicket}
+                            </a>
+                          </td>
+                          <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                            {toDate(art.timestamp)?.toLocaleString('en-IN', {
+                              dateStyle: 'medium',
+                            }) || 'Unknown'}
+                          </td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button
+                                className={`copy-icon-btn ${copyStatus[art.id] ? 'copied' : ''}`}
+                                onClick={() => handleCopyCurl(art.id, art.curl)}
+                                title="Copy Curl"
+                              >
+                                {copyStatus[art.id] ? '✓' : '📋'}
+                              </button>
+                              <button
+                                className="copy-icon-btn download-btn"
+                                onClick={() => handleDownload(art)}
+                                disabled={downloadingStatus[art.id]}
+                                title="Download ZIP"
+                              >
+                                {downloadingStatus[art.id] ? (
+                                  <div className="loader tiny"></div>
+                                ) : (
+                                  '📦'
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {expandedId === art.id && (
+                          <tr className="expanded-row-content">
+                            <td colSpan="7">
+                              <div className="expanded-row-inner">
+                                <div>
+                                  <div className="field-label">Curl Command</div>
+                                  <div className="curl-preview">{art.curl || '(empty)'}</div>
+                                </div>
+                                <div>
+                                  <div className="field-label">Response</div>
+                                  <div className="response-preview">{art.response || '(empty)'}</div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     ))
                   ) : (
                     <tr>
