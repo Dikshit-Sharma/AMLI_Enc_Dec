@@ -1425,11 +1425,21 @@ button:disabled {
 
 /* ─── Chart Styles ─── */
 .chart-section {
-  margin: 2rem 0;
+  margin: 1.5rem 0;
   padding: 1.5rem;
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 1.25rem;
+}
+
+.chart-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.chart-grid-2 .chart-section {
+  margin: 0;
 }
 
 .chart-container {
@@ -1446,61 +1456,222 @@ button:disabled {
   color: var(--text-muted);
 }
 
-.chart-bars {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 2rem;
-  height: 180px;
-  padding: 0 1rem;
+.stat-card-icon {
+  font-size: 1.5rem;
+  margin-bottom: 0.25rem;
 }
 
-.chart-bar-col {
+/* ─── Donut Chart ─── */
+.donut-container {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.5rem 0;
+}
+
+.donut-chart-area {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.donut-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  flex: 1;
-  max-width: 100px;
-  height: 100%;
-  justify-content: flex-end;
+  pointer-events: none;
 }
 
-.chart-bar-label-top {
-  font-size: 1rem;
+.donut-total {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+}
+
+.donut-total-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.donut-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.donut-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  width: 40px;
+}
+
+.donut-value {
+  font-size: 0.85rem;
   font-weight: 800;
   color: var(--text);
 }
 
-.chart-bar {
-  width: 100%;
+/* ─── Weekly Activity ─── */
+.weekly-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1rem;
+  height: 160px;
+  padding: 0.5rem 0;
+}
+
+.weekly-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
   max-width: 60px;
-  border-radius: 0.5rem 0.5rem 0.25rem 0.25rem;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.weekly-bar-count {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.weekly-bar-track {
+  width: 100%;
+  max-width: 36px;
+  flex: 1;
+  min-height: 8px;
+  border-radius: 0.5rem 0.5rem 0.2rem 0.2rem;
   background: var(--input-bg);
   position: relative;
-  min-height: 8px;
-  transition: height 0.5s ease;
 }
 
-.chart-bar-fill {
+.weekly-bar-fill {
   position: absolute;
-  inset: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
   border-radius: inherit;
   background: linear-gradient(180deg, var(--primary) 0%, #4f46e5 100%);
-  opacity: 0.8;
+  transition: height 0.4s ease;
 }
 
-.chart-bar-label {
-  font-size: 0.7rem;
+.weekly-bar-label {
+  font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
   color: var(--text-muted);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
-.stat-card-icon {
-  font-size: 1.5rem;
-  margin-bottom: 0.25rem;
+/* ─── Top APIs ─── */
+.topapi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.topapi-row {
+  display: grid;
+  grid-template-columns: 1fr 100px 30px;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.topapi-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topapi-bar-track {
+  height: 20px;
+  border-radius: 0.4rem;
+  background: var(--input-bg);
+  overflow: hidden;
+}
+
+.topapi-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary) 0%, #4f46e5 100%);
+  opacity: 0.7;
+  transition: width 0.5s ease;
+  min-width: 4px;
+}
+
+.topapi-count {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* ─── Credential Stats ─── */
+.cred-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  padding: 0.5rem 0;
+}
+
+.cred-stat-card {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cred-stat-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.cred-stat-total {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+}
+
+.cred-stat-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
 }
 
 /* ─── Expandable Row ─── */
