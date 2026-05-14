@@ -56,6 +56,11 @@ function findCredentialsInObject(obj, depth = 0) {
   return found;
 }
 
+function tryParseJson(str) {
+  if (!str || typeof str !== 'string') return null;
+  try { return JSON.parse(str); } catch { return null; }
+}
+
 function extractFromArtifact(art) {
   if (!art.env) return null;
 
@@ -72,6 +77,20 @@ function extractFromArtifact(art) {
   const body = parseCurlBody(art.curl);
   if (body) {
     Object.assign(found, findCredentialsInObject(body));
+  }
+
+  const responseObj = tryParseJson(art.response);
+  if (responseObj) {
+    Object.assign(found, findCredentialsInObject(responseObj));
+  }
+
+  if (Array.isArray(art.extraRequests)) {
+    for (const extra of art.extraRequests) {
+      if (extra.response) {
+        const extraRes = tryParseJson(extra.response);
+        if (extraRes) Object.assign(found, findCredentialsInObject(extraRes));
+      }
+    }
   }
 
   const xApiKey = found['x-api-key'] || found['x-apigw-api-id'] || found['xapigwapiid'] || '';
