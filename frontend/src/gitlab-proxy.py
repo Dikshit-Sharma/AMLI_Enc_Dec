@@ -29,6 +29,27 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         if self.path == '/health':
             self._json(200, {'ok': True, 'message': 'local proxy is alive'})
             return
+        if self.path == '/bridge.html':
+            html = '''<!DOCTYPE html>
+<script>
+window.addEventListener("message", async (e) => {
+  try {
+    const r = await fetch("/proxy", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({target:e.data.target, token:e.data.token})
+    });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = text; }
+    e.source.postMessage({id:e.data.id, ok:true, data:{status:r.status, data:data}}, "*");
+  } catch(err) {
+    e.source.postMessage({id:e.data.id, ok:false, error:err.message}, "*");
+  }
+});
+</script>'''
+            self._send(200, html, 'text/html')
+            return
         self._json(404, {'error': 'Not found'})
 
     def do_POST(self):
@@ -68,20 +89,29 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             self._json(502, {'error': str(e)})
 
-    def _json(self, status, payload):
+    def _send(self, status, content, content_type):
+        if isinstance(content, str):
+            content = content.encode('utf-8')
+        elif not isinstance(content, bytes):
+            content = json.dumps(content).encode('utf-8')
+            content_type = 'application/json'
         self.send_response(status)
-        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(content)))
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Private-Network', 'true')
         self.end_headers()
-        self.wfile.write(json.dumps(payload).encode())
+        self.wfile.write(content)
+
+    def _json(self, status, payload):
+        self._send(status, payload, 'application/json')
 
     def log_message(self, format, *args):
         print(f"[proxy] {args[0]} {args[1]} {args[2]}")
 
 
 if __name__ == '__main__':
-    server = http.server.HTTPServer(('0.0.0.0', PROXY_PORT), ProxyHandler)
+    server = http.server.HTTPServer(('127.0.0.1', PROXY_PORT), ProxyHandler)
     print(f'GitLab proxy running on http://localhost:{PROXY_PORT}/proxy')
     print('The LOC Report page will auto-detect this proxy.')
     print('Connect to VPN, run this script, and open the webpage.')

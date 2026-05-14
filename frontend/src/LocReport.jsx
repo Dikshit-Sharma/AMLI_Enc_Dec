@@ -1,11 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import './LocReport.css';
 
 const STORAGE_KEY = 'locr_form';
-const LOCAL_PROXY_URL = 'http://localhost:8080';
-const LOCAL_HEALTH_URL = `${LOCAL_PROXY_URL}/health`;
-const LOCAL_PROXY_ENDPOINT = `${LOCAL_PROXY_URL}/proxy`;
+const BRIDGE_URL = 'http://localhost:8080/bridge.html';
 const NETLIFY_PROXY = '/.netlify/functions/gitlab-proxy';
 
 function loadForm() {
@@ -36,43 +34,49 @@ function sumKey(arr, key) {
   return arr.reduce((s, p) => s + (p[key] || 0), 0);
 }
 
-const NETLIFY = 0;
-const LOCAL = 1;
-const NONE = 2;
+const PROXY = { NETLIFY: 0, LOCAL: 1, NONE: 2, CHECKING: 3 };
+const LABELS = { [PROXY.NETLIFY]: 'Netlify', [PROXY.LOCAL]: 'Local (VPN)', [PROXY.NONE]: 'None', [PROXY.CHECKING]: 'Checking...' };
+const COLORS = { [PROXY.NETLIFY]: '#f39c12', [PROXY.LOCAL]: '#2ecc71', [PROXY.NONE]: '#e74c3c', [PROXY.CHECKING]: '#95a5a6' };
 
-const PROXY_LABELS = { [NETLIFY]: 'Netlify', [LOCAL]: 'Local (VPN)', [NONE]: 'None' };
+let msgId = 0;
 
 export default function LocReport({ theme, toggleTheme }) {
   const [form, setForm] = useState(loadForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [report, setReport] = useState(null);
-  const [proxyStatus, setProxyStatus] = useState(NONE);
-  const [proxyResolved, setProxyResolved] = useState(false);
-  const detectedRef = useRef(null);
+  const [proxyStatus, setProxyStatus] = useState(PROXY.CHECKING);
+  const iframeRef = useRef(null);
+  const pendingRef = useRef({});
+  const bridgeReadyRef = useRef(false);
+  const netlifyTriedRef = useRef(false);
 
   useEffect(() => { saveForm(form); }, [form]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-    fetch(LOCAL_HEALTH_URL, { signal: controller.signal, mode: 'cors' })
-      .then(r => { if (r.ok && !cancelled) { detectedRef.current = LOCAL; setProxyStatus(LOCAL); setProxyResolved(true); } })
-      .catch(() => { if (!cancelled) { detectedRef.current = NETLIFY; setProxyStatus(NETLIFY); setProxyResolved(true); } });
-    return () => { cancelled = true; controller.abort(); };
-  }, []);
-
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
-  const proxyFetch = async (target, proxyUrl) => {
-    const res = await fetch(proxyUrl, {
+  const bridgeFetch = useCallback((target, token) => {
+    return new Promise((resolve, reject) => {
+      const id = ++msgId;
+      pendingRef.current[id] = { resolve, reject };
+      const timeout = setTimeout(() => {
+        delete pendingRef.current[id];
+        reject(new Error('Bridge request timed out'));
+      }, 30000);
+      pendingRef.current[id].timeout = timeout;
+      iframeRef.current?.contentWindow?.postMessage({ id, target, token }, '*');
+    });
+  }, []);
+
+  const netlifyFetch = useCallback(async (target, token) => {
+    const res = await fetch(NETLIFY_PROXY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target, token: form.token }),
+      body: JSON.stringify({ target, token }),
     });
     let result;
     try { result = await res.json(); } catch {
-      throw new Error(`Proxy returned non-JSON (${res.status}).`);
+      throw new Error(`Netlify proxy returned non-JSON (${res.status}).`);
     }
     if (!res.ok) throw new Error(`Proxy error: ${result.error}`);
     if (result.status >= 400) {
@@ -80,10 +84,40 @@ export default function LocReport({ theme, toggleTheme }) {
       throw new Error(`GitLab API error (${result.status}): ${JSON.stringify(result.data).slice(0, 200)}`);
     }
     return result.data;
-  };
+  }, []);
 
-  const runWithProxy = async (proxyUrl, label, base, since, until) => {
-    const projects = await proxyFetch(`${base}/projects?membership=true&per_page=100&simple=true`, proxyUrl);
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const pending = pendingRef.current[e.data.id];
+      if (!pending) return;
+      clearTimeout(pending.timeout);
+      delete pendingRef.current[e.data.id];
+      if (e.data.ok) {
+        if (e.data.data.status >= 400) {
+          if (e.data.data.status === 404) pending.resolve(null);
+          else pending.reject(new Error(`GitLab API error (${e.data.data.status}): ${JSON.stringify(e.data.data.data).slice(0, 200)}`));
+        } else {
+          pending.resolve(e.data.data.data);
+        }
+      } else {
+        pending.reject(new Error(e.data.error || 'Bridge proxy error'));
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const proxyFetch = useCallback(async (target, token) => {
+    if (bridgeReadyRef.current) {
+      return bridgeFetch(target, token);
+    }
+    return netlifyFetch(target, token);
+  }, [bridgeFetch, netlifyFetch]);
+
+  const runWithLabels = useCallback(async (label, base, since, until) => {
+    const token = form.token;
+    const projects = await proxyFetch(`${base}/projects?membership=true&per_page=100&simple=true`, token);
     if (!projects || !projects.length) {
       throw new Error('No projects found for this token. Check membership.');
     }
@@ -101,7 +135,7 @@ export default function LocReport({ theme, toggleTheme }) {
       let projectCommits = [];
       while (true) {
         const url = `${base}/projects/${pid}/repository/commits?since=${since}&until=${until}&author=${encodeURIComponent(form.userId)}&per_page=100&page=${page}`;
-        const commits = await proxyFetch(url, proxyUrl);
+        const commits = await proxyFetch(url, token);
         if (!commits || !commits.length) break;
         projectCommits = projectCommits.concat(commits);
         if (commits.length < 100) break;
@@ -149,12 +183,11 @@ export default function LocReport({ theme, toggleTheme }) {
 
     setProxyStatus(label);
     setReport({ totalCommits, totalAdded, totalDeleted, netLoc, projects: processedProjects, commits: commitRows });
-  };
+  }, [form.userId, form.token, proxyFetch]);
 
   const fetchReport = async () => {
     setError('');
     setReport(null);
-    setProxyStatus(NONE);
     if (!form.token || !form.userId || !form.startDate || !form.endDate) {
       setError('All fields are required');
       return;
@@ -166,18 +199,13 @@ export default function LocReport({ theme, toggleTheme }) {
       const since = `${form.startDate}T00:00:00Z`;
       const until = `${form.endDate}T23:59:59Z`;
 
-      if (detectedRef.current === LOCAL) {
-        try {
-          await runWithProxy(LOCAL_PROXY_ENDPOINT, LOCAL, base, since, until);
-        } catch {
-          throw new Error('Local proxy at localhost:8080 is not responding. Make sure gitlab-proxy.py is running.');
-        }
+      if (bridgeReadyRef.current) {
+        await runWithLabels(PROXY.LOCAL, base, since, until);
+      } else if (!netlifyTriedRef.current) {
+        netlifyTriedRef.current = true;
+        await runWithLabels(PROXY.NETLIFY, base, since, until);
       } else {
-        try {
-          await runWithProxy(NETLIFY_PROXY, NETLIFY, base, since, until);
-        } catch {
-          throw new Error('Netlify proxy cannot reach your corporate GitLab. Connect to VPN and run gitlab-proxy.py on your machine.');
-        }
+        throw new Error('No proxy available. Connect to VPN and run gitlab-proxy.py on your machine.');
       }
     } catch (err) {
       setError(err.message);
@@ -196,16 +224,16 @@ export default function LocReport({ theme, toggleTheme }) {
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
           </div>
-          {proxyResolved && proxyStatus !== null && (
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%', display: 'inline-block',
-                background: proxyStatus === LOCAL ? '#2ecc71' : proxyStatus === NETLIFY ? '#f39c12' : '#e74c3c',
-              }} />
-              {PROXY_LABELS[proxyStatus]}
-            </span>
-          )}
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', display: 'inline-block', background: COLORS[proxyStatus] }} />
+            {LABELS[proxyStatus]}
+          </span>
         </div>
+
+        <iframe ref={iframeRef} src={BRIDGE_URL}
+          onLoad={() => { bridgeReadyRef.current = true; setProxyStatus(PROXY.LOCAL); }}
+          onError={() => { setProxyStatus(PROXY.NETLIFY); }}
+          style={{ display: 'none' }} title="proxy-bridge" />
 
         <h1>LOC REPORT</h1>
         <p className="field-label" style={{ color: 'var(--text-muted)', textTransform: 'none', fontSize: '1rem', marginBottom: '2rem' }}>
