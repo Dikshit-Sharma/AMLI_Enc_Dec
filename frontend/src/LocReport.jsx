@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import './LocReport.css';
 
 const STORAGE_KEY = 'locr_form';
-const BRIDGE_URL = 'http://localhost:8080/bridge.html';
 const NETLIFY_PROXY = '/.netlify/functions/gitlab-proxy';
+const LOCAL_PROXY = '/proxy';
+const ON_LOCALHOST = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 function loadForm() {
   try {
@@ -34,47 +35,34 @@ function sumKey(arr, key) {
   return arr.reduce((s, p) => s + (p[key] || 0), 0);
 }
 
-const PROXY = { NETLIFY: 0, LOCAL: 1, NONE: 2, CHECKING: 3 };
-const LABELS = { [PROXY.NETLIFY]: 'Netlify', [PROXY.LOCAL]: 'Local (VPN)', [PROXY.NONE]: 'None', [PROXY.CHECKING]: 'Checking...' };
-const COLORS = { [PROXY.NETLIFY]: '#f39c12', [PROXY.LOCAL]: '#2ecc71', [PROXY.NONE]: '#e74c3c', [PROXY.CHECKING]: '#95a5a6' };
-
-let msgId = 0;
+const MODE = { LOCAL: 0, NETLIFY: 1, CHECKING: 2 };
+const LABELS = { [MODE.LOCAL]: 'Local', [MODE.NETLIFY]: 'Netlify', [MODE.CHECKING]: 'Checking...' };
+const COLORS = { [MODE.LOCAL]: '#2ecc71', [MODE.NETLIFY]: '#f39c12', [MODE.CHECKING]: '#95a5a6' };
+const PROXY_KEYS = { [MODE.LOCAL]: LOCAL_PROXY, [MODE.NETLIFY]: NETLIFY_PROXY };
 
 export default function LocReport({ theme, toggleTheme }) {
   const [form, setForm] = useState(loadForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [report, setReport] = useState(null);
-  const [proxyStatus, setProxyStatus] = useState(PROXY.CHECKING);
+  const [mode, setMode] = useState(ON_LOCALHOST ? MODE.LOCAL : MODE.CHECKING);
   const [statusMsg, setStatusMsg] = useState('');
-  const iframeRef = useRef(null);
-  const pendingRef = useRef({});
-  const bridgeReadyRef = useRef(false);
-  const netlifyTriedRef = useRef(false);
 
   useEffect(() => { saveForm(form); }, [form]);
 
   const updateField = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
-  const bridgeFetch = useCallback((target, token) => {
-    return new Promise((resolve, reject) => {
-      const id = ++msgId;
-      pendingRef.current[id] = { resolve, reject };
-      const bw = iframeRef.current?.contentWindow;
-      if (!bw) { reject(new Error('Bridge iframe not ready')); return; }
-      bw.postMessage({ id, target, token }, '*');
-    });
-  }, []);
-
-  const netlifyFetch = useCallback(async (target, token) => {
-    const res = await fetch(NETLIFY_PROXY, {
+  const proxyFetch = useCallback(async (target) => {
+    const proxyUrl = PROXY_KEYS[mode];
+    if (!proxyUrl) throw new Error('No proxy available');
+    const res = await fetch(proxyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target, token }),
+      body: JSON.stringify({ target, token: form.token }),
     });
     let result;
     try { result = await res.json(); } catch {
-      throw new Error(`Netlify proxy returned non-JSON (${res.status}).`);
+      throw new Error(`Proxy returned non-JSON (${res.status}).`);
     }
     if (!res.ok) throw new Error(`Proxy error: ${result.error}`);
     if (result.status >= 400) {
@@ -82,114 +70,18 @@ export default function LocReport({ theme, toggleTheme }) {
       throw new Error(`GitLab API error (${result.status}): ${JSON.stringify(result.data).slice(0, 200)}`);
     }
     return result.data;
-  }, []);
+  }, [mode, form.token]);
 
   useEffect(() => {
-    const handler = (e) => {
-      if (e.source !== iframeRef.current?.contentWindow) return;
-      const pending = pendingRef.current[e.data.id];
-      if (!pending) return;
-      delete pendingRef.current[e.data.id];
-      if (e.data.ok) {
-        if (e.data.data.status >= 400) {
-          if (e.data.data.status === 404) pending.resolve(null);
-          else pending.reject(new Error(`GitLab API error (${e.data.data.status}): ${JSON.stringify(e.data.data.data).slice(0, 200)}`));
-        } else {
-          pending.resolve(e.data.data.data);
-        }
-      } else {
-        pending.reject(new Error(e.data.error || 'Bridge proxy error'));
-      }
-    };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
+    if (ON_LOCALHOST) return;
+    fetch(LOCAL_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: '/ping', token: '' }),
+    })
+      .then(() => { setMode(MODE.LOCAL); })
+      .catch(() => { setMode(MODE.NETLIFY); });
   }, []);
-
-  const proxyFetch = useCallback(async (target, token) => {
-    if (bridgeReadyRef.current) {
-      return bridgeFetch(target, token);
-    }
-    return netlifyFetch(target, token);
-  }, [bridgeFetch, netlifyFetch]);
-
-  const runWithLabels = useCallback(async (label, base, since, until) => {
-    const token = form.token;
-
-    setStatusMsg('Fetching project list...');
-    const projects = await proxyFetch(`${base}/projects?membership=true&per_page=100&simple=true`, token);
-    if (!projects || !projects.length) {
-      throw new Error('No projects found for this token. Check membership.');
-    }
-
-    const projectRows = [];
-    const commitRows = [];
-    const processedProjects = [];
-    const seenCommits = new Set();
-
-    for (const proj of projects) {
-      const pid = proj.id;
-      const pname = proj.name || proj.path_with_namespace || `Project ${pid}`;
-
-      let page = 1;
-      let projectCommits = [];
-      while (true) {
-        const url = `${base}/projects/${pid}/repository/commits?since=${since}&until=${until}&author=${encodeURIComponent(form.userId)}&per_page=100&page=${page}`;
-        setStatusMsg(`Fetching ${pname} (page ${page})...`);
-        const commits = await proxyFetch(url, token);
-        if (!commits || !commits.length) break;
-        projectCommits = projectCommits.concat(commits);
-        if (commits.length < 100) break;
-        page++;
-        await new Promise(r => setTimeout(r, 100));
-      }
-
-      if (!projectCommits.length) {
-        setStatusMsg(`No commits found in ${pname}, skipping...`);
-        await new Promise(r => setTimeout(r, 50));
-        continue;
-      }
-
-      let added = 0, deleted = 0;
-      for (const c of projectCommits) {
-        const stats = c.stats || { additions: 0, deletions: 0 };
-        const add = stats.additions || 0;
-        const del = stats.deletions || 0;
-        added += add;
-        deleted += del;
-
-        if (!seenCommits.has(c.id)) {
-          seenCommits.add(c.id);
-          commitRows.push({
-            project: pname,
-            sha: c.id?.substring(0, 8),
-            message: (c.title || c.message || '').split('\n')[0],
-            date: c.committed_date || c.created_at || '',
-            added: add,
-            deleted: del,
-          });
-        }
-      }
-
-      processedProjects.push({ project: pname, commits: projectCommits.length, added, deleted });
-      projectRows.push({ project: pname, commits: projectCommits.length, added, deleted });
-
-      setStatusMsg(`${pname}: ${projectCommits.length} commits, +${added}/-${deleted} lines`);
-      await new Promise(r => setTimeout(r, 50));
-    }
-
-    if (!processedProjects.length) {
-      throw new Error(`No commits found for user "${form.userId}" in the given date range.`);
-    }
-
-    const totalAdded = sumKey(projectRows, 'added');
-    const totalDeleted = sumKey(projectRows, 'deleted');
-    const totalCommits = commitRows.length;
-    const netLoc = totalAdded - totalDeleted;
-
-    setProxyStatus(label);
-    setStatusMsg('');
-    setReport({ totalCommits, totalAdded, totalDeleted, netLoc, projects: processedProjects, commits: commitRows });
-  }, [form.userId, form.token, proxyFetch]);
 
   const fetchReport = async () => {
     setError('');
@@ -205,20 +97,87 @@ export default function LocReport({ theme, toggleTheme }) {
       const since = `${form.startDate}T00:00:00Z`;
       const until = `${form.endDate}T23:59:59Z`;
 
-      if (bridgeReadyRef.current) {
-        await runWithLabels(PROXY.LOCAL, base, since, until);
-      } else if (!netlifyTriedRef.current) {
-        netlifyTriedRef.current = true;
-        await runWithLabels(PROXY.NETLIFY, base, since, until);
-      } else {
-        throw new Error('No proxy available. Connect to VPN and run gitlab-proxy.py on your machine.');
+      setStatusMsg('Fetching project list...');
+      const projects = await proxyFetch(`${base}/projects?membership=true&per_page=100&simple=true`);
+      if (!projects || !projects.length) {
+        throw new Error('No projects found for this token. Check membership.');
       }
+
+      const projectRows = [];
+      const commitRows = [];
+      const processedProjects = [];
+      const seenCommits = new Set();
+
+      for (const proj of projects) {
+        const pid = proj.id;
+        const pname = proj.name || proj.path_with_namespace || `Project ${pid}`;
+
+        let page = 1;
+        let projectCommits = [];
+        while (true) {
+          const url = `${base}/projects/${pid}/repository/commits?since=${since}&until=${until}&author=${encodeURIComponent(form.userId)}&per_page=100&page=${page}`;
+          setStatusMsg(`Fetching ${pname} (page ${page})...`);
+          const commits = await proxyFetch(url);
+          if (!commits || !commits.length) break;
+          projectCommits = projectCommits.concat(commits);
+          if (commits.length < 100) break;
+          page++;
+          await new Promise(r => setTimeout(r, 100));
+        }
+
+        if (!projectCommits.length) {
+          setStatusMsg(`No commits found in ${pname}, skipping...`);
+          await new Promise(r => setTimeout(r, 50));
+          continue;
+        }
+
+        let added = 0, deleted = 0;
+        for (const c of projectCommits) {
+          const stats = c.stats || { additions: 0, deletions: 0 };
+          const add = stats.additions || 0;
+          const del = stats.deletions || 0;
+          added += add;
+          deleted += del;
+
+          if (!seenCommits.has(c.id)) {
+            seenCommits.add(c.id);
+            commitRows.push({
+              project: pname,
+              sha: c.id?.substring(0, 8),
+              message: (c.title || c.message || '').split('\n')[0],
+              date: c.committed_date || c.created_at || '',
+              added: add,
+              deleted: del,
+            });
+          }
+        }
+
+        processedProjects.push({ project: pname, commits: projectCommits.length, added, deleted });
+        projectRows.push({ project: pname, commits: projectCommits.length, added, deleted });
+
+        setStatusMsg(`${pname}: ${projectCommits.length} commits, +${added}/-${deleted} lines`);
+        await new Promise(r => setTimeout(r, 50));
+      }
+
+      if (!processedProjects.length) {
+        throw new Error(`No commits found for user "${form.userId}" in the given date range.`);
+      }
+
+      const totalAdded = sumKey(projectRows, 'added');
+      const totalDeleted = sumKey(projectRows, 'deleted');
+      const totalCommits = commitRows.length;
+      const netLoc = totalAdded - totalDeleted;
+
+      setStatusMsg('');
+      setReport({ totalCommits, totalAdded, totalDeleted, netLoc, projects: processedProjects, commits: commitRows });
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const modeName = ON_LOCALHOST ? 'Localhost /proxy' : LABELS[mode];
 
   return (
     <div className="container">
@@ -231,29 +190,10 @@ export default function LocReport({ theme, toggleTheme }) {
             </button>
           </div>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', display: 'inline-block', background: COLORS[proxyStatus] }} />
-            {LABELS[proxyStatus]}
+            <span style={{ width: 8, height: 8, borderRadius: '50%', display: 'inline-block', background: COLORS[ON_LOCALHOST ? MODE.LOCAL : mode] }} />
+            {modeName}
           </span>
         </div>
-
-        <iframe ref={iframeRef} src={`${BRIDGE_URL}?t=${Date.now()}`}
-          onLoad={() => {
-            setTimeout(() => {
-              const id = ++msgId;
-              const bw = iframeRef.current?.contentWindow;
-              if (!bw) { setProxyStatus(PROXY.NETLIFY); return; }
-              const timeout = setTimeout(() => {
-                delete pendingRef.current[id];
-                bridgeReadyRef.current = false;
-                netlifyTriedRef.current = false;
-                setProxyStatus(PROXY.NETLIFY);
-              }, 2000);
-              pendingRef.current[id] = { resolve: () => { clearTimeout(timeout); bridgeReadyRef.current = true; setProxyStatus(PROXY.LOCAL); }, reject: () => { clearTimeout(timeout); bridgeReadyRef.current = true; setProxyStatus(PROXY.LOCAL); } };
-              bw.postMessage({ id, target: '/ping', token: '' }, '*');
-            }, 300);
-          }}
-          onError={() => { bridgeReadyRef.current = false; setProxyStatus(PROXY.NETLIFY); }}
-          style={{ position: 'absolute', width: '1px', height: '1px', left: '-9999px', border: 'none' }} title="proxy-bridge" />
 
         <h1>LOC REPORT</h1>
         <p className="field-label" style={{ color: 'var(--text-muted)', textTransform: 'none', fontSize: '1rem', marginBottom: '2rem' }}>
@@ -368,6 +308,14 @@ export default function LocReport({ theme, toggleTheme }) {
               </div>
             </div>
           </div>
+        )}
+
+        {!ON_LOCALHOST && mode !== MODE.CHECKING && (
+          <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '1rem' }}>
+            {mode === MODE.NETLIFY
+              ? 'Netlify proxy cannot reach internal GitLab. Run internal-server.py locally and open http://localhost:8080'
+              : 'Local proxy detected at /proxy'}
+          </p>
         )}
       </div>
     </div>

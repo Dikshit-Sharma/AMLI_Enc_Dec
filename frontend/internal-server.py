@@ -11,11 +11,11 @@ Usage:
     cd frontend && npm run build
 
     # 2. Run this server:
-    python internal-server.py [--port 8080] [--host 0.0.0.0] [--dist-dir dist]
+    python internal-server.py [--port 8080] [--host 127.0.0.1] [--dist-dir dist]
 
-    # 3. Users on the corporate VPN access:
-    http://<server-ip>:8080/
-    The LOC Report page will auto-detect the proxy at /proxy (same origin).
+    # 3. Open in browser:
+    http://localhost:8080/
+    The LOC Report page uses the proxy at /proxy (same origin, no CORS issues).
 """
 import http.server
 import json
@@ -27,7 +27,7 @@ import urllib.request
 from pathlib import Path
 
 PROXY_PORT = 8080
-HOST = "0.0.0.0"
+HOST = "127.0.0.1"
 DIST_DIR = "dist"
 
 for i, arg in enumerate(sys.argv[1:], 1):
