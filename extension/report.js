@@ -310,7 +310,7 @@ async function generateCommitReport(baseUrl, token, user, projects, startDate, e
     setProgress(pct, `[${scanned + 1}/${projects.length}] ${projName}...`);
 
     const commits = await paginate(baseUrl, `/projects/${proj.id}/repository/commits`, {
-      author: commitAuthor, since, until, with_stats: 'true',
+      author: commitAuthor, since, until, all: 'true', with_stats: 'true',
     }, token, signal);
 
     let pAdded = 0, pDeleted = 0, pCommits = 0;
