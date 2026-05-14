@@ -3,6 +3,7 @@ import { collection, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from './firebase';
 import { SYSTEM_PROMPTS } from './ai/prompts';
 import useAI from './ai/useAI';
+import { extractJson } from './ai/extractJson';
 import './LibraryInsights.css';
 
 function aggregate(artifacts) {
@@ -62,13 +63,14 @@ export default function LibraryInsights({ onClose }) {
     if (!data || data.total <= 5) return;
     const result = await callAI(
       JSON.stringify(data, null, 2),
-      SYSTEM_PROMPTS.libraryInsights
+      SYSTEM_PROMPTS.libraryInsights,
+      0.1
     );
     if (result) {
-      try {
-        const cleaned = result.replace(/```(?:json)?\n?/g, '').trim();
-        setAiSummary(JSON.parse(cleaned));
-      } catch {
+      const parsed = extractJson(result);
+      if (parsed && parsed.aiSummary) {
+        setAiSummary(parsed);
+      } else {
         setAiSummary({ aiSummary: result, recommendation: '' });
       }
     } else {
@@ -193,26 +195,33 @@ export default function LibraryInsights({ onClose }) {
             </div>
           )}
 
-          <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+          <div className="insights-ai-section">
             {!aiSummary ? (
               <button
-                className="btn-primary"
+                className="btn-ai"
                 disabled={aiLoading || total <= 5}
                 onClick={handleAISummary}
-                style={{ width: '100%' }}
                 title={total <= 5 ? 'Need at least 5 artifacts for AI analysis' : ''}
               >
-                {aiLoading ? <div className="loader tiny" /> : '🤖 Generate AI Insights'}
+                {aiLoading ? <div className="loader tiny" /> : '🤖  Generate AI Insights'}
               </button>
             ) : (
-              <div style={{ background: 'rgba(99,102,241,0.05)', borderRadius: '0.75rem', padding: '1rem' }}>
-                <div style={{ fontWeight: 700, marginBottom: '0.5rem', color: 'var(--primary)' }}>AI Analysis</div>
-                <p style={{ fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }}>
-                  {aiSummary.aiSummary}
-                </p>
+              <div className="insights-ai-card">
+                <div className="insights-ai-header">
+                  <span className="insights-ai-icon">🧠</span>
+                  <span>AI Analysis</span>
+                  <button className="insights-ai-regenerate" onClick={handleAISummary} disabled={aiLoading} title="Regenerate">
+                    {aiLoading ? <div className="loader tiny" /> : '↻'}
+                  </button>
+                </div>
+                <div className="insights-ai-summary">{aiSummary.aiSummary.replace(/^[\s]*[-*•]\s+/gm, '').replace(/^[\s]*\d+[.)]\s+/gm, '').replace(/\n{2,}/g, '\n').replace(/\n/g, ' ')}</div>
                 {aiSummary.recommendation && (
-                  <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: 'rgba(16,185,129,0.1)', borderRadius: '0.5rem', fontSize: '0.85rem' }}>
-                    <strong>Recommendation:</strong> {aiSummary.recommendation}
+                  <div className="insights-ai-recommendation">
+                    <span className="insights-ai-rec-icon">💡</span>
+                    <div>
+                      <div className="insights-ai-rec-label">Recommendation</div>
+                      <div className="insights-ai-rec-text">{aiSummary.recommendation}</div>
+                    </div>
                   </div>
                 )}
               </div>

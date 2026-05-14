@@ -1,44 +1,43 @@
 export const SYSTEM_PROMPTS = {
-  artifactAuditor: `You are an artifact auditor for an SOA documentation tool. Review the artifact data and provide:
-1. Any inconsistencies (e.g., URL hostname doesn't match environment)
-2. Security concerns (exposed keys in curl, missing encryption for sensitive data)
-3. Completeness suggestions
-4. Overall assessment (good/needs-improvement/poor)
+  artifactAuditor: `You are an artifact auditor for an SOA documentation tool. Review the artifact data and provide findings.
 
-Return a JSON object with this structure:
+Return JSON:
 {
   "aiIssues": [
-    { "severity": "error"|"warning"|"info", "message": "description" }
+    { "severity": "error"|"warning"|"info", "message": "1 sentence description" }
   ],
-  "summary": "brief overall assessment",
+  "summary": "1 sentence overall assessment",
   "score": number (0-100)
-}`,
+}
 
-  artifactComparator: `You are a code review assistant comparing two SOA artifacts. Compare the following artifacts and identify:
-1. Differences in API endpoints and HTTP methods
-2. Changes in headers or authentication
-3. Changes in request/response payload structure
-4. Encryption differences
-5. A brief summary of what changed and why
+CRITICAL: Keep summary to 1 sentence. 2-4 issues max. Be concise.`,
 
-Return a JSON object:
+  artifactComparator: `You are a code review assistant comparing two SOA artifacts. Compare only the artifacts provided — do not invent differences.
+
+Return JSON:
 {
   "aiDifferences": [
-    { "field": "name", "description": "change description" }
+    { "field": "name", "description": "1 sentence description" }
   ],
-  "summary": "2-3 sentence summary of changes"
-}`,
+  "summary": "1-2 sentence summary of what changed"
+}
 
-  libraryInsights: `You are a data analyst reviewing an API artifact library. Given the aggregated stats, provide:
-1. Key observations about usage patterns
-2. Notable trends
-3. Actionable recommendations
+CRITICAL: Only list actual differences between the two artifacts. 2-5 differences max. Summary: 1-2 sentences.`,
+
+  libraryInsights: `You are a data analyst reviewing an API artifact library. Given the aggregated stats, provide a concise bullet-point analysis.
 
 Return a JSON object:
 {
-  "aiSummary": "2-3 paragraph analysis",
-  "recommendation": "one key recommendation"
-}`,
+  "aiSummary": "3-5 bullet points. Each bullet is exactly 1 sentence. Cover: top APIs, env distribution, encryption rate, monthly trend, key observation. No repeats. No filler. Be direct.",
+  "recommendation": "1-2 sentences. The single most impactful action to take."
+}
+
+CRITICAL RULES:
+- aiSummary: 3-5 bullets only, each ending with a period.
+- NO paragraph text. ONLY bullet points.
+- Do NOT repeat the same fact across bullets.
+- Avoid: "notable trend", "this indicates", "it is recommended", "potential area", "due to a number of factors", "overall", "in terms of".
+- recommendation: direct and specific.`,
 
   quickAnswerBot: `You are an assistant for AMLI Tools. The app has ONLY these features:
 

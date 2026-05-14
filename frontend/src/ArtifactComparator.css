@@ -71,3 +71,106 @@
   color: var(--text-muted);
   font-weight: 700;
 }
+
+/* ─── AI Summary Section ─── */
+.comparator-ai-section {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.comparator-ai-card {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.comparator-ai-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  background: rgba(99, 102, 241, 0.1);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--primary);
+}
+
+.comparator-ai-icon {
+  font-size: 1.1rem;
+}
+
+.comparator-ai-regenerate {
+  margin-left: auto;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  color: var(--primary);
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s ease;
+  width: auto;
+  flex: none;
+}
+
+.comparator-ai-regenerate:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+}
+
+.comparator-ai-summary {
+  padding: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+.comparator-ai-diffs {
+  padding: 0 1rem 1rem;
+}
+
+.comparator-ai-diffs-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.comparator-ai-diffs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.comparator-ai-diff-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,255,255,0.03);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+
+.comparator-ai-diff-field {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--primary);
+  min-width: 100px;
+  padding-top: 0.1rem;
+}
+
+.comparator-ai-diff-desc {
+  font-size: 0.8rem;
+  color: var(--text);
+  line-height: 1.5;
+}

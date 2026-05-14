@@ -196,6 +196,100 @@ body.layout-fixed .container {
   box-shadow: var(--shadow-lg), 0 10px 40px -10px var(--primary-glow);
 }
 
+/* ─── Base AI Button ─── */
+.btn-ai {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: white;
+  padding: 0.85rem 1.5rem;
+  border: none;
+  border-radius: 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+  transition: all 0.2s ease;
+}
+
+.btn-ai:hover:not(:disabled) {
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.45);
+  filter: brightness(1.08);
+}
+
+.btn-ai:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── AI Card Base ─── */
+.ai-card {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.ai-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  background: rgba(99, 102, 241, 0.1);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--primary);
+}
+
+.ai-card-icon {
+  font-size: 1.1rem;
+}
+
+.ai-card-regenerate {
+  margin-left: auto;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  color: var(--primary);
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s ease;
+  width: auto;
+  flex: none;
+}
+
+.ai-card-regenerate:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+}
+
+/* ─── Modal Animation ─── */
+@keyframes modalFadeIn {
+  from { opacity: 0; backdrop-filter: blur(0px); }
+  to { opacity: 1; backdrop-filter: blur(4px); }
+}
+
+@keyframes modalSlideIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-overlay {
+  animation: modalFadeIn 0.2s ease;
+}
+
+.modal-content {
+  animation: modalSlideIn 0.25s ease;
+}
+
 /* Modal Styles */
 .modal-overlay {
   position: fixed;
@@ -348,19 +442,26 @@ body.layout-fixed .container {
 }
 
 .close-modal {
-  background: #f1f5f9;
+  background: rgba(255,255,255,0.08);
   color: var(--text-muted);
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border-radius: 50%;
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: all 0.15s ease;
+  flex: none;
 }
 
 .close-modal:hover {
-  background: #e2e8f0;
+  background: rgba(244, 63, 94, 0.15);
   color: var(--error);
+  border-color: rgba(244, 63, 94, 0.3);
 }
 
 .modal-body .form-group {
@@ -1230,4 +1331,121 @@ button:disabled {
   font-size: 0.9rem !important;
   width: auto !important;
   flex: none !important;
+}
+
+/* ─── Auditor AI Section ─── */
+.auditor-ai-section {
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.auditor-ai-card {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(168, 85, 247, 0.05) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.auditor-ai-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  background: rgba(99, 102, 241, 0.1);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--primary);
+}
+
+.auditor-ai-icon {
+  font-size: 1.1rem;
+}
+
+.auditor-ai-regenerate {
+  margin-left: auto;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  color: var(--primary);
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s ease;
+  width: auto;
+  flex: none;
+}
+
+.auditor-ai-regenerate:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+}
+
+.auditor-ai-summary {
+  padding: 1rem;
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+  border-bottom: 1px solid rgba(99,102,241,0.1);
+}
+
+.auditor-ai-issues {
+  padding: 0.5rem 1rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.auditor-ai-issue {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.auditor-ai-issue--error {
+  background: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.15);
+}
+
+.auditor-ai-issue--warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+}
+
+.auditor-ai-issue--info {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+}
+
+.auditor-ai-issue-icon {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  margin-top: 0.05rem;
+}
+
+.auditor-ai-issue-text {
+  color: var(--text);
+}
+
+.auditor-ai-score {
+  padding: 0.65rem 1rem;
+  background: rgba(99, 102, 241, 0.05);
+  border-top: 1px solid rgba(99, 102, 241, 0.1);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.auditor-ai-score strong {
+  color: var(--primary);
 }

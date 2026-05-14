@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SYSTEM_PROMPTS } from './ai/prompts';
 import useAI from './ai/useAI';
+import { extractJson } from './ai/extractJson';
 import './ArtifactComparator.css';
 
 function getFieldDiff(a, b) {
@@ -36,13 +37,14 @@ export default function ArtifactComparator({ artifactA, artifactB, onClose }) {
   const handleAICompare = async () => {
     const result = await callAI(
       JSON.stringify({ artifactA, artifactB }, null, 2),
-      SYSTEM_PROMPTS.artifactComparator
+      SYSTEM_PROMPTS.artifactComparator,
+      0.1
     );
     if (result) {
-      try {
-        const cleaned = result.replace(/```(?:json)?\n?/g, '').trim();
-        setAiSummary(JSON.parse(cleaned));
-      } catch {
+      const parsed = extractJson(result);
+      if (parsed && parsed.aiDifferences) {
+        setAiSummary(parsed);
+      } else {
         setAiSummary({ summary: result, aiDifferences: [] });
       }
     } else {
@@ -83,25 +85,38 @@ export default function ArtifactComparator({ artifactA, artifactB, onClose }) {
             </>
           )}
 
-          <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+          <div className="comparator-ai-section">
             {!aiSummary ? (
               <button
-                className="btn-primary"
+                className="btn-ai"
                 disabled={aiLoading || allDiffs.length === 0}
                 onClick={handleAICompare}
-                style={{ width: '100%' }}
               >
-                {aiLoading ? <div className="loader tiny" /> : '🤖 AI Summary of Changes'}
+                {aiLoading ? <div className="loader tiny" /> : '🤖  AI Summary of Changes'}
               </button>
             ) : (
-              <div style={{ background: 'rgba(99,102,241,0.05)', borderRadius: '0.75rem', padding: '1rem' }}>
-                <div style={{ fontWeight: 700, marginBottom: '0.5rem', color: 'var(--primary)' }}>AI Analysis</div>
-                <p style={{ fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-muted)' }}>{aiSummary.summary}</p>
-                {aiSummary.aiDifferences?.map((d, i) => (
-                  <div key={i} style={{ fontSize: '0.8rem', padding: '0.25rem 0', color: 'var(--text)' }}>
-                    • <strong>{d.field}:</strong> {d.description}
+              <div className="comparator-ai-card">
+                <div className="comparator-ai-header">
+                  <span className="comparator-ai-icon">🧠</span>
+                  <span>AI Analysis</span>
+                  <button className="comparator-ai-regenerate" onClick={handleAICompare} disabled={aiLoading} title="Regenerate">
+                    {aiLoading ? <div className="loader tiny" /> : '↻'}
+                  </button>
+                </div>
+                <div className="comparator-ai-summary">{aiSummary.summary}</div>
+                {aiSummary.aiDifferences?.length > 0 && (
+                  <div className="comparator-ai-diffs">
+                    <div className="comparator-ai-diffs-title">Key Differences</div>
+                    <div className="comparator-ai-diffs-list">
+                      {aiSummary.aiDifferences.map((d, i) => (
+                        <div key={i} className="comparator-ai-diff-row">
+                          <span className="comparator-ai-diff-field">{d.field}</span>
+                          <span className="comparator-ai-diff-desc">{d.description}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
             )}
           </div>

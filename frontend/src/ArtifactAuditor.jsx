@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { parseCurl } from './artifactUtil';
 import { SYSTEM_PROMPTS } from './ai/prompts';
 import useAI from './ai/useAI';
+import { extractJson } from './ai/extractJson';
 
 function auditArtifact(art) {
   const issues = [];
@@ -74,14 +75,15 @@ export default function ArtifactAuditor({ artifact, onClose, onJumpToField }) {
   const handleAIEnhance = async () => {
     const result = await callAI(
       JSON.stringify(artifact, null, 2),
-      SYSTEM_PROMPTS.artifactAuditor
+      SYSTEM_PROMPTS.artifactAuditor,
+      0.1
     );
     if (result) {
-      try {
-        const cleaned = result.replace(/```(?:json)?\n?/g, '').trim();
-        setAiInsights(JSON.parse(cleaned));
-      } catch {
-        setAiInsights({ aiIssues: [{ severity: 'info', message: result }], summary: 'AI analysis parsed successfully.', score: report.score });
+      const parsed = extractJson(result);
+      if (parsed && parsed.aiIssues) {
+        setAiInsights(parsed);
+      } else {
+        setAiInsights({ aiIssues: [{ severity: 'info', message: result }], summary: 'AI analysis completed. Review findings below.', score: report.score });
       }
     } else {
       setAiInsights({ aiIssues: [], summary: 'AI deep scan unavailable. Set VITE_GROQ_API_KEY to enable.', score: report.score });
@@ -149,25 +151,44 @@ export default function ArtifactAuditor({ artifact, onClose, onJumpToField }) {
             </div>
           )}
 
-          <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+          <div className="auditor-ai-section">
             {!aiInsights ? (
               <button
-                className="btn-primary"
+                className="btn-ai"
                 disabled={aiLoading}
                 onClick={handleAIEnhance}
-                style={{ width: '100%' }}
               >
-                {aiLoading ? <div className="loader tiny" /> : '🤖 AI-Powered Deep Scan'}
+                {aiLoading ? <div className="loader tiny" /> : '🤖  AI-Powered Deep Scan'}
               </button>
             ) : (
-              <div style={{ background: 'rgba(99,102,241,0.05)', borderRadius: '0.75rem', padding: '1rem' }}>
-                <div style={{ fontWeight: 700, marginBottom: '0.5rem', color: 'var(--primary)' }}>AI Insights</div>
-                <p style={{ fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-muted)' }}>{aiInsights.summary}</p>
-                {aiInsights.aiIssues?.map((issue, i) => (
-                  <div key={i} style={{ fontSize: '0.8rem', padding: '0.25rem 0', color: 'var(--text)' }}>
-                    • {issue.message}
+              <div className="auditor-ai-card">
+                <div className="auditor-ai-header">
+                  <span className="auditor-ai-icon">🧠</span>
+                  <span>AI Insights</span>
+                  <button className="auditor-ai-regenerate" onClick={handleAIEnhance} disabled={aiLoading} title="Regenerate">
+                    {aiLoading ? <div className="loader tiny" /> : '↻'}
+                  </button>
+                </div>
+                {aiInsights.summary && (
+                  <div className="auditor-ai-summary">{aiInsights.summary}</div>
+                )}
+                {aiInsights.aiIssues?.length > 0 && (
+                  <div className="auditor-ai-issues">
+                    {aiInsights.aiIssues.map((issue, i) => (
+                      <div key={i} className={`auditor-ai-issue auditor-ai-issue--${issue.severity || 'info'}`}>
+                        <span className="auditor-ai-issue-icon">
+                          {issue.severity === 'error' ? '🔴' : issue.severity === 'warning' ? '🟡' : '🔵'}
+                        </span>
+                        <span className="auditor-ai-issue-text">{issue.message}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+                {typeof aiInsights.score === 'number' && (
+                  <div className="auditor-ai-score">
+                    AI Score: <strong>{aiInsights.score}</strong>/100
+                  </div>
+                )}
               </div>
             )}
           </div>
