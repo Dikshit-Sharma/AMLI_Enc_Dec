@@ -7,6 +7,8 @@ import HomePage from './HomePage';
 import ArtifactsPage from './ArtifactsPage';
 import { encrypt, decrypt, encryptCBC, decryptCBC, generateAESKeyHex, hexToBase64, base64ToHex } from './cryptoUtil';
 import LibraryPage from './LibraryPage';
+import OnboardingBot from './OnboardingBot';
+import QuickAnswerBot from './QuickAnswerBot';
 
 function App() {
   const [inputText, setInputText] = useState('');
@@ -60,7 +62,7 @@ function App() {
     if (mode === 'GCM') {
       try {
         atob(aesKey);
-      } catch (e) {
+      } catch {
         setError('GCM mode requires a valid Base64 key');
         return false;
       }
@@ -143,7 +145,10 @@ function App() {
   };
 
   return (
-    <Routes>
+    <>
+      <OnboardingBot />
+      <QuickAnswerBot />
+      <Routes>
       <Route path="/" element={<HomePage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/artifacts" element={<ArtifactsPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
@@ -245,8 +250,8 @@ function App() {
           </div>
         </div>
       } />
-      <Route path="/library" element={<LibraryPage />} />
     </Routes>
+    </>
   );
 }
 

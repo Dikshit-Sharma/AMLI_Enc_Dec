@@ -4,6 +4,8 @@ import { db } from './firebase';
 import { Link } from 'react-router-dom';
 import { generateAndDownloadZip } from './artifactUtil';
 import { decrypt, decryptCBC } from './cryptoUtil';
+import ArtifactComparator from './ArtifactComparator';
+import LibraryInsights from './LibraryInsights';
 
 const LibraryPage = ({ theme, toggleTheme }) => {
   const [artifacts, setArtifacts] = useState([]);
@@ -14,6 +16,9 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   );
   const [password, setPassword] = useState('');
   const [passError, setPassError] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [compareArtifacts, setCompareArtifacts] = useState(null);
+  const [showInsights, setShowInsights] = useState(false);
 
   const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
@@ -52,8 +57,8 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     art.jiraTicket?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const [copyStatus, setCopyStatus] = useState({}); // { id: boolean }
-  const [downloadingStatus, setDownloadingStatus] = useState({}); // { id: boolean }
+  const [copyStatus, setCopyStatus] = useState({});
+  const [downloadingStatus, setDownloadingStatus] = useState({});
 
   const handleCopyCurl = (id, curl) => {
     navigator.clipboard.writeText(curl).then(() => {
@@ -74,6 +79,21 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     } finally {
       setDownloadingStatus(prev => ({ ...prev, [art.id]: false }));
     }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      if (prev.includes(id)) return prev.filter(i => i !== id);
+      if (prev.length >= 2) return [prev[1], id];
+      return [...prev, id];
+    });
+  };
+
+  const handleCompare = () => {
+    const [idA, idB] = selectedIds;
+    const a = artifacts.find(a => a.id === idA);
+    const b = artifacts.find(b => b.id === idB);
+    if (a && b) setCompareArtifacts({ artifactA: a, artifactB: b });
   };
 
   if (!isAuthenticated) {
@@ -112,8 +132,29 @@ const LibraryPage = ({ theme, toggleTheme }) => {
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
           </div>
-          <div className="badge-ticket" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-            Total Items: {artifacts.length}
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <span className="badge-ticket" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              Total: {artifacts.length}
+            </span>
+            {selectedIds.length === 2 && (
+              <button
+                className="btn-primary"
+                style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', width: 'auto', flex: 'none' }}
+                onClick={handleCompare}
+              >
+                ↔ Compare ({selectedIds.length})
+              </button>
+            )}
+            <button
+              style={{
+                background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)',
+                borderRadius: '0.75rem', padding: '0.5rem 1rem', cursor: 'pointer',
+                color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 600, width: 'auto', flex: 'none'
+              }}
+              onClick={() => setShowInsights(true)}
+            >
+              📊 Insights
+            </button>
           </div>
         </div>
 
@@ -141,6 +182,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
               <table className="api-table">
                 <thead>
                   <tr>
+                    <th style={{ width: '40px' }}></th>
                     <th>Sr.</th>
                     <th>API NAME</th>
                     <th>ENV</th>
@@ -152,7 +194,15 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                 <tbody>
                   {filteredArtifacts.length > 0 ? (
                     filteredArtifacts.map((art, index) => (
-                      <tr key={art.id}>
+                      <tr key={art.id} style={{ cursor: 'pointer' }} onClick={() => toggleSelect(art.id)}>
+                        <td onClick={e => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(art.id)}
+                            onChange={() => toggleSelect(art.id)}
+                            style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                          />
+                        </td>
                         <td>{index + 1}</td>
                         <td style={{ fontWeight: 600 }}>{art.apiName}</td>
                         <td><span className="badge-env" data-env={art.env}>{art.env || 'DEV'}</span></td>
@@ -169,7 +219,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                         <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                           {art.timestamp?.toDate ? art.timestamp.toDate().toLocaleString('en-IN', { dateStyle: 'medium' }) : 'Unknown'}
                         </td>
-                        <td>
+                        <td onClick={e => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: '0.5rem' }}>
                             <button
                               className={`copy-icon-btn ${copyStatus[art.id] ? 'copied' : ''}`}
@@ -192,7 +242,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No results found.</td>
+                      <td colSpan="7" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No results found.</td>
                     </tr>
                   )}
                 </tbody>
@@ -201,6 +251,18 @@ const LibraryPage = ({ theme, toggleTheme }) => {
           )}
         </div>
       </div>
+
+      {compareArtifacts && (
+        <ArtifactComparator
+          artifactA={compareArtifacts.artifactA}
+          artifactB={compareArtifacts.artifactB}
+          onClose={() => { setCompareArtifacts(null); setSelectedIds([]); }}
+        />
+      )}
+
+      {showInsights && (
+        <LibraryInsights onClose={() => setShowInsights(false)} />
+      )}
     </div>
   );
 };

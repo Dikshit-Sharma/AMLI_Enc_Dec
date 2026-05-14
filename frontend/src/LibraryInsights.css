@@ -1,0 +1,135 @@
+.insights-modal {
+  max-width: 700px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 2rem;
+}
+
+.insights-card {
+  background: var(--output-bg);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  text-align: center;
+}
+
+.insights-card-value {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--primary);
+  line-height: 1.2;
+}
+
+.insights-card-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.25rem;
+}
+
+.insights-section {
+  margin-bottom: 1.5rem;
+}
+
+.insights-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.insights-bar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.insights-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.insights-bar-label {
+  width: 120px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insights-bar-track {
+  flex: 1;
+  height: 24px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.insights-bar-fill {
+  height: 100%;
+  border-radius: 0.5rem;
+  background: var(--primary);
+  transition: width 0.5s ease;
+  min-width: 4px;
+}
+
+.insights-bar-count {
+  width: 80px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.insights-monthly {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  height: 160px;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.insights-monthly-bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  min-width: 30px;
+}
+
+.insights-monthly-fill {
+  width: 100%;
+  background: var(--primary);
+  border-radius: 0.25rem 0.25rem 0 0;
+  flex: 1;
+  min-height: 4px;
+}
+
+.insights-monthly-count {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.insights-monthly-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}

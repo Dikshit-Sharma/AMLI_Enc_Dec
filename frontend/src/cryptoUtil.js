@@ -43,7 +43,7 @@ export function base64ToHex(base64) {
   // User requested literal string decoding: atob(base64)
   try {
     return atob(base64.trim());
-  } catch (e) {
+  } catch {
     return '';
   }
 }

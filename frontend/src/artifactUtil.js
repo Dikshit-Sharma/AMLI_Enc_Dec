@@ -77,7 +77,7 @@ export function parseCurl(curlString) {
   if (bodyMatch) {
     try {
       result.body = JSON.parse(bodyMatch[1]);
-    } catch (e) {
+    } catch {
       result.body = bodyMatch[1]; // Keep as string if not valid JSON
     }
   }
@@ -89,7 +89,7 @@ export function parseCurl(curlString) {
  * Decrypts payload if needed and formats the artifact text.
  */
 export async function generateArtifactText(artifact, decryptGCM, decryptCBC, shouldMask = false) {
-  const { jiraTicket, apiName, env, curl, response, encryption, aesKey, algo, numRequests, extraRequests } = artifact;
+  const { jiraTicket, apiName: _apiName, env, curl, response, encryption, aesKey, algo, numRequests, extraRequests } = artifact;
   const parsedCurl = parseCurl(curl);
 
   let resultText = `${jiraTicket} Artifacts (${env || 'DEV'})\n\n`;
@@ -115,7 +115,7 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC, sho
   const formatJSON = (val) => {
     try {
       return JSON.stringify(typeof val === 'string' ? JSON.parse(val) : val, null, 2);
-    } catch (e) {
+    } catch {
       return val;
     }
   };
@@ -141,14 +141,14 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC, sho
     let currentParsedReq;
     try {
       currentParsedReq = typeof reqObj === 'string' ? JSON.parse(reqObj) : reqObj;
-    } catch (e) {
+    } catch {
       currentParsedReq = reqObj;
     }
 
     let currentParsedRes;
     try {
       currentParsedRes = typeof resObj === 'string' ? JSON.parse(resObj) : resObj;
-    } catch (e) {
+    } catch {
       currentParsedRes = resObj;
     }
 
@@ -187,12 +187,12 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC, sho
         try {
           const parsedDecReq = typeof decReq === 'string' ? JSON.parse(decReq) : decReq;
           finalDecReq = formatJSON(maskSensitiveData(parsedDecReq));
-        } catch (e) { /* ignore if not JSON */ }
+        } catch { /* ignore if not JSON */ }
 
         try {
           const parsedDecRes = typeof decRes === 'string' ? JSON.parse(decRes) : decRes;
           finalDecRes = formatJSON(maskSensitiveData(parsedDecRes));
-        } catch (e) { /* ignore if not JSON */ }
+        } catch { /* ignore if not JSON */ }
       }
 
       resultText += `ENC REQUEST ${pairNum}:\n${formatJSON(currentParsedReq || {})}\n\n`;
