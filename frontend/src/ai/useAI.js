@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { askGemini, aiAvailable } from './gemini';
+import { askGemini as askAI, aiAvailable } from './gemini';
 
 export default function useAI() {
   const [aiLoading, setAiLoading] = useState(false);
@@ -8,7 +8,7 @@ export default function useAI() {
 
   const callAI = useCallback(async (prompt, systemPrompt = '', temperature = 0.2) => {
     if (!aiAvailable) {
-      const msg = 'AI not available — set VITE_GEMINI_API_KEY in .env';
+      const msg = 'AI not available — set VITE_GROQ_API_KEY in .env';
       setAiError(msg);
       console.warn('[AI]', msg);
       return null;
@@ -22,7 +22,7 @@ export default function useAI() {
     setAiError(null);
 
     try {
-      const result = await askGemini(prompt, systemPrompt, temperature);
+      const result = await askAI(prompt, systemPrompt, temperature);
       return result;
     } catch (err) {
       if (err.name === 'AbortError') return null;

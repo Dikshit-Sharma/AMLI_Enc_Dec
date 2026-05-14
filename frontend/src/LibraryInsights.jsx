@@ -75,7 +75,7 @@ export default function LibraryInsights({ onClose }) {
       const errorDetail = aiError ? ` Error: ${aiError}` : '';
       setAiSummary({
         aiSummary: `AI insights are currently unavailable.${errorDetail}`,
-        recommendation: 'Check that VITE_GEMINI_API_KEY is set correctly and the Gemini API is enabled for your project.'
+        recommendation: 'Check that VITE_GROQ_API_KEY is set correctly.'
       });
     }
   };

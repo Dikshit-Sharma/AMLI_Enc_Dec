@@ -46,7 +46,7 @@ export default function ArtifactComparator({ artifactA, artifactB, onClose }) {
         setAiSummary({ summary: result, aiDifferences: [] });
       }
     } else {
-      setAiSummary({ summary: 'AI summary unavailable. Set VITE_GEMINI_API_KEY to enable.', aiDifferences: [] });
+      setAiSummary({ summary: 'AI summary unavailable. Set VITE_GROQ_API_KEY to enable.', aiDifferences: [] });
     }
   };
 

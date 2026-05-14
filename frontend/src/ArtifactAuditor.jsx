@@ -84,7 +84,7 @@ export default function ArtifactAuditor({ artifact, onClose, onJumpToField }) {
         setAiInsights({ aiIssues: [{ severity: 'info', message: result }], summary: 'AI analysis parsed successfully.', score: report.score });
       }
     } else {
-      setAiInsights({ aiIssues: [], summary: 'AI deep scan unavailable. Set VITE_GEMINI_API_KEY to enable.', score: report.score });
+      setAiInsights({ aiIssues: [], summary: 'AI deep scan unavailable. Set VITE_GROQ_API_KEY to enable.', score: report.score });
     }
   };
 

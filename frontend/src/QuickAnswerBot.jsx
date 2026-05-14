@@ -87,7 +87,7 @@ export default function QuickAnswerBot() {
     const match = findBestMatch(question);
     const answer = match
       ? match.a
-      : 'I\'m not sure about that. Try one of the FAQ topics above, or set VITE_GEMINI_API_KEY for AI-powered answers.';
+      : 'I\'m not sure about that. Try one of the FAQ topics above, or set VITE_GROQ_API_KEY for AI-powered answers.';
     setMessages(prev => prev.filter(m => !m.loading).concat({ role: 'bot', text: answer }));
   };
 
