@@ -1,5 +1,5 @@
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const MODEL = 'gemini-2.0-flash';
+const MODEL = 'gemini-1.5-flash';
 
 export const aiAvailable = !!GEMINI_API_KEY;
 
@@ -8,14 +8,21 @@ export async function askGemini(prompt, systemPrompt = '', temperature = 0.2) {
     throw new Error('Gemini API key not configured. Set VITE_GEMINI_API_KEY in .env');
   }
 
+  const contents = [];
+  if (systemPrompt) {
+    contents.push({ role: 'user', parts: [{ text: `${systemPrompt}\n\n---\n${prompt}` }] });
+    contents.push({ role: 'model', parts: [{ text: 'Understood. I will follow those instructions.' }] });
+  } else {
+    contents.push({ role: 'user', parts: [{ text: prompt }] });
+  }
+
   const response = await fetch(
     `https://generativeai.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        systemInstruction: systemPrompt ? { parts: [{ text: systemPrompt }] } : undefined,
+        contents,
         generationConfig: { temperature, maxOutputTokens: 2048 }
       })
     }
@@ -23,10 +30,16 @@ export async function askGemini(prompt, systemPrompt = '', temperature = 0.2) {
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Gemini API error (${response.status}): ${err}`);
+    console.error('Gemini API error:', response.status, err);
+    throw new Error(`Gemini API error (${response.status}): ${err.slice(0, 200)}`);
   }
 
   const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if (!text) {
+    const reason = data.promptFeedback?.blockReason || 'unknown';
+    console.error('Gemini empty response:', data);
+    throw new Error(`Gemini returned empty response (block reason: ${reason})`);
+  }
   return text;
 }

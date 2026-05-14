@@ -8,7 +8,9 @@ export default function useAI() {
 
   const callAI = useCallback(async (prompt, systemPrompt = '', temperature = 0.2) => {
     if (!aiAvailable) {
-      setAiError('AI not available — set VITE_GEMINI_API_KEY in .env');
+      const msg = 'AI not available — set VITE_GEMINI_API_KEY in .env';
+      setAiError(msg);
+      console.warn('[AI]', msg);
       return null;
     }
 
@@ -24,6 +26,7 @@ export default function useAI() {
       return result;
     } catch (err) {
       if (err.name === 'AbortError') return null;
+      console.error('[AI] API call failed:', err.message);
       setAiError(err.message);
       return null;
     } finally {

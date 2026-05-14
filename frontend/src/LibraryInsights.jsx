@@ -39,7 +39,7 @@ function aggregate(artifacts) {
 export default function LibraryInsights({ onClose }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const { callAI, aiLoading } = useAI();
+  const { callAI, aiLoading, aiError } = useAI();
   const [aiSummary, setAiSummary] = useState(null);
 
   useEffect(() => {
@@ -72,9 +72,10 @@ export default function LibraryInsights({ onClose }) {
         setAiSummary({ aiSummary: result, recommendation: '' });
       }
     } else {
+      const errorDetail = aiError ? ` Error: ${aiError}` : '';
       setAiSummary({
-        aiSummary: 'AI insights are currently unavailable. The Gemini API key may be missing or invalid. Set VITE_GEMINI_API_KEY in your environment to enable AI-powered analysis.',
-        recommendation: 'Configure Gemini API key for AI insights.'
+        aiSummary: `AI insights are currently unavailable.${errorDetail}`,
+        recommendation: 'Check that VITE_GEMINI_API_KEY is set correctly and the Gemini API is enabled for your project.'
       });
     }
   };
