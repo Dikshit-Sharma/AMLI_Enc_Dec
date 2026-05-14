@@ -223,6 +223,8 @@ export default function CredentialsPage({ theme, toggleTheme }) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(null);
   const [expandForm, setExpandForm] = useState(false);
+  const [revealedIds, setRevealedIds] = useState(new Set());
+  const [copiedId, setCopiedId] = useState(null);
 
   const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
@@ -272,6 +274,28 @@ export default function CredentialsPage({ theme, toggleTheme }) {
     } else {
       setPassError('Incorrect password. Please try again.');
     }
+  };
+
+  const toggleReveal = (id) => {
+    setRevealedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const copyCreds = async (c) => {
+    const text = [
+      `SOA App ID: ${c.soaAppId}`,
+      `API Name: ${c.apiName || ''}`,
+      `x-api-key: ${c.xApiKey}`,
+      `Client ID: ${c.clientId}`,
+      `Client Secret: ${c.clientSecret}`,
+      `AES Key: ${c.aesKey}`,
+    ].filter(Boolean).join('\n');
+    await navigator.clipboard.writeText(text);
+    setCopiedId(c.id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const handleDelete = async (id) => {
@@ -406,21 +430,25 @@ export default function CredentialsPage({ theme, toggleTheme }) {
                 </tr>
               </thead>
               <tbody>
-                {creds.map((c) => (
+                {creds.map((c) => {
+                  const revealed = revealedIds.has(c.id);
+                  const val = (v) => (v && revealed ? v : v ? `${v.slice(0, 8)}...` : '--');
+                  const sec = (v) => (v && revealed ? v : v ? '••••••••' : '--');
+                  return (
                   <tr key={c.id}>
                     <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{c.soaAppId}</td>
                     <td>{c.apiName || '--'}</td>
                     <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                      {c.xApiKey ? `${c.xApiKey.slice(0, 8)}...` : '--'}
+                      {val(c.xApiKey)}
                     </td>
                     <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                      {c.clientId ? `${c.clientId.slice(0, 8)}...` : '--'}
+                      {val(c.clientId)}
                     </td>
                     <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                      {c.clientSecret ? '••••••••' : '--'}
+                      {sec(c.clientSecret)}
                     </td>
                     <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                      {c.aesKey ? `${c.aesKey.slice(0, 8)}...` : '--'}
+                      {val(c.aesKey)}
                     </td>
                     <td>
                       {c._source === 'artifact' ? (
@@ -434,18 +462,37 @@ export default function CredentialsPage({ theme, toggleTheme }) {
                       )}
                     </td>
                     <td>
-                      <button
-                        className="copy-icon-btn"
-                        onClick={() => handleDelete(c.id)}
-                        disabled={deleting === c.id}
-                        title={c._source === 'artifact' ? 'From artifact' : 'Delete'}
-                        style={{ color: c._source === 'artifact' ? 'var(--text-muted)' : 'var(--error)', borderColor: 'rgba(244,63,94,0.3)' }}
-                      >
-                        {deleting === c.id ? <div className="loader tiny" /> : '🗑'}
-                      </button>
+                      <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                        <button
+                          className="copy-icon-btn"
+                          onClick={() => toggleReveal(c.id)}
+                          title={revealed ? 'Hide' : 'Show'}
+                          style={{ color: revealed ? 'var(--primary)' : 'var(--text-muted)', borderColor: 'rgba(99,102,241,0.3)' }}
+                        >
+                          {revealed ? '👁' : '👁‍🗨'}
+                        </button>
+                        <button
+                          className="copy-icon-btn"
+                          onClick={() => copyCreds(c)}
+                          title="Copy"
+                          style={{ color: copiedId === c.id ? 'var(--success)' : 'var(--text-muted)', borderColor: 'rgba(99,102,241,0.3)' }}
+                        >
+                          {copiedId === c.id ? '✓' : '📋'}
+                        </button>
+                        <button
+                          className="copy-icon-btn"
+                          onClick={() => handleDelete(c.id)}
+                          disabled={deleting === c.id}
+                          title={c._source === 'artifact' ? 'From artifact' : 'Delete'}
+                          style={{ color: c._source === 'artifact' ? 'var(--text-muted)' : 'var(--error)', borderColor: 'rgba(244,63,94,0.3)' }}
+                        >
+                          {deleting === c.id ? <div className="loader tiny" /> : '🗑'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
