@@ -97,12 +97,13 @@ function extractFromArtifact(art) {
   const clientId = found['clientid'] || found['client_id'] || found['client-id'] || '';
   const clientSecret = found['clientsecret'] || found['client_secret'] || found['client-secret'] || '';
   const aesKey = art.aesKey || found['aeskey'] || '';
+  const appId = found['soaappid'] || found['appid'] || '';
 
   if (!xApiKey && !clientId && !clientSecret && !aesKey) return null;
 
   return {
     id: `art_${art.id}`,
-    soaAppId: art.jiraTicket || 'Unknown',
+    soaAppId: appId || art.jiraTicket || 'Unknown',
     apiName: art.apiName || '',
     env: art.env,
     xApiKey,
