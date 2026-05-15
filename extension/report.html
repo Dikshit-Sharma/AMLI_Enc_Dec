@@ -1,43 +1,48 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GitLab LOC Report</title>
+  <title>RepoScope — Dashboard</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="report-page">
-    <div class="report-header">
-      <h1>GitLab LOC Report</h1>
-      <p>Lines of Code by merge requests or commits in a date range</p>
-    </div>
-
-    <!-- Form -->
-    <div class="card" id="formSection">
-      <div class="form-row">
-        <div class="form-group full-width">
-          <label>Report Type</label>
-          <select id="reportType" class="main-select">
-            <option value="mr">BY MR</option>
-            <option value="commit">BY COMMIT</option>
-          </select>
-        </div>
+  <div class="app">
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 class="topbar-brand">RepoScope</h1>
+        <span class="topbar-badge">GitLab Analytics</span>
       </div>
+      <div class="topbar-right">
+        <button id="themeToggle" class="btn-icon" title="Toggle theme">🌙</button>
+        <button id="helpBtn" class="btn-icon" title="Help">?</button>
+      </div>
+    </header>
+
+    <!-- Form section (collapsible) -->
+    <section class="form-section" id="formSection">
       <div class="form-row">
-        <div class="form-group full-width">
-          <label>GitLab Base URL</label>
+        <div class="form-group">
+          <label>GitLab URL</label>
           <input type="text" id="baseUrl" value="https://repo.maxlifeinsurance.com/api/v4" placeholder="https://gitlab.example.com/api/v4">
         </div>
-      </div>
-      <div class="form-row">
         <div class="form-group">
           <label>Private Token</label>
           <input type="password" id="token" placeholder="glpat-...">
         </div>
+      </div>
+      <div class="form-row">
         <div class="form-group">
           <label>Username</label>
-          <input type="text" id="username" placeholder="DLBPR02929">
+          <input type="text" id="username" placeholder="your.username">
+        </div>
+        <div class="form-group">
+          <label>Report Type</label>
+          <select id="reportType" class="main-select">
+            <option value="mr">By Merge Request</option>
+            <option value="commit">By Commit</option>
+          </select>
         </div>
       </div>
       <div class="form-row" id="commitAuthorRow" style="display:none">
@@ -56,117 +61,125 @@
           <input type="date" id="endDate">
         </div>
       </div>
-      <button class="btn-primary" id="fetchBtn">Generate Report</button>
-    </div>
+      <div style="display:flex;gap:0.75rem">
+        <button class="btn-primary" id="fetchBtn">Generate Dashboard</button>
+        <button class="btn-secondary" id="cancelBtn" style="display:none">Cancel</button>
+      </div>
+    </section>
 
     <!-- Progress -->
-    <div class="card" id="progressSection" style="display:none">
-      <div class="progress-section">
-        <div class="progress-text" id="progressText">Starting...</div>
-        <div class="progress-bar-bg">
-          <div class="progress-bar-fill" id="progressBar" style="width:0%"></div>
-        </div>
-        <button class="btn-secondary" id="cancelBtn">Cancel</button>
-      </div>
-    </div>
+    <section class="progress-section" id="progressSection" style="display:none">
+      <div class="progress-text" id="progressText">Starting...</div>
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressBar" style="width:0%"></div></div>
+    </section>
 
     <!-- Error -->
-    <div id="errorSection" style="display:none"></div>
+    <section id="errorSection" style="display:none"></section>
 
-    <!-- Results -->
-    <div id="resultsSection" style="display:none">
-      <div class="summary-grid" id="summaryGrid"></div>
+    <!-- Dashboard -->
+    <section id="dashboardSection" style="display:none">
+      <!-- Tab bar -->
+      <nav class="tab-bar" id="tabBar">
+        <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+        <button class="tab-btn" data-tab="calendar">📅 Activity</button>
+        <button class="tab-btn" data-tab="projects">📦 Projects</button>
+        <button class="tab-btn" data-tab="contributors">👥 Contributors</button>
+        <button class="tab-btn" data-tab="explorer">🔍 Explorer</button>
+      </nav>
 
-      <!-- Per-project -->
-      <div class="card" id="projectSection" style="display:none">
-        <div class="section-title">Per-Project Summary</div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th id="projectCountHeader">MRs</th>
-                <th>Added</th>
-                <th>Deleted</th>
-                <th>Modified</th>
-                <th>Net</th>
-              </tr>
-            </thead>
-            <tbody id="projectBody"></tbody>
-          </table>
+      <!-- Tab: Overview -->
+      <div class="tab-panel active" id="tab-overview">
+        <div class="summary-grid" id="summaryGrid"></div>
+        <div class="chart-grid-2">
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <h3>Codebase Health</h3>
+              <span class="chart-hint">Language distribution across repos</span>
+            </div>
+            <div class="chart-body" id="treemapChart"><div class="chart-empty">Run a report to see language breakdown</div></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <h3>Bus Factor</h3>
+              <span class="chart-hint">Repo size vs ownership concentration</span>
+            </div>
+            <div class="chart-body" id="bubbleChart"><div class="chart-empty">Run a report to see bus factor analysis</div></div>
+          </div>
+        </div>
+        <div class="chart-card" style="margin-top:1.5rem">
+          <div class="chart-card-header">
+            <h3>Project Activity</h3>
+            <span class="chart-hint">Per-project commit/MR counts</span>
+          </div>
+          <div class="chart-body" id="projectBarChart"><div class="chart-empty">Run a report to see project activity</div></div>
         </div>
       </div>
 
-      <!-- MR table (BY MR mode) -->
-      <div class="card" id="mrSection" style="display:none">
-        <div class="section-title">Merge Requests</div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>MR</th>
-                <th>Title</th>
-                <th>Merged</th>
-                <th>Added</th>
-                <th>Deleted</th>
-                <th>Modified</th>
-                <th>Net</th>
-              </tr>
-            </thead>
-            <tbody id="mrBody"></tbody>
-          </table>
+      <!-- Tab: Activity Calendar -->
+      <div class="tab-panel" id="tab-calendar">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3>Activity Calendar</h3>
+            <span class="chart-hint">GitHub-style heatmap — one row per project</span>
+          </div>
+          <div class="chart-body" id="calendarChart"><div class="chart-empty">Run a report to see activity calendar</div></div>
         </div>
       </div>
 
-      <!-- Commit table (BY COMMIT mode) -->
-      <div class="card" id="commitSection" style="display:none">
-        <div class="section-title">Commits</div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Commit</th>
-                <th>Message</th>
-                <th>Date</th>
-                <th>Added</th>
-                <th>Deleted</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody id="commitBody"></tbody>
-          </table>
+      <!-- Tab: Projects -->
+      <div class="tab-panel" id="tab-projects">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3>Per-Project Summary</h3>
+            <span class="chart-hint">Click a project to explore in detail</span>
+          </div>
+          <div class="chart-body" id="projectTableWrap"></div>
+        </div>
+        <div class="chart-card" style="margin-top:1.5rem">
+          <div class="chart-card-header">
+            <h3>Review Flow</h3>
+            <span class="chart-hint">Who reviews whose merge requests</span>
+          </div>
+          <div class="chart-body" id="reviewFlowChart"><div class="chart-empty">Run a report in MR mode to see review flow</div></div>
         </div>
       </div>
 
-      <!-- Per-file -->
-      <div class="card" id="fileSection" style="display:none">
-        <div class="section-title">Per-File Breakdown</div>
-        <div class="table-wrap" id="fileTableWrap" style="display:none">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th id="fileIdHeader">MR</th>
-                <th>File</th>
-                <th>Added</th>
-                <th>Deleted</th>
-                <th>Modified</th>
-                <th>Net</th>
-              </tr>
-            </thead>
-            <tbody id="fileBody"></tbody>
-          </table>
+      <!-- Tab: Contributors -->
+      <div class="tab-panel" id="tab-contributors">
+        <div class="chart-grid-2">
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <h3>Contributor Distribution</h3>
+              <span class="chart-hint">Added lines per contributor</span>
+            </div>
+            <div class="chart-body" id="contributorChart"><div class="chart-empty">Run a report to see contributor breakdown</div></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-header">
+              <h3>Project Distribution</h3>
+              <span class="chart-hint">Projects per contributor</span>
+            </div>
+            <div class="chart-body" id="contributorProjectsChart"><div class="chart-empty">Run a report to see distribution</div></div>
+          </div>
         </div>
       </div>
-    </div>
+
+      <!-- Tab: Explorer (Mindmap) -->
+      <div class="tab-panel" id="tab-explorer">
+        <div class="chart-card">
+          <div class="chart-card-header">
+            <h3>Codebase Explorer</h3>
+            <span class="chart-hint">Interactive file tree with commit stats</span>
+          </div>
+          <div class="chart-body" id="explorerBody"><div class="chart-empty">Run a report, then click a project name to explore its file tree</div></div>
+        </div>
+      </div>
+    </section>
 
     <!-- Footer -->
-    <div class="footer">
-      Developed by Dikshit Sharma &bull;
-      <a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a>
-    </div>
+    <footer class="footer">
+      Built by <strong>Dikshit Sharma</strong> &bull; <a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a>
+    </footer>
   </div>
   <script src="report.js"></script>
 </body>
