@@ -142,6 +142,10 @@ body.layout-fixed .container {
   overflow-y: visible !important;
 }
 
+.cipher-container .workspace-fullscreen {
+  overflow: hidden !important;
+}
+
 .workspace-fullscreen::before {
   display: none !important;
 }

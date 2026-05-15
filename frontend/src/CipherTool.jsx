@@ -150,7 +150,7 @@ export default function CipherTool({ theme, toggleTheme }) {
   };
 
   return (
-    <div className="container">
+    <div className="container cipher-container">
       <div className="card workspace-fullscreen">
         <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
