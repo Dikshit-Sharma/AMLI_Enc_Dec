@@ -472,8 +472,9 @@ body {
   min-height: auto;
 }
 
-#dash3dContainer { overflow: hidden; }
-#dash3dContainer canvas { display: block; }
+#dash3dContainer, #locExplorer3d { overflow: hidden; position: relative; }
+#dash3dContainer canvas, #locExplorer3d canvas { display: block; }
+#dash3dContainer .css2d-label, #locExplorer3d .css2d-label { pointer-events: none; }
 
 /* ─── Sparklines ───────────────────────────────────────── */
 .spark-grid {

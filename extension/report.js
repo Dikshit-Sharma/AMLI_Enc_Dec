@@ -1318,7 +1318,7 @@ function renderTreeNodes(node) {
 
 // ─── Shared Three.js loader ──────────────────────────────
 function loadThreeJS() {
-  if (window.THREE && window.OrbitControls) {
+  if (window.THREE && window.OrbitControls && window.CSS2DRenderer) {
     return Promise.resolve();
   }
   return import('./vendor/three.module.js').then(THREE_ => {
@@ -1326,18 +1326,52 @@ function loadThreeJS() {
     return import('./vendor/OrbitControls.js');
   }).then(({ OrbitControls: OC }) => {
     window.OrbitControls = OC;
+    return import('./vendor/CSS2DRenderer.js');
+  }).then(({ CSS2DRenderer: C2DR, CSS2DObject: C2DO }) => {
+    window.CSS2DRenderer = C2DR;
+    window.CSS2DObject = C2DO;
   });
 }
 
 // ─── 3D Explorer (Three.js) ─────────────────────────────
 let threeScene = null, threeCamera = null, threeRenderer = null;
+let threeLabelRenderer = null;
 let threeControls = null, threeAnimId = null;
 const threeNodes = [];
+const threeEdgeMeshes = [];
+let threeNodeTree = null; // hierarchical node data for expand/collapse
+
 const threeTooltipEl = document.getElementById('tooltip3d') || (() => {
   const el = document.createElement('div'); el.id = 'tooltip3d'; el.className = 'chart-tooltip';
   el.style.cssText = 'display:none;pointer-events:auto;position:fixed;z-index:9999';
   document.body.appendChild(el); return el;
 })();
+
+// Pastel palette per branch
+const BRANCH_PALETTE = [
+  { node: 0xA8D8EA, edge: 0xA8D8EA, light: 0xC5E8F7 }, // sky
+  { node: 0xAAE6C3, edge: 0xAAE6C3, light: 0xCCF0D8 }, // mint
+  { node: 0xFFD4A8, edge: 0xFFD4A8, light: 0xFFE8CC }, // peach
+  { node: 0xF9C6D9, edge: 0xF9C6D9, light: 0xFCE0EA }, // pink
+  { node: 0xD5C6F9, edge: 0xD5C6F9, light: 0xE8DFFB }, // lavender
+  { node: 0xFFE6A8, edge: 0xFFE6A8, light: 0xFFF2CC }, // yellow
+  { node: 0xB8E6D0, edge: 0xB8E6D0, light: 0xD6F2E5 }, // sage
+  { node: 0xF0C6E6, edge: 0xF0C6E6, light: 0xF8E2F2 }, // rose
+];
+
+function makeCurve(from, to, depth) {
+  const mid = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
+  const offset = 0.8 + depth * 0.3;
+  mid.y += offset;
+  return new THREE.CatmullRomCurve3([from.clone(), mid, to.clone()]);
+}
+
+function makeLabel(text, color = '#555') {
+  const div = document.createElement('div');
+  div.textContent = text;
+  div.style.cssText = `color:${color};font-family:var(--font);font-size:11px;font-weight:600;background:rgba(255,255,255,0.85);padding:2px 8px;border-radius:10px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 2px 6px rgba(0,0,0,0.04);pointer-events:none;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;`;
+  return new window.CSS2DObject(div);
+}
 
 function build3DTree(treeData, container) {
   dispose3D();
@@ -1346,158 +1380,254 @@ function build3DTree(treeData, container) {
   const H = container.clientHeight || 400;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
-  camera.position.set(15, 10, 20);
-  camera.lookAt(0, 0, 0);
+  scene.background = new THREE.Color(0xf5f7fa);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
+  camera.position.set(10, 7, 14);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(W, H);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0x000000, 0);
+  renderer.shadowMap.enabled = true;
+  renderer.toneMapping = 1;
+  renderer.toneMappingExposure = 1.1;
   container.innerHTML = '';
+  container.style.position = 'relative';
   container.appendChild(renderer.domElement);
+
+  const labelRenderer = new window.CSS2DRenderer();
+  labelRenderer.setSize(W, H);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  container.appendChild(labelRenderer.domElement);
 
   const controls = new window.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.1;
-  controls.autoRotate = false;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 4;
+  controls.maxDistance = 35;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 1.2;
   controls.target.set(0, 0, 0);
 
   // Lights
-  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.65);
   scene.add(ambient);
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-  dirLight.position.set(10, 20, 10);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xddeeff, 0.6);
+  scene.add(hemi);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(8, 15, 10);
+  dirLight.castShadow = true;
   scene.add(dirLight);
-  const backLight = new THREE.DirectionalLight(0x8888ff, 0.4);
-  backLight.position.set(-10, -5, -10);
-  scene.add(backLight);
 
-  // Floor grid for depth perception
-  const gridHelper = new THREE.GridHelper(30, 20, 0x6366f1, 0x334155);
-  gridHelper.position.y = -3;
-  scene.add(gridHelper);
+  // Subtle floor shadow disc
+  const shadowGeo = new THREE.CircleGeometry(10, 32);
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.04, depthWrite: false });
+  const shadowDisc = new THREE.Mesh(shadowGeo, shadowMat);
+  shadowDisc.rotation.x = -Math.PI / 2;
+  shadowDisc.position.y = -0.5;
+  scene.add(shadowDisc);
 
-  const extColors = {
-    js: 0xf7df1e, jsx: 0x61dafb, ts: 0x3178c6, tsx: 0x3178c6,
-    py: 0x3572A5, java: 0xb07219, go: 0x00ADD8, rs: 0xdea584,
-    rb: 0x701516, php: 0x4F5D95, css: 0x563d7c, scss: 0xc6538c,
-    html: 0xe34c26, json: 0x292929, xml: 0x0060ac, yml: 0xcb171e,
-    md: 0x083fa1, sql: 0xe38c00, sh: 0x89e051,
-  };
-
-  // Layout: assign positions with a simple radial cascade
-  const nodeMap = new Map();
-  const edges = [];
-  let idx = 0;
-
-  function layoutNode(node, parentPos, depth, angleOffset) {
-    const isRoot = depth === 0;
-    const isDir = node.type === 'dir';
-    const r = isRoot ? 1.2 : isDir ? 0.7 : 0.35;
-    const color = isRoot ? 0x6366f1 : isDir ? 0x22d3ee : (extColors[node.ext] || 0x94a3b8);
-
-    // Position: spread children in a cone
-    let pos;
-    if (isRoot) {
-      pos = new THREE.Vector3(0, 0, 0);
-    } else {
-      const spread = 2.5 + depth * 1.8;
-      const count = parentPos ? 4 : 1;
-      const angle = angleOffset + (idx % 12) * 0.52;
-      const yOff = -0.5 + depth * 0.3;
-      pos = new THREE.Vector3(
-        parentPos.x + Math.cos(angle) * spread * 0.5,
-        parentPos.y - 0.8 + Math.random() * 0.3,
-        parentPos.z + Math.sin(angle) * spread * 0.5
-      );
-    }
-
-    const geometry = new THREE.SphereGeometry(r, 16, 16);
-    const material = new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.3,
-      metalness: 0.1,
-      emissive: color,
-      emissiveIntensity: isRoot ? 0.3 : 0.1,
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.copy(pos);
-    mesh.userData = { node, isDir, depth, label: node.name, ext: node.ext, stats: isDir ? `+${node.totalAdded}/-${node.totalDeleted}` : `+${node.added}/-${node.deleted}` };
-    scene.add(mesh);
-    nodeMap.set(node, mesh);
-    threeNodes.push(mesh);
-
-    // Glow ring for root
-    if (isRoot) {
-      const ringGeo = new THREE.RingGeometry(1.2, 1.6, 32);
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, side: THREE.DoubleSide, transparent: true, opacity: 0.2 });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      ring.position.copy(pos);
-      ring.position.y -= 0.1;
-      ring.rotation.x = -Math.PI / 2;
-      scene.add(ring);
-    }
-
-    if (parentPos && !isRoot) {
-      edges.push({ from: parentPos, to: pos, color });
-    }
-
-    if (node.children) {
-      const sorted = [...node.children].sort((a, b) => (b.totalAdded || b.net || 0) - (a.totalAdded || a.net || 0));
-      sorted.forEach((child, ci) => {
-        idx++;
-        layoutNode(child, pos, depth + 1, ci * 1.2);
-      });
-    }
-  }
-
-  layoutNode(treeData, null, 0, 0);
-
-  // Draw edges as cylinders (better 3D look than lines)
-  for (const edge of edges) {
-    const from = edge.from;
-    const to = edge.to;
-    const mid = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
-    const dir = new THREE.Vector3().subVectors(to, from);
-    const len = dir.length();
-    dir.normalize();
-
-    const cylGeo = new THREE.CylinderGeometry(0.03, 0.03, len, 4);
-    const cylMat = new THREE.MeshStandardMaterial({ color: edge.color, transparent: true, opacity: 0.3 });
-    const cyl = new THREE.Mesh(cylGeo, cylMat);
-    cyl.position.copy(mid);
-    cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-    scene.add(cyl);
-  }
-
-  // Raycaster for hover
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  let hovered = null;
+  let hoveredObj = null;
+  let hoveredEdges = [];
 
+  // Recursive layout
+  let branchCount = 0;
+  const allGroup = [];
+
+  function layoutNode(node, parentPos, depth, angleBase, branchColor, parentNodeInfo) {
+    const isRoot = depth === 0;
+    const isDir = node.type === 'dir';
+    const colorIdx = branchColor !== undefined ? branchColor : (isRoot ? 0 : ((branchCount++) % BRANCH_PALETTE.length));
+    const pal = BRANCH_PALETTE[colorIdx % BRANCH_PALETTE.length];
+
+    let pos;
+    let radius;
+    if (isRoot) {
+      pos = new THREE.Vector3(0, 0, 0);
+      radius = 0.9;
+    } else {
+      const spread = 3.2 + depth * 1.2;
+      const children = parentNodeInfo ? parentNodeInfo.node.children || [] : [];
+      const childIdx = parentNodeInfo ? parentNodeInfo.children.indexOf(node) : 0;
+      const totalChildren = Math.max(children.length, 1);
+      const angleStep = (Math.PI * 2) / Math.min(totalChildren, 12);
+      const aOff = angleBase + childIdx * angleStep + (depth * 0.3);
+      const dist = spread * (0.6 + Math.random() * 0.4);
+      const yOff = -0.3 + depth * 0.2 + (Math.random() - 0.5) * 0.4;
+      pos = new THREE.Vector3(
+        parentPos.x + Math.cos(aOff) * dist,
+        parentPos.y + yOff,
+        parentPos.z + Math.sin(aOff) * dist
+      );
+      if (isDir) radius = 0.55; else radius = 0.22 + (node.net !== undefined ? Math.min(Math.abs(node.net) / 200, 0.15) : 0);
+    }
+
+    // Create sphere
+    const geo = new THREE.SphereGeometry(radius, isDir ? 24 : 16, isDir ? 24 : 16);
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: pal.node,
+      roughness: 0.25,
+      metalness: 0.05,
+      clearcoat: 0.1,
+      emissive: pal.node,
+      emissiveIntensity: isRoot ? 0.25 : 0.08,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(pos);
+    mesh.castShadow = true;
+    mesh.userData = {
+      node, isDir, depth, label: node.name, ext: node.ext,
+      stats: isDir ? `+${node.totalAdded}/-${node.totalDeleted}/${node.modified || 0} modified` : `+${node.added}/-${node.deleted}/${node.modified}`,
+      pal, isRoot,
+    };
+    scene.add(mesh);
+    threeNodes.push(mesh);
+
+    // Label
+    const labelColor = isRoot ? '#444' : '#666';
+    const label = makeLabel(node.name.length > 16 ? node.name.slice(0, 14) + '…' : node.name, labelColor);
+    label.position.copy(pos);
+    label.position.y -= radius + 0.35;
+    scene.add(label);
+
+    // Root glow rings
+    if (isRoot) {
+      for (let ri = 0; ri < 3; ri++) {
+        const ringGeo = new THREE.RingGeometry(radius + 0.15 + ri * 0.3, radius + 0.25 + ri * 0.3, 40);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: pal.node, side: THREE.DoubleSide, transparent: true, opacity: 0.15 - ri * 0.04,
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.position.copy(pos);
+        ring.position.y -= 0.05;
+        ring.rotation.x = -Math.PI / 2;
+        scene.add(ring);
+      }
+    }
+
+    // Subtle shadow dot under each node
+    const dotGeo = new THREE.CircleGeometry(radius * 1.2, 12);
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.06, depthWrite: false });
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.copy(pos);
+    dot.position.y = -0.48;
+    dot.rotation.x = -Math.PI / 2;
+    scene.add(dot);
+
+    // Edge to parent
+    const children = [];
+    const edgeMeshes = [];
+    if (parentPos && !isRoot) {
+      const curve = makeCurve(parentPos, pos, depth);
+      const tubeGeo = new THREE.TubeGeometry(curve, 12, 0.025 + radius * 0.04, 6, false);
+      const tubeMat = new THREE.MeshPhysicalMaterial({
+        color: pal.edge,
+        transparent: true,
+        opacity: 0.35,
+        roughness: 0.5,
+      });
+      const tube = new THREE.Mesh(tubeGeo, tubeMat);
+      scene.add(tube);
+      edgeMeshes.push(tube);
+      threeEdgeMeshes.push(tube);
+    }
+
+    const nodeInfo = { node, mesh, label, children, edgeMeshes, expanded: true, depth, pal, radius, pos };
+    allGroup.push(nodeInfo);
+
+    // Recurse children
+    if (node.children && node.children.length > 0) {
+      const sorted = [...node.children].sort((a, b) => (b.totalAdded || b.net || 0) - (a.totalAdded || a.net || 0));
+      nodeInfo.children = sorted.map((child, ci) =>
+        layoutNode(child, pos, depth + 1, angleBase + ci * 0.5, colorIdx, { node, children: sorted })
+      );
+      for (const c of nodeInfo.children) {
+        if (c) edgeMeshes.push(...c.edgeMeshes);
+      }
+    }
+
+    return nodeInfo;
+  }
+
+  threeNodeTree = layoutNode(treeData, null, 0, 0, 0, null);
+
+  // Click: toggle expand/collapse on directory nodes
+  renderer.domElement.addEventListener('click', e => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(threeNodes);
+    if (hits.length > 0) {
+      const obj = hits[0].object;
+      if (obj.userData.isDir && !obj.userData.isRoot) {
+        const info = allGroup.find(g => g.mesh === obj);
+        if (info) toggleBranch(info);
+      }
+    }
+  });
+
+  function toggleBranch(info) {
+    info.expanded = !info.expanded;
+    const targetScale = info.expanded ? 1 : 0;
+    function animateBranch(nodeInfo, show) {
+      const scale = show ? 1 : 0;
+      for (const c of nodeInfo.children) {
+        if (!c) continue;
+        c.mesh.scale.setScalar(scale);
+        c.label.element.style.display = show ? '' : 'none';
+        for (const e of c.edgeMeshes) e.scale.set(1, scale, 1);
+        if (!show || !c.expanded) animateBranch(c, show && c.expanded);
+      }
+    }
+    animateBranch(info, info.expanded);
+    // Update label
+    info.mesh.material.emissiveIntensity = info.expanded ? 0.12 : 0.25;
+  }
+
+  // Hover
   renderer.domElement.addEventListener('pointermove', e => {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
     raycaster.setFromCamera(pointer, camera);
-    const intersects = raycaster.intersectObjects(threeNodes);
+    const hits = raycaster.intersectObjects(threeNodes);
 
-    if (hovered) {
-      hovered.material.emissiveIntensity = hovered.userData.isRoot ? 0.3 : 0.1;
-      hovered = null;
+    // Reset previous hover
+    if (hoveredObj) {
+      hoveredObj.scale.setScalar(1);
+      hoveredObj.material.emissiveIntensity = hoveredObj.userData.isRoot ? 0.25 : (hoveredObj.userData.isDir ? 0.08 : 0.08);
+      for (const e of hoveredEdges) e.material.opacity = 0.35;
+      hoveredEdges = [];
+      hoveredObj = null;
       threeTooltipEl.style.display = 'none';
     }
 
-    if (intersects.length > 0) {
-      const obj = intersects[0].object;
-      hovered = obj;
-      obj.material.emissiveIntensity = 0.6;
+    if (hits.length > 0) {
+      const obj = hits[0].object;
+      hoveredObj = obj;
+      obj.scale.setScalar(1.3);
+      obj.material.emissiveIntensity = 0.5;
+
+      // Highlight connected edges
+      const info = allGroup.find(g => g.mesh === obj);
+      if (info) {
+        for (const e of info.edgeMeshes) { e.material.opacity = 0.7; hoveredEdges.push(e); }
+        for (const c of info.children) {
+          if (!c) continue;
+          for (const e of c.edgeMeshes) { e.material.opacity = 0.7; hoveredEdges.push(e); }
+        }
+      }
+
       const d = obj.userData;
       const icon = d.isDir ? '📁' : '📄';
-      const extBadge = d.ext ? `.${d.ext}` : '';
-      threeTooltipEl.innerHTML = `<div class="tt-header">${icon} ${escHtml(d.label)}${extBadge}</div><div class="tt-row"><span>${d.isDir ? 'Directory' : 'File'}</span><strong>${d.stats}</strong></div>`;
+      const ext = d.ext ? `.${d.ext}` : '';
+      threeTooltipEl.innerHTML = `<div class="tt-header">${icon} ${escHtml(d.label)}${ext}</div><div class="tt-row"><span>${d.isDir ? 'Directory' : 'File'}</span><strong>${d.stats}</strong></div>`;
       threeTooltipEl.style.display = 'block';
       const r = threeTooltipEl.getBoundingClientRect();
       let tx = e.clientX + 12, ty = e.clientY - r.height - 10;
@@ -1513,15 +1643,16 @@ function build3DTree(treeData, container) {
     threeAnimId = requestAnimationFrame(animate);
     controls.update();
     renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
   }
   animate();
 
   threeScene = scene;
   threeCamera = camera;
   threeRenderer = renderer;
+  threeLabelRenderer = labelRenderer;
   threeControls = controls;
 
-  // Resize handler
   const onResize = () => {
     const w = container.clientWidth;
     const h = container.clientHeight;
@@ -1529,6 +1660,7 @@ function build3DTree(treeData, container) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      labelRenderer.setSize(w, h);
     }
   };
   window.addEventListener('resize', onResize);
@@ -1545,10 +1677,16 @@ function dispose3D() {
     }
     threeRenderer = null;
   }
+  if (threeLabelRenderer) {
+    threeLabelRenderer.domElement.remove();
+    threeLabelRenderer = null;
+  }
   threeScene = null;
   threeCamera = null;
   threeControls = null;
   threeNodes.length = 0;
+  threeEdgeMeshes.length = 0;
+  threeNodeTree = null;
 }
 
 // ─── Dashboard 3D Network Graph ──────────────────────────
@@ -1561,52 +1699,67 @@ function build3DNetwork(data, container) {
   const H = container.clientHeight || 450;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
-  camera.position.set(18, 12, 22);
-  camera.lookAt(0, 0, 0);
+  scene.background = new THREE.Color(0xf5f7fa);
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
+  camera.position.set(16, 10, 20);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(W, H);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setClearColor(0x000000, 0);
+  renderer.shadowMap.enabled = true;
+  renderer.toneMapping = 1;
+  renderer.toneMappingExposure = 1.1;
   container.innerHTML = '';
+  container.style.position = 'relative';
   container.appendChild(renderer.domElement);
+
+  const labelRenderer = new window.CSS2DRenderer();
+  labelRenderer.setSize(W, H);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  container.appendChild(labelRenderer.domElement);
 
   const controls = new window.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.1;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 5;
+  controls.maxDistance = 40;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 0.8;
   controls.target.set(0, 0, 0);
 
   // Lights
-  const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
   scene.add(ambient);
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
-  dirLight.position.set(10, 20, 10);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0xddeeff, 0.5);
+  scene.add(hemi);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(8, 15, 10);
   scene.add(dirLight);
-  const backLight = new THREE.DirectionalLight(0x8888ff, 0.4);
-  backLight.position.set(-10, -5, -10);
-  scene.add(backLight);
 
-  // Floor grid
-  const gridHelper = new THREE.GridHelper(30, 20, 0x6366f1, 0x334155);
-  gridHelper.position.y = -4;
-  scene.add(gridHelper);
+  // Floor shadow
+  const shadowGeo = new THREE.CircleGeometry(12, 32);
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.03, depthWrite: false });
+  const shadowDisc = new THREE.Mesh(shadowGeo, shadowMat);
+  shadowDisc.rotation.x = -Math.PI / 2;
+  shadowDisc.position.y = -0.5;
+  scene.add(shadowDisc);
 
-  // Collect data from dashboard
+  // Data
   const { projects, contributorAgg } = data;
   const rawCommits = data.filteredCommits || data.rawCommits || [];
-  const projList = Object.values(projects).sort((a, b) => b.commits - a.commits).slice(0, 15);
-  const contribList = Object.values(contributorAgg || {}).sort((a, b) => Object.values(b.weeks).reduce((s, v) => s + v, 0) - Object.values(a.weeks).reduce((s, v) => s + v, 0)).slice(0, 15);
+  const projList = Object.values(projects).sort((a, b) => b.commits - a.commits).slice(0, 12);
+  const contribList = Object.values(contributorAgg || {}).sort((a, b) => Object.values(b.weeks).reduce((s, v) => s + v, 0) - Object.values(a.weeks).reduce((s, v) => s + v, 0)).slice(0, 12);
 
   if (projList.length === 0 && contribList.length === 0) return;
 
-  // Build edge map: { projectName: { contributorName: count } }
   const edgeMap = {};
   const projNames = new Set(projList.map(p => p.name));
   const contribNames = new Set(contribList.map(c => c.name));
-  for (const commit of (rawCommits || [])) {
+  for (const commit of rawCommits) {
     const pn = commit.project_name;
     const cn = commit.author_name || commit.author_email || '';
     if (projNames.has(pn) && contribNames.has(cn)) {
@@ -1616,110 +1769,116 @@ function build3DNetwork(data, container) {
   }
 
   const allNodes = [];
-  const maxProjCommits = Math.max(...projList.map(p => p.commits), 1);
-  const maxContribCommits = Math.max(...contribList.map(c => Object.values(c.weeks).reduce((s, v) => s + v, 0)), 1);
+  const maxProj = Math.max(...projList.map(p => p.commits), 1);
+  const maxContrib = Math.max(...contribList.map(c => Object.values(c.weeks).reduce((s, v) => s + v, 0)), 1);
+  const outerR = 7;
+  const innerR = 3.8;
 
-  // Place projects on outer ring, contributors on inner ring
-  const outerR = 8;
-  const innerR = 4.5;
-
+  // Project nodes (outer, pastel indigo)
   projList.forEach((p, i) => {
     const angle = (i / projList.length) * Math.PI * 2 - Math.PI / 2;
     const x = Math.cos(angle) * outerR;
     const z = Math.sin(angle) * outerR;
-    const r = 0.6 + (p.commits / maxProjCommits) * 0.8;
-    const color = 0x6366f1;
+    const r = 0.45 + (p.commits / maxProj) * 0.55;
+    const pal = BRANCH_PALETTE[i % BRANCH_PALETTE.length];
     const geo = new THREE.SphereGeometry(r, 20, 20);
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.2, emissive: color, emissiveIntensity: 0.15 });
+    const mat = new THREE.MeshPhysicalMaterial({ color: pal.node, roughness: 0.25, metalness: 0.05, clearcoat: 0.1, emissive: pal.node, emissiveIntensity: 0.08 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, 0, z);
-    mesh.userData = { type: 'project', label: p.name, stats: `${p.commits} commits, +${fmt(p.added)} / -${fmt(p.deleted)}` };
+    mesh.castShadow = true;
+    mesh.userData = { type: 'repo', label: p.name, stats: `${p.commits} commits · +${fmt(p.added)} / -${fmt(p.deleted)}` };
     scene.add(mesh);
     threeNodes.push(mesh);
     allNodes.push(mesh);
+
+    const label = makeLabel(p.name.length > 14 ? p.name.slice(0, 12) + '…' : p.name, '#555');
+    label.position.set(x, -r - 0.35, z);
+    scene.add(label);
+
+    // Ring
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(r + 0.1, r + 0.25, 24),
+      new THREE.MeshBasicMaterial({ color: pal.node, side: THREE.DoubleSide, transparent: true, opacity: 0.1 })
+    );
+    ring.position.set(x, -0.05, z);
+    ring.rotation.x = -Math.PI / 2;
+    scene.add(ring);
   });
 
+  // Contributor nodes (inner, pastel teal)
   contribList.forEach((c, i) => {
-    const angle = (i / contribList.length) * Math.PI * 2 + Math.PI / 4;
+    const angle = (i / contribList.length) * Math.PI * 2 + Math.PI / 6;
     const x = Math.cos(angle) * innerR;
     const z = Math.sin(angle) * innerR;
     const total = Object.values(c.weeks).reduce((s, v) => s + v, 0);
-    const r = 0.4 + (total / maxContribCommits) * 0.5;
-    const color = 0x22d3ee;
+    const r = 0.3 + (total / maxContrib) * 0.4;
+    const pal = BRANCH_PALETTE[(i + 3) % BRANCH_PALETTE.length];
     const geo = new THREE.SphereGeometry(r, 16, 16);
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.1, emissive: color, emissiveIntensity: 0.1 });
+    const mat = new THREE.MeshPhysicalMaterial({ color: pal.node, roughness: 0.3, metalness: 0.05, emissive: pal.node, emissiveIntensity: 0.06 });
     const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, 0, z);
+    mesh.position.set(x, 0.2, z);
+    mesh.castShadow = true;
     mesh.userData = { type: 'contributor', label: c.name, stats: `${total} commits` };
     scene.add(mesh);
     threeNodes.push(mesh);
     allNodes.push(mesh);
+
+    const label = makeLabel(c.name.length > 14 ? c.name.slice(0, 12) + '…' : c.name, '#666');
+    label.position.set(x, -r - 0.3, z);
+    scene.add(label);
   });
 
-  // Draw edges as cylinders
-  const maxEdgeCount = Math.max(...Object.values(edgeMap).flatMap(pm => Object.values(pm)), 1);
+  // Curved edges
+  const maxEdge = Math.max(...Object.values(edgeMap).flatMap(pm => Object.values(pm)), 1);
   for (const pn of Object.keys(edgeMap)) {
-    const pMesh = allNodes.find(m => m.userData.label === pn && m.userData.type === 'project');
+    const pMesh = allNodes.find(m => m.userData.label === pn && m.userData.type === 'repo');
     if (!pMesh) continue;
     for (const cn of Object.keys(edgeMap[pn])) {
       const cMesh = allNodes.find(m => m.userData.label === cn && m.userData.type === 'contributor');
       if (!cMesh) continue;
       const count = edgeMap[pn][cn];
-      const from = pMesh.position;
-      const to = cMesh.position;
-      const mid = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
-      const dir = new THREE.Vector3().subVectors(to, from);
-      const len = dir.length();
-      dir.normalize();
-      const thickness = 0.04 + (count / maxEdgeCount) * 0.1;
-      const cylGeo = new THREE.CylinderGeometry(thickness, thickness, len, 4);
-      const cylMat = new THREE.MeshStandardMaterial({ color: 0x6366f1, transparent: true, opacity: 0.25 + (count / maxEdgeCount) * 0.4 });
-      const cyl = new THREE.Mesh(cylGeo, cylMat);
-      cyl.position.copy(mid);
-      cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-      scene.add(cyl);
+      const curve = makeCurve(pMesh.position, cMesh.position, 1);
+      const thick = 0.02 + (count / maxEdge) * 0.08;
+      const tube = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, 14, thick, 5, false),
+        new THREE.MeshPhysicalMaterial({ color: BRANCH_PALETTE[0].edge, transparent: true, opacity: 0.2 + (count / maxEdge) * 0.35, roughness: 0.5 })
+      );
+      scene.add(tube);
+      threeEdgeMeshes.push(tube);
     }
   }
 
-  // Glow ring under each project
-  projList.forEach((p, i) => {
-    const angle = (i / projList.length) * Math.PI * 2 - Math.PI / 2;
-    const x = Math.cos(angle) * outerR;
-    const z = Math.sin(angle) * outerR;
-    const ringGeo = new THREE.RingGeometry(0.8, 1.1, 24);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, side: THREE.DoubleSide, transparent: true, opacity: 0.12 });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.position.set(x, -0.1, z);
-    ring.rotation.x = -Math.PI / 2;
-    scene.add(ring);
-  });
-
-  // Raycaster hover
+  // Hover
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  let hovered = null;
+  let hoveredObj = null;
 
   renderer.domElement.addEventListener('pointermove', e => {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
     raycaster.setFromCamera(pointer, camera);
-    const intersects = raycaster.intersectObjects(threeNodes);
+    const hits = raycaster.intersectObjects(threeNodes);
 
-    if (hovered) {
-      hovered.material.emissiveIntensity = hovered.userData.type === 'project' ? 0.15 : 0.1;
-      hovered = null;
+    if (hoveredObj) {
+      hoveredObj.scale.setScalar(1);
+      hoveredObj.material.emissiveIntensity = 0.08;
+      for (const e of threeEdgeMeshes) e.material.opacity = Math.min(e.material.opacity * 2, 0.55);
+      hoveredObj = null;
       threeTooltipEl.style.display = 'none';
     }
 
-    if (intersects.length > 0) {
-      const obj = intersects[0].object;
-      hovered = obj;
-      obj.material.emissiveIntensity = 0.6;
+    if (hits.length > 0) {
+      const obj = hits[0].object;
+      hoveredObj = obj;
+      obj.scale.setScalar(1.25);
+      obj.material.emissiveIntensity = 0.4;
+      // Dim unrelated edges
+      for (const e of threeEdgeMeshes) e.material.opacity *= 0.5;
+
       const d = obj.userData;
-      const icon = d.type === 'project' ? '📦' : '👤';
-      threeTooltipEl.innerHTML = `<div class="tt-header">${icon} ${escHtml(d.label)}</div><div class="tt-row"><span>${d.type === 'project' ? 'Repo' : 'Contributor'}</span><strong>${d.stats}</strong></div>`;
+      const icon = d.type === 'repo' ? '📦' : '👤';
+      threeTooltipEl.innerHTML = `<div class="tt-header">${icon} ${escHtml(d.label)}</div><div class="tt-row"><span>${d.type === 'repo' ? 'Repository' : 'Contributor'}</span><strong>${d.stats}</strong></div>`;
       threeTooltipEl.style.display = 'block';
       const r = threeTooltipEl.getBoundingClientRect();
       let tx = e.clientX + 12, ty = e.clientY - r.height - 10;
@@ -1730,20 +1889,20 @@ function build3DNetwork(data, container) {
     }
   });
 
-  // Animation loop
   function animate() {
     threeAnimId = requestAnimationFrame(animate);
     controls.update();
     renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
   }
   animate();
 
   threeScene = scene;
   threeCamera = camera;
   threeRenderer = renderer;
+  threeLabelRenderer = labelRenderer;
   threeControls = controls;
 
-  // Resize handler
   const onResize = () => {
     const w = container.clientWidth;
     const h = container.clientHeight;
@@ -1751,6 +1910,7 @@ function build3DNetwork(data, container) {
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
+      labelRenderer.setSize(w, h);
     }
   };
   window.addEventListener('resize', onResize);
