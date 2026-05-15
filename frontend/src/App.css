@@ -1392,6 +1392,187 @@ button:disabled {
   border-color: var(--primary);
 }
 
+/* ─── Cipher Tool Enhancements ─── */
+.cipher-key-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.cipher-key-input-wrap {
+  flex: 1;
+  min-width: 280px;
+  position: relative;
+}
+
+.cipher-key-field {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.cipher-key-field .main-input {
+  flex: 1;
+}
+
+.cipher-key-gen, .cipher-key-history-btn {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  transition: all 0.15s ease;
+}
+
+.cipher-key-gen:hover, .cipher-key-history-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-glow);
+}
+
+.cipher-key-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  margin-top: 0.3rem;
+  z-index: 50;
+  overflow: hidden;
+  box-shadow: var(--shadow-xl);
+}
+
+.cipher-key-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: monospace;
+  transition: background 0.1s;
+}
+
+.cipher-key-dropdown-item:hover {
+  background: rgba(99,102,241,0.1);
+}
+
+.cipher-key-preview {
+  opacity: 0.8;
+}
+
+.cipher-key-index {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  background: var(--input-bg);
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.3rem;
+}
+
+.cipher-actions-strip {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.cipher-action-btn {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.78rem;
+  border-radius: 0.6rem;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 38px;
+}
+
+.cipher-action-btn:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--primary-glow);
+  color: var(--text-primary);
+}
+
+.cipher-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-swap { color: var(--secondary); }
+.btn-clear { color: var(--text-muted); }
+.btn-clear:hover:not(:disabled) { border-color: var(--error); color: var(--error); background: rgba(244,63,94,0.1); }
+
+.cipher-col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cipher-col-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.cipher-char-count {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--input-bg);
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.35rem;
+  white-space: nowrap;
+}
+
+.cipher-copy-btn {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.cipher-copy-btn:hover { border-color: var(--primary); color: var(--primary); }
+.cipher-copy-btn.copied { border-color: var(--success); color: var(--success); }
+
+.cipher-footer-hints {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  margin-top: 1rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
 /* ─── Artifacts Workspace ─── */
 .artifact-workspace {
   background: var(--card-bg);
@@ -1428,6 +1609,162 @@ button:disabled {
 .scrollable {
   overflow-y: auto;
   padding-right: 0.5rem;
+}
+
+/* ─── Artifact Tab Bar ─── */
+.artifact-tab-bar {
+  display: flex;
+  gap: 0.3rem;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 0.25rem 0;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+
+.artifact-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.7rem 0.45rem 0.6rem;
+  border-radius: 0.65rem;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.12s ease;
+  user-select: none;
+  font-family: inherit;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  position: relative;
+}
+
+.artifact-tab:hover { border-color: var(--primary); color: var(--text); background: var(--card-bg); }
+.artifact-tab.active { border-color: var(--primary); color: var(--text); background: var(--primary-glow); }
+.artifact-tab.dragging { opacity: 0.5; border-style: dashed; }
+
+.artifact-tab-status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.artifact-tab-status.valid { background: var(--success); }
+.artifact-tab-status.invalid { background: var(--error); }
+
+.artifact-tab-num {
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.artifact-tab.active .artifact-tab-num { color: var(--primary); }
+.artifact-tab-name { font-weight: 500; max-width: 100px; overflow: hidden; text-overflow: ellipsis; }
+
+.artifact-tab-close {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  padding: 0;
+  margin-left: 0.15rem;
+}
+
+.artifact-tab-close:hover { background: rgba(244,63,94,0.15); color: var(--error); }
+
+.artifact-tab-add {
+  width: 32px;
+  height: 32px;
+  border: 1px dashed var(--border);
+  border-radius: 0.65rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.12s ease;
+  align-self: center;
+}
+
+.artifact-tab-add:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-glow); }
+
+.artifact-tab-content {
+  flex: 1;
+  min-height: 0;
+  margin-top: 1rem;
+}
+
+.btn-sm-artifact-action {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 0.55rem;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.12s ease;
+  width: auto;
+  flex: none;
+}
+
+.btn-sm-artifact-action:hover { border-color: var(--primary); color: var(--text); }
+.btn-sm-artifact-action.active { border-color: var(--success); color: var(--success); }
+
+.btn-sm-primary {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 0.4rem;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  font-family: inherit;
+  width: auto;
+  transition: opacity 0.15s;
+}
+
+.btn-sm-primary:hover { opacity: 0.85; }
+
+.btn-sm-ghost {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  width: auto;
+  transition: all 0.12s;
+}
+
+.btn-sm-ghost:hover { border-color: var(--text-muted); color: var(--text); }
+
+.masked-preview-box {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(16,185,129,0.05);
+  border: 1px solid rgba(16,185,129,0.15);
+  border-radius: 1rem;
 }
 
 /* ─── Library Table Redesign ─── */
