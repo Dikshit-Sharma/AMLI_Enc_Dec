@@ -371,8 +371,6 @@ $('sFetchBtn').addEventListener('click', () => fetchDashboard(true));
 $('presetBar').addEventListener('click', e => {
   const btn = e.target.closest('.preset-btn');
   if (!btn) return;
-  // Close 3D network if active
-  if (dash3dActive) hideDashboard3D();
   qsa('.preset-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   dashDays = parseInt(btn.dataset.days, 10);
@@ -1837,8 +1835,18 @@ function build3DNetwork(data, container) {
   // Data
   const { projects, contributorAgg } = data;
   const rawCommits = data.filteredCommits || data.rawCommits || [];
-  const projList = Object.values(projects).sort((a, b) => b.commits - a.commits).slice(0, 12);
   const contribList = Object.values(contributorAgg || {}).sort((a, b) => Object.values(b.weeks).reduce((s, v) => s + v, 0) - Object.values(a.weeks).reduce((s, v) => s + v, 0)).slice(0, 12);
+  const contribNames = new Set(contribList.map(c => c.name));
+
+  // Only include repos that have commits from top contributors
+  const activeRepos = new Set();
+  for (const commit of rawCommits) {
+    const cn = commit.author_name || commit.author_email || '';
+    if (contribNames.has(cn)) activeRepos.add(commit.project_name);
+  }
+  const projList = Object.values(projects)
+    .filter(p => activeRepos.has(p.name))
+    .sort((a, b) => b.commits - a.commits);
 
   if (projList.length === 0 && contribList.length === 0) return;
 
@@ -1848,7 +1856,6 @@ function build3DNetwork(data, container) {
   // Edge map (repo ↔ contributor connections)
   const edgeMap = {};
   const projNames = new Set(projList.map(p => p.name));
-  const contribNames = new Set(contribList.map(c => c.name));
   for (const commit of rawCommits) {
     const pn = commit.project_name;
     const cn = commit.author_name || commit.author_email || '';
