@@ -2,7 +2,7 @@
 const STORAGE_KEY = 'reposcope_form';
 let abortController = null;
 let cachedData = null;
-let currentTheme = 'dark';
+let currentTheme = 'light';
 
 // ─── DOM shortcuts ──────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -286,6 +286,7 @@ async function generateMRReport(baseUrl, token, user, projects, startDate, endDa
     }, token, signal);
 
     let pAdded = 0, pDeleted = 0, pModified = 0, pMRs = 0;
+    const projFileTypes = {};
 
     for (const mr of mrs) {
       if (signal.aborted) throw new Error('Cancelled');
@@ -301,6 +302,10 @@ async function generateMRReport(baseUrl, token, user, projects, startDate, endDa
       const mrDeleted = fileStats.reduce((s, f) => s + f.deleted, 0);
       const mrModified = fileStats.reduce((s, f) => s + f.modified, 0);
       const mrNet = mrAdded + mrModified - mrDeleted;
+
+      for (const fs of fileStats) {
+        projFileTypes[fs.ext] = (projFileTypes[fs.ext] || 0) + 1;
+      }
 
       grandAdded += mrAdded; grandDeleted += mrDeleted; grandModified += mrModified;
       pAdded += mrAdded; pDeleted += mrDeleted; pModified += mrModified; pMRs++;
@@ -333,7 +338,8 @@ async function generateMRReport(baseUrl, token, user, projects, startDate, endDa
     }
 
     if (pMRs > 0) {
-      projectMap[proj.id] = { name: projName, count: pMRs, added: pAdded, deleted: pDeleted, modified: pModified, fileTypes: calcFileTypes(fileStats) };
+      const sorted = Object.entries(projFileTypes).sort((a, b) => b[1] - a[1]);
+      projectMap[proj.id] = { name: projName, count: pMRs, added: pAdded, deleted: pDeleted, modified: pModified, fileTypes: sorted };
     }
     scanned++;
   }

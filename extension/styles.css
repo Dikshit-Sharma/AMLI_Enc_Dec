@@ -52,8 +52,8 @@
 
 body {
   font-family: var(--font);
-  background: var(--bg);
-  color: var(--text);
+  background: var(--bg, #f1f5f9);
+  color: var(--text, #0f172a);
   line-height: 1.5;
   min-height: 100vh;
 }
@@ -254,7 +254,7 @@ tr:hover { background: var(--bg-hover); }
 .mm-children { padding-left: 1rem; }
 
 /* ─── Popup ────────────────────────────────────────────── */
-.popup-container { width: 320px; padding: 1.5rem; text-align: center; }
+.popup-container { width: 320px; padding: 1.5rem; text-align: center; background: var(--bg-card, #ffffff); border-radius: 0.5rem; }
 .popup-header { margin-bottom: 1rem; }
 .popup-header h1 {
   font-size: 1.2rem; font-weight: 800;
