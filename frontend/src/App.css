@@ -1611,59 +1611,63 @@ button:disabled {
   color: var(--text);
 }
 
-/* ─── Weekly Activity ─── */
-.weekly-bars {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 1rem;
-  height: 160px;
-  padding: 0.5rem 0;
-}
-
-.weekly-bar-col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  flex: 1;
-  max-width: 60px;
-  height: 100%;
-  justify-content: flex-end;
-}
-
-.weekly-bar-count {
-  font-size: 0.8rem;
-  font-weight: 800;
-  color: var(--text);
-}
-
-.weekly-bar-track {
-  width: 100%;
-  max-width: 36px;
-  flex: 1;
-  min-height: 8px;
-  border-radius: 0.5rem 0.5rem 0.2rem 0.2rem;
-  background: var(--input-bg);
+/* ─── Velocity Chart ─── */
+.velocity-chart-wrap {
   position: relative;
+  width: 100%;
 }
 
-.weekly-bar-fill {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  border-radius: inherit;
-  background: linear-gradient(180deg, var(--primary) 0%, #4f46e5 100%);
-  transition: height 0.4s ease;
+.velocity-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
 }
 
-.weekly-bar-label {
-  font-size: 0.65rem;
+.velocity-stats {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.velocity-stat {
+  font-size: 0.7rem;
   font-weight: 700;
-  text-transform: uppercase;
   color: var(--text-muted);
-  letter-spacing: 0.04em;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  white-space: nowrap;
+}
+
+.velocity-legend {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  padding-top: 0.25rem;
+}
+
+.velocity-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.velocity-legend-line {
+  width: 18px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.velocity-legend-line--dashed {
+  height: 0;
+  border-top: 2px dashed currentColor;
+  background: transparent !important;
 }
 
 /* ─── Top APIs ─── */
