@@ -178,10 +178,26 @@ export default function CipherTool({ theme, toggleTheme }) {
 
         {error && <div className="error-message"><span>⚠️ {error}</span></div>}
 
-        <div className="cipher-key-row">
-          <div className="cipher-key-input-wrap">
+        <div className="cipher-key-section">
+          <div className="cipher-key-section-top">
             <label className="field-label">{mode === 'GCM' ? 'AES KEY (BASE64)' : 'AES KEY (RAW STRING)'}</label>
-            <div className="cipher-key-field">
+            <div className="cipher-actions-strip">
+              <button className="btn-encrypt cipher-action-btn" onClick={handleEncrypt} disabled={loading}>
+                {loading ? <div className="loader tiny" /> : '🔒 Encrypt'}
+              </button>
+              <button className="btn-decrypt cipher-action-btn" onClick={handleDecrypt} disabled={loading}>
+                {loading ? <div className="loader tiny" /> : '🔓 Decrypt'}
+              </button>
+              <button className="btn-swap cipher-action-btn" onClick={handleSwap} disabled={!outputResult} title="Swap input/output">
+                ↕ Swap
+              </button>
+              <button className="btn-clear cipher-action-btn" onClick={handleClear} title="Clear all">
+                ✕ Clear
+              </button>
+            </div>
+          </div>
+          <div className="cipher-key-field-row">
+            <div className="cipher-key-field-wrap">
               <input
                 id="aesKey" type="text" className="main-input" value={aesKey}
                 onChange={(e) => setAesKey(e.target.value)}
@@ -206,20 +222,6 @@ export default function CipherTool({ theme, toggleTheme }) {
               </div>
             )}
           </div>
-          <div className="cipher-actions-strip">
-            <button className="btn-encrypt cipher-action-btn" onClick={handleEncrypt} disabled={loading}>
-              {loading ? <div className="loader tiny" /> : '🔒 Encrypt'}
-            </button>
-            <button className="btn-decrypt cipher-action-btn" onClick={handleDecrypt} disabled={loading}>
-              {loading ? <div className="loader tiny" /> : '🔓 Decrypt'}
-            </button>
-            <button className="btn-swap cipher-action-btn" onClick={handleSwap} disabled={!outputResult} title="Swap input/output">
-              ↕ Swap
-            </button>
-            <button className="btn-clear cipher-action-btn" onClick={handleClear} title="Clear all">
-              ✕ Clear
-            </button>
-          </div>
         </div>
 
         <div className={`workspace-wrapper ${isSideBySide ? 'workspace-wrapper--side-by-side' : ''}`}>
@@ -230,7 +232,7 @@ export default function CipherTool({ theme, toggleTheme }) {
             </div>
             <SmartTextArea
               id="inputText" value={inputText} onChange={setInputText}
-              dark={theme === 'dark'} maxHeight="55vh"
+              dark={theme === 'dark'}
               placeholder="Type message, paste payload, or enter encrypted text..."
             />
           </div>
@@ -249,7 +251,7 @@ export default function CipherTool({ theme, toggleTheme }) {
             </div>
             <SmartTextArea
               value={outputResult} onChange={setOutputResult} readOnly
-              dark={theme === 'dark'} maxHeight="55vh"
+              dark={theme === 'dark'}
               placeholder="Result will appear here..."
             />
           </div>
