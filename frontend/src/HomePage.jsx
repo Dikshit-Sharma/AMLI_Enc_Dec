@@ -17,6 +17,145 @@ function FilterChip({ label, onClear }) {
   );
 }
 
+const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function ActivityCalendar({ artifacts, filterDate, onDateFilter }) {
+  const weeks = 52;
+  const cellSize = 13;
+  const cellGap = 3;
+  const dayLabelW = 30;
+  const monthLabelH = 16;
+
+  const { cells, monthMarkers, today } = useMemo(() => {
+    const now = new Date();
+    const end = new Date(now);
+    end.setDate(end.getDate() + (6 - end.getDay()));
+    const start = new Date(end);
+    start.setDate(start.getDate() - (weeks * 7 - 1));
+    start.setHours(0, 0, 0, 0);
+
+    const countMap = {};
+    for (const a of artifacts || []) {
+      const ts = toDate(a.timestamp);
+      if (!ts) continue;
+      const key = ts.toISOString().slice(0, 10);
+      countMap[key] = (countMap[key] || 0) + 1;
+    }
+
+    const cells = [];
+    const monthMarkers = [];
+    let lastMonth = -1;
+    const cursor = new Date(start);
+
+    while (cursor <= end) {
+      const dateStr = cursor.toISOString().slice(0, 10);
+      const count = countMap[dateStr] || 0;
+      const dayOfWeek = cursor.getDay();
+      const weekIdx = Math.floor((cursor - start) / (7 * 86400000));
+      const month = cursor.getMonth();
+      const isToday = dateStr === now.toISOString().slice(0, 10);
+
+      if (month !== lastMonth) {
+        const firstOfMonth = new Date(cursor.getFullYear(), month, 1);
+        if (firstOfMonth >= start) {
+          const fWeekIdx = Math.floor((firstOfMonth - start) / (7 * 86400000));
+          if (!monthMarkers.some(m => m.week === fWeekIdx)) {
+            monthMarkers.push({ label: MONTH_LABELS[month], week: fWeekIdx });
+          }
+        }
+        lastMonth = month;
+      }
+
+      cells.push({ dateStr, count, dayOfWeek, weekIdx, isToday });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const todayStr = now.toISOString().slice(0, 10);
+
+    return { cells, monthMarkers, today: todayStr };
+  }, [artifacts]);
+
+  const maxCount = useMemo(() => Math.max(...cells.map(c => c.count), 1), [cells]);
+  const levels = useMemo(() => {
+    const nonZero = cells.filter(c => c.count > 0).map(c => c.count).sort((a, b) => a - b);
+    if (nonZero.length === 0) return [0, 0, 0, 0];
+    const len = nonZero.length;
+    return [
+      nonZero[Math.floor(len * 0.25)] || 1,
+      nonZero[Math.floor(len * 0.5)] || 1,
+      nonZero[Math.floor(len * 0.75)] || 1,
+      nonZero[len - 1] || 1,
+    ];
+  }, [cells]);
+
+  const getColor = (count) => {
+    if (count === 0) return 'transparent';
+    if (count <= levels[0]) return 'var(--cal-level-1)';
+    if (count <= levels[1]) return 'var(--cal-level-2)';
+    if (count <= levels[2]) return 'var(--cal-level-3)';
+    return 'var(--cal-level-4)';
+  };
+
+  const totalW = dayLabelW + weeks * (cellSize + cellGap);
+  const totalH = monthLabelH + 7 * (cellSize + cellGap);
+
+  const [tooltip, setTooltip] = useState(null);
+
+  return (
+    <div className="chart-container">
+      <h3 className="chart-title">Activity Calendar{filterDate ? ` — ${filterDate}` : ''}</h3>
+      <div className="cal-heatmap-wrap">
+        <div className="cal-heatmap-scroll">
+          <svg width={totalW} height={totalH} className="cal-heatmap-svg">
+            {monthMarkers.map((m, i) => (
+              <text key={i} x={dayLabelW + m.week * (cellSize + cellGap)} y={monthLabelH - 4}
+                fill="var(--text-muted)" fontSize="9" fontWeight="600">{m.label}</text>
+            ))}
+            {DAY_LABELS.map((label, i) => label ? (
+              <text key={i} x={0} y={monthLabelH + i * (cellSize + cellGap) + cellSize - 2}
+                fill="var(--text-muted)" fontSize="8" textAnchor="start">{label}</text>
+            ) : null)}
+            {cells.map((c, i) => {
+              const x = dayLabelW + c.weekIdx * (cellSize + cellGap);
+              const y = monthLabelH + c.dayOfWeek * (cellSize + cellGap);
+              const isActive = filterDate === c.dateStr;
+              return (
+                <rect key={i} x={x} y={y} width={cellSize} height={cellSize} rx="3"
+                  fill={c.count > 0 ? getColor(c.count) : 'var(--cal-empty)'}
+                  stroke={c.isToday ? 'var(--primary)' : (isActive ? 'var(--text)' : 'none')}
+                  strokeWidth={c.isToday ? 2 : (isActive ? 1.5 : 0)}
+                  style={{ cursor: 'pointer', transition: 'fill 0.15s' }}
+                  onMouseEnter={(e) => {
+                    const rect = e.target.getBoundingClientRect();
+                    setTooltip({ x: rect.left + rect.width / 2, y: rect.top - 8, dateStr: c.dateStr, count: c.count });
+                  }}
+                  onMouseLeave={() => setTooltip(null)}
+                  onClick={() => onDateFilter(isActive ? null : c.dateStr)}
+                />
+              );
+            })}
+          </svg>
+          {tooltip && (
+            <div className="cal-tooltip" style={{ position: 'fixed', left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, -100%)' }}>
+              <strong>{tooltip.dateStr}</strong>: {tooltip.count} {tooltip.count === 1 ? 'artifact' : 'artifacts'}
+            </div>
+          )}
+        </div>
+        <div className="cal-legend">
+          <span className="cal-legend-label">Less</span>
+          <span className="cal-legend-swatch" style={{ background: 'var(--cal-empty)' }} />
+          <span className="cal-legend-swatch" style={{ background: 'var(--cal-level-1)' }} />
+          <span className="cal-legend-swatch" style={{ background: 'var(--cal-level-2)' }} />
+          <span className="cal-legend-swatch" style={{ background: 'var(--cal-level-3)' }} />
+          <span className="cal-legend-swatch" style={{ background: 'var(--cal-level-4)' }} />
+          <span className="cal-legend-label">More</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChartToolbar({ title, chartType, onChartTypeChange, onFullscreen, stats }) {
   const types = [
     { key: 'bar', icon: '▨' },
@@ -625,6 +764,7 @@ export default function HomePage({ theme, toggleTheme }) {
   const [range, setRange] = useState('all');
   const [filterEnv, setFilterEnv] = useState(null);
   const [brushRange, setBrushRange] = useState(null);
+  const [filterDate, setFilterDate] = useState(null);
   const [fullScreenChart, setFullScreenChart] = useState(null);
   const [velocityType, setVelocityType] = useState('area');
   const [donutType, setDonutType] = useState('donut');
@@ -686,8 +826,15 @@ export default function HomePage({ theme, toggleTheme }) {
     if (filterEnv) {
       arts = arts.filter((a) => a.env === filterEnv);
     }
+    if (filterDate) {
+      arts = arts.filter((a) => {
+        const ts = toDate(a.timestamp);
+        if (!ts) return false;
+        return ts.toISOString().slice(0, 10) === filterDate;
+      });
+    }
     return arts;
-  }, [allArts, range, filterEnv, brushRange]);
+  }, [allArts, range, filterEnv, brushRange, filterDate]);
 
   const rangeEnvData = React.useMemo(() => {
     const map = {};
@@ -708,6 +855,11 @@ export default function HomePage({ theme, toggleTheme }) {
 
   const handleBrush = (range) => {
     setBrushRange(range);
+  };
+
+  const handleDateFilter = (date) => {
+    setFilterDate(date);
+    if (date) setRange('all');
   };
 
   const handleFullScreen = (chartId) => {
@@ -825,6 +977,7 @@ export default function HomePage({ theme, toggleTheme }) {
             {brushRange && (
               <FilterChip label={`${brushRange.startDate} – ${brushRange.endDate}`} onClear={() => setBrushRange(null)} />
             )}
+            {filterDate && <FilterChip label={filterDate} onClear={() => setFilterDate(null)} />}
           </div>
 
           {!loaded ? (
@@ -885,6 +1038,10 @@ export default function HomePage({ theme, toggleTheme }) {
               )}
             </>
           )}
+
+          <div className="chart-section cal-section">
+            <ActivityCalendar artifacts={allArts} filterDate={filterDate} onDateFilter={handleDateFilter} />
+          </div>
 
           <div className="recent-section">
             <h2 className="recent-title">Recent Artifacts{filterEnv ? ` (${filterEnv})` : ''}</h2>

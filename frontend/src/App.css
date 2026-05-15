@@ -2188,6 +2188,80 @@ button:disabled {
   box-shadow: 0 0 0 3px var(--primary-glow);
 }
 
+/* ─── Activity Calendar Heatmap ─── */
+.cal-section {
+  overflow: hidden;
+}
+
+.cal-heatmap-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cal-heatmap-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  position: relative;
+}
+
+.cal-heatmap-svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.cal-tooltip {
+  position: fixed;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.72rem;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: var(--shadow-xl);
+  font-weight: 600;
+}
+.cal-tooltip strong {
+  color: var(--primary);
+}
+
+.cal-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  justify-content: flex-end;
+}
+.cal-legend-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.cal-legend-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Calendar theme variables */
+[data-theme='light'] {
+  --cal-empty: #ebedf0;
+  --cal-level-1: #9be9a8;
+  --cal-level-2: #40c463;
+  --cal-level-3: #30a14e;
+  --cal-level-4: #216e39;
+}
+[data-theme='dark'] {
+  --cal-empty: #1e2030;
+  --cal-level-1: #0e4429;
+  --cal-level-2: #006d32;
+  --cal-level-3: #26a641;
+  --cal-level-4: #39d353;
+}
+
 /* ─── Top APIs ─── */
 .topapi-list {
   display: flex;
