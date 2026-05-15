@@ -1209,9 +1209,15 @@ async function runComparison(currentData, reportType) {
   const baseUrl = $('sBaseUrl').value.trim();
   const token = $('sToken').value.trim();
 
-  // Show spinner
-  $('locCompareSpinner').style.display = '';
+  // Show progress bar
+  $('locCompareProgress').style.display = '';
   $('locCompareBtn').disabled = true;
+  $('locCompareResults').style.display = 'none';
+  const setCompProg = (pct, text) => {
+    $('locCompareProgressBar').style.width = pct + '%';
+    $('locCompareProgressText').textContent = text;
+  };
+  setCompProg(2, 'Looking up user...');
 
   abortController = new AbortController();
   const signal = abortController.signal;
@@ -1234,8 +1240,10 @@ async function runComparison(currentData, reportType) {
       user = await uRes.json();
       if (!user || !user.id) throw new Error('Could not determine current user');
     }
+    setCompProg(8, `Fetching projects for ${prevStart} → ${prevEnd}...`);
 
     const projects = await paginate(baseUrl, '/projects', { membership: true }, token, signal);
+    setCompProg(15, `Processing ${projects.length} projects...`);
     const prevData = reportType === 'mr'
       ? await generateMRReport(baseUrl, token, user, projects, prevStart, prevEnd, signal)
       : await generateCommitReport(baseUrl, token, user, projects, prevStart, prevEnd, signal);
@@ -1279,7 +1287,7 @@ async function runComparison(currentData, reportType) {
     $('locCompareResults').innerHTML = `<div class="error-banner">${escHtml(err.message)}</div>`;
     $('locCompareResults').style.display = '';
   } finally {
-    $('locCompareSpinner').style.display = 'none';
+    $('locCompareProgress').style.display = 'none';
     $('locCompareBtn').disabled = false;
   }
 }

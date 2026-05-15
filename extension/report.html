@@ -216,8 +216,12 @@
                 </div>
                 <div style="display:flex;gap:0.5rem;align-items:flex-end">
                   <button class="btn-primary" id="locCompareBtn" style="flex:none;width:auto">📊 Compare</button>
-                  <div id="locCompareSpinner" class="loading-spinner-sm" style="display:none"></div>
                 </div>
+              </div>
+              <!-- Compare progress -->
+              <div id="locCompareProgress" class="loc-progress" style="display:none;margin-bottom:0">
+                <div class="progress-text" id="locCompareProgressText">Fetching previous period...</div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill" id="locCompareProgressBar" style="width:0%"></div></div>
               </div>
               <div id="locCompareResults" style="display:none;width:100%"></div>
             </div>
