@@ -152,7 +152,7 @@ export default function CipherTool({ theme, toggleTheme }) {
   return (
     <div className="container cipher-container">
       <div className="card workspace-fullscreen">
-        <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '1rem' }}>
+        <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', gap: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <Link to="/" className="back-link" style={{ marginBottom: 0 }}>← Back</Link>
             <button className="theme-toggle" onClick={toggleTheme}>
@@ -171,7 +171,7 @@ export default function CipherTool({ theme, toggleTheme }) {
 
         <h1 style={{ textAlign: 'center' }}>CIPHER TOOL</h1>
 
-        <div className="mode-toggle" style={{ marginBottom: '2rem' }}>
+        <div className="mode-toggle" style={{ marginBottom: '0.75rem' }}>
           <button className={`toggle-btn ${mode === 'GCM' ? 'active' : ''}`} onClick={() => { setMode('GCM'); setError(''); }}>AES/GCM</button>
           <button className={`toggle-btn ${mode === 'CBC' ? 'active' : ''}`} onClick={() => { setMode('CBC'); setError(''); }}>AES/CBC</button>
         </div>
