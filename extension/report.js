@@ -899,8 +899,6 @@ function renderLOCActivityCalendar(container, weeklyData, allProjNames) {
       svgEl.appendChild(svg('rect', { x: labelW + ci * (cellSize + cellGap), y, width: cellSize, height: cellSize, rx: '3', fill: colors[level] }));
     });
   });
-  // Legend
-  ['Less', ...Array(5).fill(0).map((_, i) => ''), 'More'];
   container.innerHTML = ''; container.appendChild(svgEl);
 }
 
