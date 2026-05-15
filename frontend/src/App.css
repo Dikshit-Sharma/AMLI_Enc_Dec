@@ -2047,6 +2047,221 @@ button:disabled {
   background: transparent !important;
 }
 
+.velocity-stat--clear {
+  cursor: pointer;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.velocity-stat--clear:hover {
+  background: var(--primary-glow);
+}
+
+/* ─── Filter Chip ─── */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.75rem;
+  background: var(--primary-glow);
+  border: 1px solid var(--primary);
+  border-radius: 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--primary);
+  white-space: nowrap;
+}
+.filter-chip-label strong { font-weight: 800; }
+.filter-chip-clear {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  padding: 0;
+  line-height: 1;
+}
+.filter-chip-clear:hover {
+  background: rgba(99,102,241,0.15);
+}
+
+/* ─── Chart Fullscreen Button ─── */
+.chart-fullscreen-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  padding: 0;
+  line-height: 1;
+}
+.chart-fullscreen-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-glow);
+}
+
+/* ─── Fullscreen Chart Overlay ─── */
+.fullscreen-chart-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  animation: modalFadeIn 0.2s ease;
+}
+.fullscreen-chart-content {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  width: 100%;
+  max-width: 1300px;
+  height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-xl);
+  animation: modalSlideIn 0.25s ease;
+  overflow: hidden;
+}
+.fullscreen-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.fullscreen-chart-header h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+.fullscreen-chart-close {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.fullscreen-chart-close:hover {
+  border-color: var(--error);
+  color: var(--error);
+  background: rgba(244,63,94,0.1);
+}
+.fullscreen-chart-body {
+  flex: 1;
+  padding: 1.5rem;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ─── Active Donut Legend ─── */
+.donut-legend-item.active .donut-label {
+  color: var(--primary);
+  font-weight: 800;
+}
+.donut-legend-item.active .donut-dot {
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+/* ─── Activity Calendar Heatmap ─── */
+.cal-section {
+  overflow: hidden;
+}
+
+.cal-heatmap-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cal-heatmap-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  position: relative;
+}
+
+.cal-heatmap-svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.cal-tooltip {
+  position: fixed;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.72rem;
+  color: var(--text);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: var(--shadow-xl);
+  font-weight: 600;
+}
+.cal-tooltip strong {
+  color: var(--primary);
+}
+
+.cal-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  justify-content: flex-end;
+}
+.cal-legend-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.cal-legend-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Calendar theme variables */
+[data-theme='light'] {
+  --cal-empty: #ebedf0;
+  --cal-level-1: #9be9a8;
+  --cal-level-2: #40c463;
+  --cal-level-3: #30a14e;
+  --cal-level-4: #216e39;
+}
+[data-theme='dark'] {
+  --cal-empty: #1e2030;
+  --cal-level-1: #0e4429;
+  --cal-level-2: #006d32;
+  --cal-level-3: #26a641;
+  --cal-level-4: #39d353;
+}
+
 /* ─── Top APIs ─── */
 .topapi-list {
   display: flex;
