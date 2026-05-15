@@ -1490,33 +1490,59 @@ button:disabled {
   flex-wrap: wrap;
 }
 
-.cipher-action-btn {
-  padding: 0.5rem 0.9rem;
+.cipher-action-btn,
+.cipher-actions-strip .btn-encrypt,
+.cipher-actions-strip .btn-decrypt {
+  flex: none;
+  padding: 0 1rem;
   font-size: 0.78rem;
+  font-weight: 600;
   border-radius: 0.6rem;
   border: 1px solid var(--border);
   cursor: pointer;
-  font-weight: 600;
   transition: all 0.15s ease;
   white-space: nowrap;
-  background: var(--input-bg);
-  color: var(--text);
   font-family: inherit;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.3rem;
   height: 38px;
+  min-width: 90px;
+  width: auto;
+  background: var(--input-bg);
+  color: var(--text);
+  box-shadow: none;
+  filter: none;
 }
 
-.cipher-action-btn:hover:not(:disabled) {
-  border-color: var(--primary);
-  background: var(--primary-glow);
-  color: var(--text-primary);
+.cipher-actions-strip .btn-encrypt {
+  background: linear-gradient(135deg, var(--primary) 0%, #4338ca 100%);
+  color: white;
+  border-color: transparent;
 }
 
-.cipher-action-btn:disabled {
+.cipher-actions-strip .btn-decrypt {
+  background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+  color: white;
+  border-color: transparent;
+}
+
+.cipher-action-btn:hover:not(:disabled),
+.cipher-actions-strip .btn-encrypt:hover:not(:disabled),
+.cipher-actions-strip .btn-decrypt:hover:not(:disabled) {
+  opacity: 0.85;
+  filter: brightness(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.cipher-action-btn:disabled,
+.cipher-actions-strip .btn-encrypt:disabled,
+.cipher-actions-strip .btn-decrypt:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  filter: none;
+  box-shadow: none;
 }
 
 .btn-swap { color: var(--secondary); }

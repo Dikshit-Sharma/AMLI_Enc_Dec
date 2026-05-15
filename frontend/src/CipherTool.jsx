@@ -230,7 +230,7 @@ export default function CipherTool({ theme, toggleTheme }) {
             </div>
             <SmartTextArea
               id="inputText" value={inputText} onChange={setInputText}
-              dark={theme === 'dark'} maxHeight="100%"
+              dark={theme === 'dark'} maxHeight="55vh"
               placeholder="Type message, paste payload, or enter encrypted text..."
             />
           </div>
@@ -249,7 +249,7 @@ export default function CipherTool({ theme, toggleTheme }) {
             </div>
             <SmartTextArea
               value={outputResult} onChange={setOutputResult} readOnly
-              dark={theme === 'dark'} maxHeight="100%"
+              dark={theme === 'dark'} maxHeight="55vh"
               placeholder="Result will appear here..."
             />
           </div>
