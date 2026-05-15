@@ -76,6 +76,7 @@
             <button class="preset-btn" data-days="90">Quarter</button>
             <button class="preset-btn" data-days="365">Year</button>
           </div>
+          <button class="preset-btn" id="dash3dToggle" style="font-size:0.65rem;padding:0.25rem 0.5rem">🌐 3D Network</button>
         </header>
 
         <div class="filter-bar" id="dashFilterBar" style="display:none">
@@ -90,33 +91,39 @@
           <div class="filter-chips" id="filterChips"></div>
         </div>
 
-        <div class="summary-grid" id="dashSummary"></div>
+        <div id="dashCharts">
+          <div class="summary-grid" id="dashSummary"></div>
 
-        <div class="chart-grid-2">
-          <div class="chart-card">
-            <div class="chart-card-header"><h3>Team Velocity</h3><span class="chart-hint">Weekly commits across all repos</span></div>
-            <div class="chart-body" id="velocityTrend"><div class="chart-empty">Fetch data to see velocity</div></div>
+          <div class="chart-grid-2">
+            <div class="chart-card">
+              <div class="chart-card-header"><h3>Team Velocity</h3><span class="chart-hint">Weekly commits across all repos</span></div>
+              <div class="chart-body" id="velocityTrend"><div class="chart-empty">Fetch data to see velocity</div></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-card-header"><h3>Contributor Activity</h3><span class="chart-hint">Top contributors over time</span></div>
+              <div class="chart-body" id="contributorTimeline"><div class="chart-empty">Fetch data to see timeline</div></div>
+            </div>
           </div>
-          <div class="chart-card">
-            <div class="chart-card-header"><h3>Contributor Activity</h3><span class="chart-hint">Top contributors over time</span></div>
-            <div class="chart-body" id="contributorTimeline"><div class="chart-empty">Fetch data to see timeline</div></div>
+
+          <div class="chart-grid-2">
+            <div class="chart-card">
+              <div class="chart-card-header"><h3>Code Churn by Directory</h3><span class="chart-hint">Directories with most file modifications</span></div>
+              <div class="chart-body" id="codeChurn"><div class="chart-empty">Fetch data to see churn</div></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-card-header"><h3>Top Active Repos</h3><span class="chart-hint">Most commits per project</span></div>
+              <div class="chart-body" id="topRepos"><div class="chart-empty">Fetch data to see repos</div></div>
+            </div>
+          </div>
+
+          <div class="chart-card" style="margin-top:1.5rem">
+            <div class="chart-card-header"><h3>Project Sparklines</h3><span class="chart-hint">Weekly activity per repo — mini trends</span></div>
+            <div class="chart-body chart-body--sparklines" id="sparklines"><div class="chart-empty">Fetch data to see sparklines</div></div>
           </div>
         </div>
 
-        <div class="chart-grid-2">
-          <div class="chart-card">
-            <div class="chart-card-header"><h3>Code Churn by Directory</h3><span class="chart-hint">Directories with most file modifications</span></div>
-            <div class="chart-body" id="codeChurn"><div class="chart-empty">Fetch data to see churn</div></div>
-          </div>
-          <div class="chart-card">
-            <div class="chart-card-header"><h3>Top Active Repos</h3><span class="chart-hint">Most commits per project</span></div>
-            <div class="chart-body" id="topRepos"><div class="chart-empty">Fetch data to see repos</div></div>
-          </div>
-        </div>
-
-        <div class="chart-card" style="margin-top:1.5rem">
-          <div class="chart-card-header"><h3>Project Sparklines</h3><span class="chart-hint">Weekly activity per repo — mini trends</span></div>
-          <div class="chart-body chart-body--sparklines" id="sparklines"><div class="chart-empty">Fetch data to see sparklines</div></div>
+        <div class="chart-card" id="dash3dContainer" style="display:none;min-height:450px;padding:0;position:relative">
+          <div class="chart-empty">Loading 3D network...</div>
         </div>
       </section>
 

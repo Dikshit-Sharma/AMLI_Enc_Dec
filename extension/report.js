@@ -12,6 +12,7 @@ let locData = null;
 let compareData = null;
 let dashFilterProjects = [];    // selected project names
 let dashFilterContributors = []; // selected contributor emails
+let lastDashData = null;        // last rendered dashboard data (for 3D network)
 
 // ─── DOM ─────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -181,6 +182,7 @@ function filterDash(days, filterProjects, filterContributors) {
   agg.days = days;
   agg.user = cachedDash.user;
   agg.fetchedAt = cachedDash.fetchedAt;
+  agg.filteredCommits = commits; // store filtered commits for 3D network
   renderDashboard(agg, { fromCache: true });
   return true;
 }
@@ -368,6 +370,8 @@ $('sFetchBtn').addEventListener('click', () => fetchDashboard(true));
 $('presetBar').addEventListener('click', e => {
   const btn = e.target.closest('.preset-btn');
   if (!btn) return;
+  // Close 3D network if active
+  if (dash3dActive) hideDashboard3D();
   qsa('.preset-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   dashDays = parseInt(btn.dataset.days, 10);
@@ -402,6 +406,8 @@ async function fetchDashboard(forceRefresh) {
   // Reset filters on fresh fetch
   dashFilterProjects = [];
   dashFilterContributors = [];
+  if (dash3dActive) hideDashboard3D();
+  lastDashData = null;
 
   abortController = new AbortController();
   const signal = abortController.signal;
@@ -477,6 +483,7 @@ async function fetchDashboard(forceRefresh) {
       fetchedAt: new Date().toISOString(),
       rawCommits: allCommits,   // store for client-side re-filtering
       rawProjects: projects,
+      filteredCommits: allCommits, // initial filtered = all
     };
 
     cachedDash = data;
@@ -545,6 +552,9 @@ function renderDashboard(data, opts = {}) {
 
   // 5. Project Sparklines
   renderSparklines($('sparklines'), projWeekly, Object.keys(projects));
+
+  // Save for 3D network
+  lastDashData = data;
 
   // Build filter options and chips
   buildFilterOptions();
@@ -1306,6 +1316,19 @@ function renderTreeNodes(node) {
   return html;
 }
 
+// ─── Shared Three.js loader ──────────────────────────────
+function loadThreeJS() {
+  if (window.THREE && window.OrbitControls) {
+    return Promise.resolve();
+  }
+  return import('https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js').then(({ default: THREE_ }) => {
+    window.THREE = THREE_;
+    return import('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js');
+  }).then(({ OrbitControls: OC }) => {
+    window.OrbitControls = OC;
+  });
+}
+
 // ─── 3D Explorer (Three.js) ─────────────────────────────
 let threeScene = null, threeCamera = null, threeRenderer = null;
 let threeControls = null, threeAnimId = null;
@@ -1528,6 +1551,241 @@ function dispose3D() {
   threeNodes.length = 0;
 }
 
+// ─── Dashboard 3D Network Graph ──────────────────────────
+let dash3dActive = false;
+
+function build3DNetwork(data, container) {
+  dispose3D();
+
+  const W = container.clientWidth || 700;
+  const H = container.clientHeight || 450;
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
+  camera.position.set(18, 12, 22);
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+  container.innerHTML = '';
+  container.appendChild(renderer.domElement);
+
+  const controls = new window.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.8;
+  controls.target.set(0, 0, 0);
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambient);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+  dirLight.position.set(10, 20, 10);
+  scene.add(dirLight);
+  const backLight = new THREE.DirectionalLight(0x8888ff, 0.4);
+  backLight.position.set(-10, -5, -10);
+  scene.add(backLight);
+
+  // Floor grid
+  const gridHelper = new THREE.GridHelper(30, 20, 0x6366f1, 0x334155);
+  gridHelper.position.y = -4;
+  scene.add(gridHelper);
+
+  // Collect data from dashboard
+  const { projects, contributorAgg } = data;
+  const rawCommits = data.filteredCommits || data.rawCommits || [];
+  const projList = Object.values(projects).sort((a, b) => b.commits - a.commits).slice(0, 15);
+  const contribList = Object.values(contributorAgg || {}).sort((a, b) => Object.values(b.weeks).reduce((s, v) => s + v, 0) - Object.values(a.weeks).reduce((s, v) => s + v, 0)).slice(0, 15);
+
+  if (projList.length === 0 && contribList.length === 0) return;
+
+  // Build edge map: { projectName: { contributorName: count } }
+  const edgeMap = {};
+  const projNames = new Set(projList.map(p => p.name));
+  const contribNames = new Set(contribList.map(c => c.name));
+  for (const commit of (rawCommits || [])) {
+    const pn = commit.project_name;
+    const cn = commit.author_name || commit.author_email || '';
+    if (projNames.has(pn) && contribNames.has(cn)) {
+      if (!edgeMap[pn]) edgeMap[pn] = {};
+      edgeMap[pn][cn] = (edgeMap[pn][cn] || 0) + 1;
+    }
+  }
+
+  const allNodes = [];
+  const maxProjCommits = Math.max(...projList.map(p => p.commits), 1);
+  const maxContribCommits = Math.max(...contribList.map(c => Object.values(c.weeks).reduce((s, v) => s + v, 0)), 1);
+
+  // Place projects on outer ring, contributors on inner ring
+  const outerR = 8;
+  const innerR = 4.5;
+
+  projList.forEach((p, i) => {
+    const angle = (i / projList.length) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(angle) * outerR;
+    const z = Math.sin(angle) * outerR;
+    const r = 0.6 + (p.commits / maxProjCommits) * 0.8;
+    const color = 0x6366f1;
+    const geo = new THREE.SphereGeometry(r, 20, 20);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.2, emissive: color, emissiveIntensity: 0.15 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, 0, z);
+    mesh.userData = { type: 'project', label: p.name, stats: `${p.commits} commits, +${fmt(p.added)} / -${fmt(p.deleted)}` };
+    scene.add(mesh);
+    threeNodes.push(mesh);
+    allNodes.push(mesh);
+  });
+
+  contribList.forEach((c, i) => {
+    const angle = (i / contribList.length) * Math.PI * 2 + Math.PI / 4;
+    const x = Math.cos(angle) * innerR;
+    const z = Math.sin(angle) * innerR;
+    const total = Object.values(c.weeks).reduce((s, v) => s + v, 0);
+    const r = 0.4 + (total / maxContribCommits) * 0.5;
+    const color = 0x22d3ee;
+    const geo = new THREE.SphereGeometry(r, 16, 16);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.1, emissive: color, emissiveIntensity: 0.1 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, 0, z);
+    mesh.userData = { type: 'contributor', label: c.name, stats: `${total} commits` };
+    scene.add(mesh);
+    threeNodes.push(mesh);
+    allNodes.push(mesh);
+  });
+
+  // Draw edges as cylinders
+  const maxEdgeCount = Math.max(...Object.values(edgeMap).flatMap(pm => Object.values(pm)), 1);
+  for (const pn of Object.keys(edgeMap)) {
+    const pMesh = allNodes.find(m => m.userData.label === pn && m.userData.type === 'project');
+    if (!pMesh) continue;
+    for (const cn of Object.keys(edgeMap[pn])) {
+      const cMesh = allNodes.find(m => m.userData.label === cn && m.userData.type === 'contributor');
+      if (!cMesh) continue;
+      const count = edgeMap[pn][cn];
+      const from = pMesh.position;
+      const to = cMesh.position;
+      const mid = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
+      const dir = new THREE.Vector3().subVectors(to, from);
+      const len = dir.length();
+      dir.normalize();
+      const thickness = 0.04 + (count / maxEdgeCount) * 0.1;
+      const cylGeo = new THREE.CylinderGeometry(thickness, thickness, len, 4);
+      const cylMat = new THREE.MeshStandardMaterial({ color: 0x6366f1, transparent: true, opacity: 0.25 + (count / maxEdgeCount) * 0.4 });
+      const cyl = new THREE.Mesh(cylGeo, cylMat);
+      cyl.position.copy(mid);
+      cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      scene.add(cyl);
+    }
+  }
+
+  // Glow ring under each project
+  projList.forEach((p, i) => {
+    const angle = (i / projList.length) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(angle) * outerR;
+    const z = Math.sin(angle) * outerR;
+    const ringGeo = new THREE.RingGeometry(0.8, 1.1, 24);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, side: THREE.DoubleSide, transparent: true, opacity: 0.12 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.position.set(x, -0.1, z);
+    ring.rotation.x = -Math.PI / 2;
+    scene.add(ring);
+  });
+
+  // Raycaster hover
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let hovered = null;
+
+  renderer.domElement.addEventListener('pointermove', e => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(pointer, camera);
+    const intersects = raycaster.intersectObjects(threeNodes);
+
+    if (hovered) {
+      hovered.material.emissiveIntensity = hovered.userData.type === 'project' ? 0.15 : 0.1;
+      hovered = null;
+      threeTooltipEl.style.display = 'none';
+    }
+
+    if (intersects.length > 0) {
+      const obj = intersects[0].object;
+      hovered = obj;
+      obj.material.emissiveIntensity = 0.6;
+      const d = obj.userData;
+      const icon = d.type === 'project' ? '📦' : '👤';
+      threeTooltipEl.innerHTML = `<div class="tt-header">${icon} ${escHtml(d.label)}</div><div class="tt-row"><span>${d.type === 'project' ? 'Repo' : 'Contributor'}</span><strong>${d.stats}</strong></div>`;
+      threeTooltipEl.style.display = 'block';
+      const r = threeTooltipEl.getBoundingClientRect();
+      let tx = e.clientX + 12, ty = e.clientY - r.height - 10;
+      if (tx + r.width > window.innerWidth - 10) tx = e.clientX - r.width - 12;
+      if (ty < 10) ty = e.clientY + 12;
+      threeTooltipEl.style.left = tx + 'px';
+      threeTooltipEl.style.top = ty + 'px';
+    }
+  });
+
+  // Animation loop
+  function animate() {
+    threeAnimId = requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  threeScene = scene;
+  threeCamera = camera;
+  threeRenderer = renderer;
+  threeControls = controls;
+
+  // Resize handler
+  const onResize = () => {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w > 0 && h > 0) {
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+  };
+  window.addEventListener('resize', onResize);
+  renderer.domElement._resizeHandler = onResize;
+}
+
+function renderDashboard3D(data) {
+  const container = $('dash3dContainer');
+  container.innerHTML = '<div class="chart-empty">Loading 3D network...</div>';
+  $('dashCharts').style.display = 'none';
+  container.style.display = '';
+  loadThreeJS().then(() => {
+    build3DNetwork(data, container);
+  }).catch(err => {
+    container.innerHTML = `<div class="chart-empty">3D network failed: ${escHtml(err.message || err)}</div>`;
+  });
+}
+
+function hideDashboard3D() {
+  dispose3D();
+  $('dash3dContainer').style.display = 'none';
+  $('dashCharts').style.display = '';
+  dash3dActive = false;
+  $('dash3dToggle').textContent = '🌐 3D Network';
+}
+
+// ─── Dashboard 3D Toggle ─────────────────────────────────
+$('dash3dToggle').addEventListener('click', () => {
+  if (dash3dActive) { hideDashboard3D(); return; }
+  if (!lastDashData) { return; }
+  dash3dActive = true;
+  $('dash3dToggle').textContent = '✕ Close 3D';
+  renderDashboard3D(lastDashData);
+});
+
 // ─── Explorer 2D/3D Toggle ──────────────────────────────
 $('explorer2dBtn').addEventListener('click', () => {
   $('explorer2dBtn').classList.add('active');
@@ -1579,23 +1837,13 @@ function renderExplorer3D(projName, data) {
   }
 
   const container = $('locExplorer3d');
-  container.innerHTML = '';
-  // Async load Three.js only when needed
-  if (typeof THREE === 'undefined') {
-    container.innerHTML = '<div class="chart-empty">Loading 3D engine...</div>';
-    import('three').then(({ default: THREE_ }) => {
-      window.THREE = THREE_;
-      return import('three/addons/controls/OrbitControls.js');
-    }).then(({ OrbitControls }) => {
-      window.OrbitControls = OrbitControls;
-      container.innerHTML = '';
-      build3DTree(tree, container);
-    }).catch(() => {
-      container.innerHTML = '<div class="chart-empty">Failed to load 3D engine. Check your internet connection.</div>';
-    });
-  } else {
+  container.innerHTML = '<div class="chart-empty">Loading 3D engine...</div>';
+  loadThreeJS().then(() => {
+    container.innerHTML = '';
     build3DTree(tree, container);
-  }
+  }).catch(err => {
+    container.innerHTML = `<div class="chart-empty">3D engine failed: ${escHtml(err.message || err)}</div>`;
+  });
 }
 
 // ─── Modify renderExplorer to store project name for 3D toggle
