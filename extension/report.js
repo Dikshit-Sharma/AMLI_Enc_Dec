@@ -1366,10 +1366,14 @@ function makeCurve(from, to, depth) {
   return new THREE.CatmullRomCurve3([from.clone(), mid, to.clone()]);
 }
 
-function makeLabel(text, color = '#555') {
+function makeLabel(text, color = '#555', subtext) {
   const div = document.createElement('div');
-  div.textContent = text;
-  div.style.cssText = `color:${color};font-family:var(--font);font-size:11px;font-weight:600;background:rgba(255,255,255,0.85);padding:2px 8px;border-radius:10px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 2px 6px rgba(0,0,0,0.04);pointer-events:none;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis;`;
+  if (subtext) {
+    div.innerHTML = `<div style="text-align:center;line-height:1.3">${escHtml(text)}</div><div style="font-size:9px;opacity:0.65;text-align:center;line-height:1.3">${escHtml(subtext)}</div>`;
+  } else {
+    div.textContent = text;
+  }
+  div.style.cssText = `color:${color};font-family:var(--font);font-size:11px;font-weight:600;background:rgba(255,255,255,0.85);padding:3px 8px;border-radius:10px;border:1px solid rgba(0,0,0,0.06);box-shadow:0 2px 6px rgba(0,0,0,0.04);pointer-events:none;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;`;
   return new window.CSS2DObject(div);
 }
 
@@ -1500,7 +1504,7 @@ function build3DTree(treeData, container) {
       }
 
       const fileCount = node._fileCount || 0;
-      radius = 0.25 + Math.min(fileCount / 80, 0.5);
+      radius = 0.35 + Math.min(fileCount / 60, 0.55);
     } else {
       return null;
     }
@@ -1509,20 +1513,19 @@ function build3DTree(treeData, container) {
       (isRoot ? 0 : ((branchCount++) % BRANCH_PALETTE.length));
     const pal = BRANCH_PALETTE[colorIdx % BRANCH_PALETTE.length];
 
-    // Create sphere
-    const geo = new THREE.SphereGeometry(radius, 24, 24);
+    // Create sphere — dashboard-like material
+    const geo = new THREE.SphereGeometry(radius, 28, 28);
     const mat = new THREE.MeshPhysicalMaterial({
       color: pal.node,
-      roughness: 0.3,
+      roughness: 0.25,
       metalness: 0.05,
       clearcoat: 0.1,
       emissive: pal.node,
-      emissiveIntensity: isRoot ? 0.25 : 0.04,
+      emissiveIntensity: isRoot ? 0.25 : 0.08,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(pos);
     mesh.castShadow = true;
-    const fileCount = node._fileCount || 0;
     mesh.userData = {
       node, isDir: true, depth, label: node.name,
       stats: `${fileCount} files · +${fmt(node.totalAdded)}/-${fmt(node.totalDeleted)}`,
@@ -1531,13 +1534,12 @@ function build3DTree(treeData, container) {
     scene.add(mesh);
     threeNodes.push(mesh);
 
-    // Label
-    const displayName = isRoot ? node.name : `${node.name} (${fileCount})`;
-    const labelText = displayName.length > 22 ? displayName.slice(0, 20) + '…' : displayName;
+    // Label with subtext (like dashboard)
     const labelColor = isRoot ? '#444' : '#666';
-    const label = makeLabel(labelText, labelColor);
+    const subtext = isRoot ? `${fileCount} total files` : `${fileCount} files · +${fmt(node.totalAdded)}/-${fmt(node.totalDeleted)}`;
+    const label = makeLabel(node.name, labelColor, subtext);
     label.position.copy(pos);
-    label.position.y -= radius + 0.35;
+    label.position.y -= radius + 0.45;
     scene.add(label);
 
     // Root glow rings
@@ -1555,8 +1557,19 @@ function build3DTree(treeData, container) {
       }
     }
 
+    // Ring under each node (matched dashboard style)
+    const ringSize = Math.max(radius * 1.4, 0.5);
+    const nodeRing = new THREE.Mesh(
+      new THREE.RingGeometry(ringSize * 0.85, ringSize, 24),
+      new THREE.MeshBasicMaterial({ color: pal.node, side: THREE.DoubleSide, transparent: true, opacity: 0.1 })
+    );
+    nodeRing.position.copy(pos);
+    nodeRing.position.y = -0.47;
+    nodeRing.rotation.x = -Math.PI / 2;
+    scene.add(nodeRing);
+
     // Shadow dot
-    const dotGeo = new THREE.CircleGeometry(radius * 1.2, 12);
+    const dotGeo = new THREE.CircleGeometry(radius * 1.3, 12);
     const dotMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.04, depthWrite: false });
     const dot = new THREE.Mesh(dotGeo, dotMat);
     dot.position.copy(pos);
@@ -1568,9 +1581,9 @@ function build3DTree(treeData, container) {
     const edgeMeshes = [];
     if (parentPos && !isRoot) {
       const curve = makeCurve(parentPos, pos, depth);
-      const tubeGeo = new THREE.TubeGeometry(curve, 10, 0.025 + radius * 0.025, 5, false);
+      const tubeGeo = new THREE.TubeGeometry(curve, 10, 0.03 + radius * 0.025, 5, false);
       const tubeMat = new THREE.MeshPhysicalMaterial({
-        color: pal.edge, transparent: true, opacity: 0.2, roughness: 0.5,
+        color: pal.edge, transparent: true, opacity: 0.3, roughness: 0.5,
       });
       const tube = new THREE.Mesh(tubeGeo, tubeMat);
       scene.add(tube);
@@ -1869,9 +1882,9 @@ function build3DNetwork(data, container) {
     const nd = { mesh, type: 'repo', label: p.name, stats: statsStr, connectedNodes: [], edges: [] };
     allNodeData.push(nd);
 
-    const displayLabel = p.name.length > 16 ? p.name.slice(0, 14) + '…' : p.name;
-    const label = makeLabel(displayLabel, '#555');
-    label.position.set(x, -r - 0.4, z);
+    const displayLabel = p.name.length > 18 ? p.name.slice(0, 16) + '…' : p.name;
+    const label = makeLabel(displayLabel, '#555', `${p.commits} commits`);
+    label.position.set(x, -r - 0.5, z);
     scene.add(label);
 
     // Ring
@@ -1906,9 +1919,9 @@ function build3DNetwork(data, container) {
     const nd = { mesh, type: 'contributor', label: c.name, stats: statsStr, connectedNodes: [], edges: [] };
     allNodeData.push(nd);
 
-    const displayLabel = c.name.length > 16 ? c.name.slice(0, 14) + '…' : c.name;
-    const label = makeLabel(displayLabel, '#666');
-    label.position.set(x, -r - 0.35, z);
+    const displayLabel = c.name.length > 18 ? c.name.slice(0, 16) + '…' : c.name;
+    const label = makeLabel(displayLabel, '#666', `${total} commits`);
+    label.position.set(x, -r - 0.45, z);
     scene.add(label);
   });
 
