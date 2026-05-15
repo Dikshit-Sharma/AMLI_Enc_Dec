@@ -54,14 +54,14 @@
         </div>
       </section>
 
-      <!-- Loading screen -->
-      <section id="screenLoading" class="screen-center" style="display:none">
-        <div class="loading-card">
-          <div class="loading-spinner"></div>
-          <div id="loadText" class="loading-text">Fetching data...</div>
-          <div class="progress-bar-bg"><div class="progress-bar-fill" id="loadBar" style="width:0%"></div></div>
+      <!-- Loading bar (inline at top) -->
+      <div id="loadingBar" class="loading-bar-wrap" style="display:none">
+        <div class="loading-bar-row">
+          <div class="loading-spinner-sm"></div>
+          <span id="loadText">Fetching data...</span>
         </div>
-      </section>
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="loadBar" style="width:0%"></div></div>
+      </div>
 
       <!-- ─── DASHBOARD VIEW ─── -->
       <section id="viewDashboard" style="display:none">
@@ -127,6 +127,12 @@
                 <option value="mr">BY MERGE REQUEST</option>
                 <option value="commit">BY COMMIT</option>
               </select>
+            </div>
+          </div>
+          <div class="form-row" id="locUserIdRow">
+            <div class="form-group full-width">
+              <label>GitLab User ID or Username</label>
+              <input type="text" id="locUserId" placeholder="e.g. username or 12345 — used for MR/commit lookup">
             </div>
           </div>
           <div class="form-row" id="locCommitAuthorRow" style="display:none">
@@ -200,6 +206,7 @@
 
     </main>
   </div>
+  <div id="chartTooltip" class="chart-tooltip" style="display:none"></div>
   <script src="report.js"></script>
 </body>
 </html>

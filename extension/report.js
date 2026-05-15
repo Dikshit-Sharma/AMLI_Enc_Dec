@@ -54,6 +54,37 @@ function svg(tag, attrs, ...children) {
   return el;
 }
 
+// ─── Tooltip helpers ─────────────────────────────────────
+let tooltipEl = null;
+function initTooltip() {
+  tooltipEl = document.getElementById('chartTooltip');
+  if (!tooltipEl) { tooltipEl = document.createElement('div'); tooltipEl.id = 'chartTooltip'; tooltipEl.className = 'chart-tooltip'; tooltipEl.style.display = 'none'; document.body.appendChild(tooltipEl); }
+}
+function showTooltip(e, html) {
+  if (!tooltipEl) initTooltip();
+  tooltipEl.innerHTML = html;
+  tooltipEl.style.display = 'block';
+  const r = tooltipEl.getBoundingClientRect();
+  let x = e.clientX + 12, y = e.clientY - r.height - 10;
+  if (x + r.width > window.innerWidth - 10) x = e.clientX - r.width - 12;
+  if (y < 10) y = e.clientY + 12;
+  tooltipEl.style.left = x + 'px';
+  tooltipEl.style.top = y + 'px';
+}
+function hideTooltip() {
+  if (tooltipEl) tooltipEl.style.display = 'none';
+}
+
+// ─── Interactive overlay helper ──────────────────────────
+function addHitTarget(svgEl, x, y, w, h, tooltipHtml) {
+  const r = svg('rect', { x, y, width: w || 1, height: h || 1, fill: 'transparent', style: 'cursor:pointer' });
+  r.addEventListener('mouseenter', e => showTooltip(e, tooltipHtml));
+  r.addEventListener('mousemove', e => showTooltip(e, tooltipHtml));
+  r.addEventListener('mouseleave', hideTooltip);
+  svgEl.appendChild(r);
+  return r;
+}
+
 // ─── Cached Results ──────────────────────────────────────
 function getCacheKey(baseUrl, username, days) {
   return `rs_dash_${btoa(baseUrl)}_${username}_${days}`;
@@ -109,10 +140,21 @@ qsa('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     qsa('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    const view = btn.dataset.view;
+    hide('screenWelcome');
+    hide('loadingBar');
     hide('viewDashboard');
     hide('viewLocReport');
-    show(`view${view === 'dashboard' ? 'Dashboard' : 'LocReport'}`);
+    const viewId = `view${btn.dataset.view === 'dashboard' ? 'Dashboard' : 'LocReport'}`;
+    const el = $(viewId);
+    if (el) {
+      el.style.display = '';
+      // If loc report and no results yet, scroll form into view
+      if (viewId === 'viewLocReport') {
+        setTimeout(() => $('locFormSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+      }
+    } else {
+      show('screenWelcome');
+    }
   });
 });
 
@@ -171,8 +213,8 @@ async function fetchDashboard() {
     return;
   }
 
-  show('screenLoading');
   hide('screenWelcome');
+  show('loadingBar');
   const loadText = $('loadText');
   const loadBar = $('loadBar');
 
@@ -275,12 +317,12 @@ async function fetchDashboard() {
     saveCache(baseUrl, username, dashDays, data);
 
     setProgress(98, 'Rendering...');
-    hide('screenLoading');
+    hide('loadingBar');
     renderDashboard(data);
     setStatus(`Ready — ${Object.keys(projectMap).length} repos, ${allCommits.length} commits`);
 
   } catch (err) {
-    hide('screenLoading');
+    hide('loadingBar');
     if (err.message === 'Cancelled') {
       setStatus('Cancelled');
     } else {
@@ -338,10 +380,14 @@ function renderDashboard(data) {
   // 5. Project Sparklines
   renderSparklines($('sparklines'), projWeekly, Object.keys(projects));
 
-  // Auto-show dashboard
+  // Show dashboard
   hide('screenWelcome');
-  hide('screenLoading');
-  qs('[data-view="dashboard"]').click();
+  hide('loadingBar');
+  qsa('.nav-btn').forEach(b => b.classList.remove('active'));
+  const dashBtn = qs('[data-view="dashboard"]');
+  if (dashBtn) dashBtn.classList.add('active');
+  hide('viewLocReport');
+  show('viewDashboard');
 }
 
 // ─── 1. Velocity Trend ──────────────────────────────────
@@ -387,6 +433,25 @@ function renderVelocityTrend(container, weeklyAgg) {
     }
   });
 
+  // Interactive overlays on each data point
+  values.forEach((v, i) => {
+    const cx = xS(i), cy = yS(v);
+    const tip = `<div class="tt-header">${weeks[i]}</div><div class="tt-row"><span>Commits</span><strong>${v}</strong></div>`;
+    const dot = svg('circle', { cx, cy, r: '4', fill: 'var(--primary)', opacity: '0', style: 'cursor:pointer;transition:opacity 0.15s' });
+    dot.addEventListener('mouseenter', () => { dot.setAttribute('opacity', '1'); showTooltip(event, tip); });
+    dot.addEventListener('mousemove', e => showTooltip(e, tip));
+    dot.addEventListener('mouseleave', () => { dot.setAttribute('opacity', '0'); hideTooltip(); });
+    svgEl.appendChild(dot);
+    // Also add transparent wide hit target
+    const prevX = i > 0 ? xS(i - 1) : cx - 15;
+    const nextX = i < weeks.length - 1 ? xS(i + 1) : cx + 15;
+    const hit = svg('rect', { x: (prevX + cx) / 2, y: M.top, width: (nextX - prevX) / 2, height: ch, fill: 'transparent', style: 'cursor:pointer' });
+    hit.addEventListener('mouseenter', e => { dot.setAttribute('opacity', '1'); showTooltip(e, tip); });
+    hit.addEventListener('mousemove', e => showTooltip(e, tip));
+    hit.addEventListener('mouseleave', () => { dot.setAttribute('opacity', '0'); hideTooltip(); });
+    svgEl.appendChild(hit);
+  });
+
   container.innerHTML = '';
   container.appendChild(svgEl);
 }
@@ -427,15 +492,17 @@ function renderContributorTimeline(container, contributorAgg) {
 
   const svgEl = svg('svg', { width: '100%', height: H, viewBox: `0 0 ${W} ${H}` });
 
-  // Draw stacked areas
+  // Draw stacked areas (with interactive overlays per contributor)
   for (let ci = top.length - 1; ci >= 0; ci--) {
     let path = '';
+    const pts = [];
     for (let i = 0; i < stacked.length; i++) {
       const s = stacked[i];
       const seg = s.segs[ci];
       if (!seg) continue;
       const yBot = yS(seg.y0);
       const yTop = yS(seg.y1);
+      pts.push({ x: s.x, yBot, yTop, week: s.week, val: seg.val });
       if (i === 0) path += `M${s.x},${yBot} L${s.x},${yTop}`;
       else path += ` L${s.x},${yTop}`;
     }
@@ -446,7 +513,24 @@ function renderContributorTimeline(container, contributorAgg) {
       path += ` L${s.x},${yS(seg.y0)}`;
     }
     path += ' Z';
-    if (path) svgEl.appendChild(svg('path', { d: path, fill: getColor(ci), opacity: '0.7' }));
+    const areaPath = svg('path', { d: path, fill: getColor(ci), opacity: '0.7' });
+    svgEl.appendChild(areaPath);
+
+    // Add interactive hit targets per contributor segment
+    if (pts.length === 0) continue;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const prevI = Math.max(0, i - 1);
+      const nextI = Math.min(pts.length - 1, i + 1);
+      const hx = (pts[prevI].x + p.x) / 2;
+      const hw = (pts[nextI].x - pts[prevI].x) / 2;
+      const tip = `<div class="tt-header">${p.week}</div><div class="tt-row"><span style="color:${getColor(ci)}">● ${top[ci].name}</span><strong>${p.val} commits</strong></div>`;
+      const hit = svg('rect', { x: hx, y: p.yTop, width: Math.max(hw, 4), height: p.yBot - p.yTop, fill: 'transparent', style: 'cursor:pointer' });
+      hit.addEventListener('mouseenter', e => { areaPath.setAttribute('opacity', '1'); showTooltip(e, tip); });
+      hit.addEventListener('mousemove', e => showTooltip(e, tip));
+      hit.addEventListener('mouseleave', () => { areaPath.setAttribute('opacity', '0.7'); hideTooltip(); });
+      svgEl.appendChild(hit);
+    }
   }
 
   // Legend
@@ -471,7 +555,12 @@ function renderCodeChurn(container, dirChurn) {
     const y = 10 + i * 24;
     const w = (count / max) * 250;
     svgEl.appendChild(svg('text', { x: '4', y: y + 12, fill: 'var(--text)', 'font-size': '11', 'font-weight': '600' }, dir.length > 20 ? dir.slice(0, 18) + '…' : dir));
-    svgEl.appendChild(svg('rect', { x: '140', y, width: Math.max(w, 2), height: '18', rx: '3', fill: getColor(i), opacity: '0.6' }));
+    const bar = svg('rect', { x: '140', y, width: Math.max(w, 2), height: '18', rx: '3', fill: getColor(i), opacity: '0.6', style: 'cursor:pointer;transition:opacity 0.15s' });
+    const tip = `<div class="tt-header">${escHtml(dir)}</div><div class="tt-row"><span>Files changed</span><strong>${count}</strong></div>`;
+    bar.addEventListener('mouseenter', e => { bar.setAttribute('opacity', '0.9'); showTooltip(e, tip); });
+    bar.addEventListener('mousemove', e => showTooltip(e, tip));
+    bar.addEventListener('mouseleave', () => { bar.setAttribute('opacity', '0.6'); hideTooltip(); });
+    svgEl.appendChild(bar);
     svgEl.appendChild(svg('text', { x: '148', y: y + 13, fill: '#fff', 'font-size': '10', 'font-weight': '700' }, String(count)));
   });
   container.innerHTML = '';
@@ -491,7 +580,12 @@ function renderBarChart(container, data, { valueKey, labelKey, height = 200, col
     const w = (d[valueKey] / max) * (400 - labelW);
     svgEl.appendChild(svg('text', { x: labelW - 6, y: y + barH - 4, 'text-anchor': 'end', fill: 'var(--text)', 'font-size': '10', 'font-weight': '600' },
       d[labelKey].length > 16 ? d[labelKey].slice(0, 14) + '…' : d[labelKey]));
-    svgEl.appendChild(svg('rect', { x: labelW, y, width: Math.max(w, 2), height: barH, rx: '3', fill: color || getColor(i), opacity: '0.65' }));
+    const bar = svg('rect', { x: labelW, y, width: Math.max(w, 2), height: barH, rx: '3', fill: color || getColor(i), opacity: '0.65', style: 'cursor:pointer;transition:opacity 0.15s' });
+    const tip = `<div class="tt-header">${escHtml(d[labelKey])}</div><div class="tt-row"><span>${valueKey}</span><strong>${d[valueKey]}</strong></div>`;
+    bar.addEventListener('mouseenter', e => { bar.setAttribute('opacity', '0.9'); showTooltip(e, tip); });
+    bar.addEventListener('mousemove', e => showTooltip(e, tip));
+    bar.addEventListener('mouseleave', () => { bar.setAttribute('opacity', '0.65'); hideTooltip(); });
+    svgEl.appendChild(bar);
     svgEl.appendChild(svg('text', { x: labelW + Math.max(w, 2) + 5, y: y + barH - 4, fill: 'var(--text-muted)', 'font-size': '9', 'font-weight': '700' }, String(d[valueKey])));
   });
   container.innerHTML = '';
@@ -518,8 +612,10 @@ function renderSparklines(container, projWeekly, projNames) {
     const maxV = Math.max(...vals, 1);
     const pts = vals.map((v, i) => `${(i / (weeks.length - 1)) * sw},${sh - (v / maxV) * (sh - 4) - 2}`).join(' ');
     const total = vals.reduce((s, v) => s + v, 0);
+    const weekDetails = weeks.map((w, i) => `<div class="tt-row"><span>${w.slice(5)}</span><strong>${vals[i]}</strong></div>`).join('');
+    const tipId = `spk_${name.replace(/[^a-z0-9]/gi, '_')}`;
     html += `
-      <div class="spark-item">
+      <div class="spark-item" id="${tipId}">
         <div class="spark-label" title="${escHtml(name)}">${escHtml(name.length > 18 ? name.slice(0, 16) + '…' : name)}</div>
         <div class="spark-svg-wrap">
           <svg width="${sw}" height="${sh}" viewBox="0 0 ${sw} ${sh}">
@@ -529,8 +625,21 @@ function renderSparklines(container, projWeekly, projNames) {
         <div class="spark-count">${total}</div>
       </div>`;
   }
-  html += '</div>';
   container.innerHTML = html;
+  // Attach hover events to spark items
+  names.forEach((name, ni) => {
+    const vals = weeks.map(w => projWeekly[name]?.[w] || 0);
+    const total = vals.reduce((s, v) => s + v, 0);
+    const weekDetails = weeks.map((w, i) => `<div class="tt-row"><span>${w.slice(5)}</span><strong>${vals[i]}</strong></div>`).join('');
+    const tip = `<div class="tt-header">${escHtml(name)}</div><div class="tt-row"><span>Total</span><strong>${total}</strong></div>${weekDetails}`;
+    const id = `spk_${name.replace(/[^a-z0-9]/gi, '_')}`;
+    const item = document.getElementById(id);
+    if (item) {
+      item.addEventListener('mouseenter', e => showTooltip(e, tip));
+      item.addEventListener('mousemove', e => showTooltip(e, tip));
+      item.addEventListener('mouseleave', hideTooltip);
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -571,6 +680,7 @@ function parseFileChanges(changes) {
 function getLocForm() {
   return {
     reportType: $('locReportType').value,
+    userId: $('locUserId').value.trim(),
     commitAuthor: $('locCommitAuthor').value.trim(),
     startDate: $('locStartDate').value,
     endDate: $('locEndDate').value,
@@ -611,7 +721,7 @@ $('locTabBar').addEventListener('click', e => {
 async function startLOCReport() {
   const baseUrl = $('sBaseUrl').value.trim();
   const token = $('sToken').value.trim();
-  const { reportType, commitAuthor, startDate, endDate } = getLocForm();
+  const { reportType, userId, commitAuthor, startDate, endDate } = getLocForm();
 
   if (!baseUrl || !token) { alert('Enter GitLab URL and token in the sidebar first.'); return; }
   if (!startDate || !endDate) { alert('Start and end dates required.'); return; }
@@ -628,12 +738,26 @@ async function startLOCReport() {
   $('locCancelBtn').style.display = '';
 
   try {
-    setProgressLOC(3, 'Searching for user...');
-    const usersRes = await apiFetch(baseUrl, '/users', { search: 'user' }, token, signal);
-    const users = await usersRes.json();
-    if (!Array.isArray(users) || users.length === 0) throw new Error('User not found');
-    const user = users[0];
-    setProgressLOC(5, `Found user: ${user.name}`);
+    let user;
+    setProgressLOC(3, 'Looking up user...');
+    if (userId && /^\d+$/.test(userId)) {
+      // User ID provided — fetch directly
+      const uRes = await apiFetch(baseUrl, `/users/${userId}`, {}, token, signal);
+      user = await uRes.json();
+      if (!user || !user.id) throw new Error(`User not found for ID: ${userId}`);
+    } else if (userId) {
+      // Username provided — search
+      const uRes = await apiFetch(baseUrl, '/users', { search: userId }, token, signal);
+      const users = await uRes.json();
+      if (!Array.isArray(users) || users.length === 0) throw new Error(`User not found: ${userId}`);
+      user = users[0];
+    } else {
+      // No user specified — use current authenticated user
+      const uRes = await apiFetch(baseUrl, '/user', {}, token, signal);
+      user = await uRes.json();
+      if (!user || !user.id) throw new Error('Could not determine current user');
+    }
+    setProgressLOC(5, `Using user: ${user.name} (${user.username || user.id})`);
 
     setProgressLOC(8, 'Fetching projects...');
     const projects = await paginate(baseUrl, '/projects', { membership: true }, token, signal);
@@ -853,7 +977,12 @@ function renderTreemap(container, fileRows) {
   entries.forEach(([ext, count], i) => {
     const col = i % 3; const row = Math.floor(i / 3);
     const w = Math.floor(W / 3 - 4); const rx = col * (W / 3) + 2; const ry = row * rowH + 2; const rh = rowH - 4;
-    svgEl.appendChild(svg('rect', { x: rx, y: ry, width: w, height: rh, rx: '4', fill: langColors[ext] || getColor(i), opacity: '0.75' }));
+    const rect = svg('rect', { x: rx, y: ry, width: w, height: rh, rx: '4', fill: langColors[ext] || getColor(i), opacity: '0.75', style: 'cursor:pointer;transition:opacity 0.15s' });
+    const tip = `<div class="tt-header">.${ext}</div><div class="tt-row"><span>Files</span><strong>${count}</strong></div><div class="tt-row"><span>Share</span><strong>${Math.round(count / total * 100)}%</strong></div>`;
+    rect.addEventListener('mouseenter', e => { rect.setAttribute('opacity', '1'); showTooltip(e, tip); });
+    rect.addEventListener('mousemove', e => showTooltip(e, tip));
+    rect.addEventListener('mouseleave', () => { rect.setAttribute('opacity', '0.75'); hideTooltip(); });
+    svgEl.appendChild(rect);
     svgEl.appendChild(svg('text', { x: rx + 8, y: ry + 18, fill: '#fff', 'font-size': '13', 'font-weight': '700' }, `.${ext}`));
     svgEl.appendChild(svg('text', { x: rx + 8, y: ry + 34, fill: 'rgba(255,255,255,0.8)', 'font-size': '11' }, `${count} files`));
     svgEl.appendChild(svg('text', { x: rx + 8, y: ry + 50, fill: 'rgba(255,255,255,0.6)', 'font-size': '10' }, `${Math.round(count / total * 100)}%`));
@@ -887,6 +1016,7 @@ function renderLOCActivityCalendar(container, weeklyData, allProjNames) {
   const H = 30 + projList.length * (cellSize + cellGap);
   const W = Math.max(400, labelW + weeks.length * (cellSize + cellGap) + 20);
   const maxVal = Math.max(...Object.values(weeklyData).flatMap(w => Object.values(w)), 1);
+  const colors = ['var(--cal-empty)', 'var(--cal-level-1)', 'var(--cal-level-2)', 'var(--cal-level-3)', 'var(--cal-level-4)'];
   const svgEl = svg('svg', { width: '100%', height: H, viewBox: `0 0 ${W} ${H}` });
   weeks.forEach((w, i) => { if (i % 4 === 0) svgEl.appendChild(svg('text', { x: labelW + 2 + i * (cellSize + cellGap), y: 12, fill: 'var(--text-muted)', 'font-size': '8' }, w.slice(5))); });
   projList.forEach((proj, ri) => {
@@ -895,8 +1025,12 @@ function renderLOCActivityCalendar(container, weeklyData, allProjNames) {
     weeks.forEach((w, ci) => {
       const val = weeklyData[w]?.[proj] || 0;
       const level = val === 0 ? 0 : val <= maxVal * 0.25 ? 1 : val <= maxVal * 0.5 ? 2 : val <= maxVal * 0.75 ? 3 : 4;
-      const colors = ['var(--cal-empty)', 'var(--cal-level-1)', 'var(--cal-level-2)', 'var(--cal-level-3)', 'var(--cal-level-4)'];
-      svgEl.appendChild(svg('rect', { x: labelW + ci * (cellSize + cellGap), y, width: cellSize, height: cellSize, rx: '3', fill: colors[level] }));
+      const cell = svg('rect', { x: labelW + ci * (cellSize + cellGap), y, width: cellSize, height: cellSize, rx: '3', fill: colors[level], style: 'cursor:pointer;transition:opacity 0.15s' });
+      const tip = `<div class="tt-header">${escHtml(proj)}</div><div class="tt-row"><span>Week</span><strong>${w}</strong></div><div class="tt-row"><span>Activity</span><strong>${val}</strong></div>`;
+      cell.addEventListener('mouseenter', e => { cell.setAttribute('opacity', '0.85'); showTooltip(e, tip); });
+      cell.addEventListener('mousemove', e => showTooltip(e, tip));
+      cell.addEventListener('mouseleave', () => { cell.setAttribute('opacity', '1'); hideTooltip(); });
+      svgEl.appendChild(cell);
     });
   });
   container.innerHTML = ''; container.appendChild(svgEl);
@@ -944,7 +1078,12 @@ function renderReviewFlow(container, mrRows) {
     const a = (i / authors.length) * Math.PI * 2 - Math.PI / 2;
     const x = cx + radius * Math.cos(a), y = cy + radius * Math.sin(a);
     const r = 6 + (data.count / maxCount) * 14;
-    svgEl.appendChild(svg('circle', { cx: x, cy: y, r, fill: 'var(--primary)', opacity: '0.7', stroke: 'var(--card-bg)', 'stroke-width': '2' }));
+    const circle = svg('circle', { cx: x, cy: y, r, fill: 'var(--primary)', opacity: '0.7', stroke: 'var(--card-bg)', 'stroke-width': '2', style: 'cursor:pointer;transition:opacity 0.15s' });
+    const tip = `<div class="tt-header">${escHtml(name)}</div><div class="tt-row"><span>MRs</span><strong>${data.count}</strong></div><div class="tt-row"><span>Projects</span><strong>${data.projects.size}</strong></div>`;
+    circle.addEventListener('mouseenter', e => { circle.setAttribute('opacity', '1'); showTooltip(e, tip); });
+    circle.addEventListener('mousemove', e => showTooltip(e, tip));
+    circle.addEventListener('mouseleave', () => { circle.setAttribute('opacity', '0.7'); hideTooltip(); });
+    svgEl.appendChild(circle);
     svgEl.appendChild(svg('text', { x, y: y + r + 12, 'text-anchor': 'middle', fill: 'var(--text)', 'font-size': '8', 'font-weight': '600' }, name.length > 10 ? name.slice(0, 8) + '…' : name));
   });
   container.innerHTML = ''; container.appendChild(svgEl);
@@ -1044,14 +1183,12 @@ async function runComparison(currentData, reportType) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  Init: apply dashboard dates to LOC form
+//  Init
 // ═══════════════════════════════════════════════════════════
 (() => {
+  initTooltip();
   const end = new Date();
   const start = new Date(); start.setDate(start.getDate() - 90);
   $('locStartDate').value = start.toISOString().slice(0, 10);
   $('locEndDate').value = end.toISOString().slice(0, 10);
-  // Set default dash dates
-  const dEnd = new Date();
-  const dStart = new Date(); dStart.setDate(dStart.getDate() - 90);
 })();
