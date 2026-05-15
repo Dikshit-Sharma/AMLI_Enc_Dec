@@ -16,8 +16,5 @@
   },
   "icons": {
     "128": "icon128.png"
-  },
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' https://cdn.jsdelivr.net; object-src 'self'"
   }
 }
