@@ -1321,7 +1321,7 @@ function loadThreeJS() {
   if (window.THREE && window.OrbitControls) {
     return Promise.resolve();
   }
-  return import('./vendor/three.module.js').then(({ default: THREE_ }) => {
+  return import('./vendor/three.module.js').then(THREE_ => {
     window.THREE = THREE_;
     return import('./vendor/OrbitControls.js');
   }).then(({ OrbitControls: OC }) => {
