@@ -10,6 +10,8 @@ let dashDays = 90;          // current dashboard range
 let currentTheme = 'light';
 let locData = null;
 let compareData = null;
+let dashFilterProjects = [];    // selected project names
+let dashFilterContributors = []; // selected contributor emails
 
 // ─── DOM ─────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -158,11 +160,23 @@ function saveCache(baseUrl, data) {
 }
 
 // ─── Client-side filter: re-aggregate from cached raw data
-function filterDash(days) {
+function filterDash(days, filterProjects, filterContributors) {
   if (!cachedDash || !cachedDash.rawCommits) return false;
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - days);
-  const agg = aggregateCommits(cachedDash.rawCommits, cutoff, new Date());
+
+  let commits = cachedDash.rawCommits;
+  if (filterProjects && filterProjects.length > 0) {
+    commits = commits.filter(c => filterProjects.includes(c.project_name));
+  }
+  if (filterContributors && filterContributors.length > 0) {
+    commits = commits.filter(c => {
+      const author = c.author_email || c.author_name || '';
+      return filterContributors.some(f => author.includes(f) || f.includes(author));
+    });
+  }
+
+  const agg = aggregateCommits(commits, cutoff, new Date());
   agg.dirChurn = cachedDash.dirChurn || [];
   agg.days = days;
   agg.user = cachedDash.user;
@@ -170,6 +184,110 @@ function filterDash(days) {
   renderDashboard(agg, { fromCache: true });
   return true;
 }
+
+// ─── Dashboard filter options ────────────────────────────
+function buildFilterOptions() {
+  if (!cachedDash || !cachedDash.rawCommits) return;
+  const commits = cachedDash.rawCommits;
+  const projSet = new Set();
+  const authSet = new Set();
+  for (const c of commits) {
+    if (c.project_name) projSet.add(c.project_name);
+    const author = c.author_email || c.author_name;
+    if (author) authSet.add(author);
+  }
+  const projOptions = [...projSet].sort((a, b) => a.localeCompare(b));
+  const authOptions = [...authSet].sort((a, b) => a.localeCompare(b));
+
+  // Build project checkboxes
+  const projMenu = $('filterProjectMenu');
+  projMenu.innerHTML = projOptions.map(p =>
+    `<label><input type="checkbox" value="${p.replace(/"/g, '&quot;')}" ${dashFilterProjects.includes(p) ? 'checked' : ''}> ${escHtml(p)}</label>`
+  ).join('');
+
+  // Build contributor checkboxes
+  const contribMenu = $('filterContributorMenu');
+  contribMenu.innerHTML = authOptions.map(a =>
+    `<label><input type="checkbox" value="${a.replace(/"/g, '&quot;')}" ${dashFilterContributors.includes(a) ? 'checked' : ''}> ${escHtml(a)}</label>`
+  ).join('');
+
+  // Show filter bar if we have options
+  $('dashFilterBar').style.display = projOptions.length > 1 || authOptions.length > 1 ? '' : 'none';
+}
+
+function renderFilterChips() {
+  const container = $('filterChips');
+  const chips = [];
+  for (const p of dashFilterProjects) chips.push({ type: 'project', label: p });
+  for (const c of dashFilterContributors) chips.push({ type: 'contributor', label: c });
+  if (chips.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = chips.map((ch, i) =>
+    `<span class="filter-chip">${escHtml(ch.label)}<button class="filter-chip-clear" data-fi="${i}" data-type="${ch.type}">✕</button></span>`
+  ).join('');
+  // Attach clear handlers
+  container.querySelectorAll('.filter-chip-clear').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = btn.dataset.type;
+      const label = chips[parseInt(btn.dataset.fi)].label;
+      if (type === 'project') {
+        dashFilterProjects = dashFilterProjects.filter(p => p !== label);
+      } else {
+        dashFilterContributors = dashFilterContributors.filter(c => c !== label);
+      }
+      refreshFilterCheckboxes();
+      filterDash(dashDays, dashFilterProjects, dashFilterContributors);
+    });
+  });
+}
+
+function refreshFilterCheckboxes() {
+  qsa('#filterProjectMenu input[type="checkbox"]').forEach(cb => {
+    cb.checked = dashFilterProjects.includes(cb.value);
+  });
+  qsa('#filterContributorMenu input[type="checkbox"]').forEach(cb => {
+    cb.checked = dashFilterContributors.includes(cb.value);
+  });
+}
+
+// Dropdown toggle
+document.addEventListener('click', e => {
+  // Close all filter dropdowns when clicking outside
+  if (!e.target.closest('.filter-dropdown')) {
+    qsa('.filter-dropdown-menu').forEach(m => m.classList.remove('open'));
+  }
+});
+$('filterProjectBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  $('filterContributorMenu').classList.remove('open');
+  $('filterProjectMenu').classList.toggle('open');
+});
+$('filterContributorBtn').addEventListener('click', e => {
+  e.stopPropagation();
+  $('filterProjectMenu').classList.remove('open');
+  $('filterContributorMenu').classList.toggle('open');
+});
+
+// Filter checkbox change
+$('filterProjectMenu').addEventListener('change', e => {
+  if (e.target.type !== 'checkbox') return;
+  if (e.target.checked) {
+    if (!dashFilterProjects.includes(e.target.value)) dashFilterProjects.push(e.target.value);
+  } else {
+    dashFilterProjects = dashFilterProjects.filter(p => p !== e.target.value);
+  }
+  renderFilterChips();
+  filterDash(dashDays, dashFilterProjects, dashFilterContributors);
+});
+$('filterContributorMenu').addEventListener('change', e => {
+  if (e.target.type !== 'checkbox') return;
+  if (e.target.checked) {
+    if (!dashFilterContributors.includes(e.target.value)) dashFilterContributors.push(e.target.value);
+  } else {
+    dashFilterContributors = dashFilterContributors.filter(c => c !== e.target.value);
+  }
+  renderFilterChips();
+  filterDash(dashDays, dashFilterProjects, dashFilterContributors);
+});
 
 // ─── GitLab API ──────────────────────────────────────────
 async function apiFetch(baseUrl, endpoint, params, token, signal) {
@@ -254,7 +372,7 @@ $('presetBar').addEventListener('click', e => {
   btn.classList.add('active');
   dashDays = parseInt(btn.dataset.days, 10);
   // Filter from cache instead of re-fetching
-  if (!filterDash(dashDays)) {
+  if (!filterDash(dashDays, dashFilterProjects, dashFilterContributors)) {
     // No cache available — do a full fetch
     fetchDashboard();
   }
@@ -271,6 +389,8 @@ async function fetchDashboard(forceRefresh) {
     const cached = loadCache(baseUrl);
     if (cached && cached.data && cached.data.rawCommits) {
       cachedDash = cached.data;
+      dashFilterProjects = [];
+      dashFilterContributors = [];
       hide('screenWelcome');
       hide('loadingBar');
       filterDash(dashDays);
@@ -278,6 +398,10 @@ async function fetchDashboard(forceRefresh) {
       return;
     }
   }
+
+  // Reset filters on fresh fetch
+  dashFilterProjects = [];
+  dashFilterContributors = [];
 
   abortController = new AbortController();
   const signal = abortController.signal;
@@ -421,6 +545,10 @@ function renderDashboard(data, opts = {}) {
 
   // 5. Project Sparklines
   renderSparklines($('sparklines'), projWeekly, Object.keys(projects));
+
+  // Build filter options and chips
+  buildFilterOptions();
+  renderFilterChips();
 
   // Show dashboard (skip nav activation when filtering from cache — already on dashboard)
   hide('screenWelcome');
@@ -1177,6 +1305,305 @@ function renderTreeNodes(node) {
   }
   return html;
 }
+
+// ─── 3D Explorer (Three.js) ─────────────────────────────
+let threeScene = null, threeCamera = null, threeRenderer = null;
+let threeControls = null, threeAnimId = null;
+const threeNodes = [];
+const threeTooltipEl = document.getElementById('tooltip3d') || (() => {
+  const el = document.createElement('div'); el.id = 'tooltip3d'; el.className = 'chart-tooltip';
+  el.style.cssText = 'display:none;pointer-events:auto;position:fixed;z-index:9999';
+  document.body.appendChild(el); return el;
+})();
+
+function build3DTree(treeData, container) {
+  dispose3D();
+
+  const W = container.clientWidth || 600;
+  const H = container.clientHeight || 400;
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
+  camera.position.set(15, 10, 20);
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+  container.innerHTML = '';
+  container.appendChild(renderer.domElement);
+
+  const controls = new window.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
+  controls.autoRotate = false;
+  controls.target.set(0, 0, 0);
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambient);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  dirLight.position.set(10, 20, 10);
+  scene.add(dirLight);
+  const backLight = new THREE.DirectionalLight(0x8888ff, 0.4);
+  backLight.position.set(-10, -5, -10);
+  scene.add(backLight);
+
+  // Floor grid for depth perception
+  const gridHelper = new THREE.GridHelper(30, 20, 0x6366f1, 0x334155);
+  gridHelper.position.y = -3;
+  scene.add(gridHelper);
+
+  const extColors = {
+    js: 0xf7df1e, jsx: 0x61dafb, ts: 0x3178c6, tsx: 0x3178c6,
+    py: 0x3572A5, java: 0xb07219, go: 0x00ADD8, rs: 0xdea584,
+    rb: 0x701516, php: 0x4F5D95, css: 0x563d7c, scss: 0xc6538c,
+    html: 0xe34c26, json: 0x292929, xml: 0x0060ac, yml: 0xcb171e,
+    md: 0x083fa1, sql: 0xe38c00, sh: 0x89e051,
+  };
+
+  // Layout: assign positions with a simple radial cascade
+  const nodeMap = new Map();
+  const edges = [];
+  let idx = 0;
+
+  function layoutNode(node, parentPos, depth, angleOffset) {
+    const isRoot = depth === 0;
+    const isDir = node.type === 'dir';
+    const r = isRoot ? 1.2 : isDir ? 0.7 : 0.35;
+    const color = isRoot ? 0x6366f1 : isDir ? 0x22d3ee : (extColors[node.ext] || 0x94a3b8);
+
+    // Position: spread children in a cone
+    let pos;
+    if (isRoot) {
+      pos = new THREE.Vector3(0, 0, 0);
+    } else {
+      const spread = 2.5 + depth * 1.8;
+      const count = parentPos ? 4 : 1;
+      const angle = angleOffset + (idx % 12) * 0.52;
+      const yOff = -0.5 + depth * 0.3;
+      pos = new THREE.Vector3(
+        parentPos.x + Math.cos(angle) * spread * 0.5,
+        parentPos.y - 0.8 + Math.random() * 0.3,
+        parentPos.z + Math.sin(angle) * spread * 0.5
+      );
+    }
+
+    const geometry = new THREE.SphereGeometry(r, 16, 16);
+    const material = new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.3,
+      metalness: 0.1,
+      emissive: color,
+      emissiveIntensity: isRoot ? 0.3 : 0.1,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.copy(pos);
+    mesh.userData = { node, isDir, depth, label: node.name, ext: node.ext, stats: isDir ? `+${node.totalAdded}/-${node.totalDeleted}` : `+${node.added}/-${node.deleted}` };
+    scene.add(mesh);
+    nodeMap.set(node, mesh);
+    threeNodes.push(mesh);
+
+    // Glow ring for root
+    if (isRoot) {
+      const ringGeo = new THREE.RingGeometry(1.2, 1.6, 32);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x6366f1, side: THREE.DoubleSide, transparent: true, opacity: 0.2 });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.copy(pos);
+      ring.position.y -= 0.1;
+      ring.rotation.x = -Math.PI / 2;
+      scene.add(ring);
+    }
+
+    if (parentPos && !isRoot) {
+      edges.push({ from: parentPos, to: pos, color });
+    }
+
+    if (node.children) {
+      const sorted = [...node.children].sort((a, b) => (b.totalAdded || b.net || 0) - (a.totalAdded || a.net || 0));
+      sorted.forEach((child, ci) => {
+        idx++;
+        layoutNode(child, pos, depth + 1, ci * 1.2);
+      });
+    }
+  }
+
+  layoutNode(treeData, null, 0, 0);
+
+  // Draw edges as cylinders (better 3D look than lines)
+  for (const edge of edges) {
+    const from = edge.from;
+    const to = edge.to;
+    const mid = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const len = dir.length();
+    dir.normalize();
+
+    const cylGeo = new THREE.CylinderGeometry(0.03, 0.03, len, 4);
+    const cylMat = new THREE.MeshStandardMaterial({ color: edge.color, transparent: true, opacity: 0.3 });
+    const cyl = new THREE.Mesh(cylGeo, cylMat);
+    cyl.position.copy(mid);
+    cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    scene.add(cyl);
+  }
+
+  // Raycaster for hover
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let hovered = null;
+
+  renderer.domElement.addEventListener('pointermove', e => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(pointer, camera);
+    const intersects = raycaster.intersectObjects(threeNodes);
+
+    if (hovered) {
+      hovered.material.emissiveIntensity = hovered.userData.isRoot ? 0.3 : 0.1;
+      hovered = null;
+      threeTooltipEl.style.display = 'none';
+    }
+
+    if (intersects.length > 0) {
+      const obj = intersects[0].object;
+      hovered = obj;
+      obj.material.emissiveIntensity = 0.6;
+      const d = obj.userData;
+      const icon = d.isDir ? '📁' : '📄';
+      const extBadge = d.ext ? `.${d.ext}` : '';
+      threeTooltipEl.innerHTML = `<div class="tt-header">${icon} ${escHtml(d.label)}${extBadge}</div><div class="tt-row"><span>${d.isDir ? 'Directory' : 'File'}</span><strong>${d.stats}</strong></div>`;
+      threeTooltipEl.style.display = 'block';
+      const r = threeTooltipEl.getBoundingClientRect();
+      let tx = e.clientX + 12, ty = e.clientY - r.height - 10;
+      if (tx + r.width > window.innerWidth - 10) tx = e.clientX - r.width - 12;
+      if (ty < 10) ty = e.clientY + 12;
+      threeTooltipEl.style.left = tx + 'px';
+      threeTooltipEl.style.top = ty + 'px';
+    }
+  });
+
+  // Animation loop
+  function animate() {
+    threeAnimId = requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  threeScene = scene;
+  threeCamera = camera;
+  threeRenderer = renderer;
+  threeControls = controls;
+
+  // Resize handler
+  const onResize = () => {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w > 0 && h > 0) {
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    }
+  };
+  window.addEventListener('resize', onResize);
+  renderer.domElement._resizeHandler = onResize;
+}
+
+function dispose3D() {
+  if (threeAnimId) { cancelAnimationFrame(threeAnimId); threeAnimId = null; }
+  if (threeRenderer) {
+    threeRenderer.dispose();
+    threeRenderer.domElement.remove();
+    if (threeRenderer.domElement._resizeHandler) {
+      window.removeEventListener('resize', threeRenderer.domElement._resizeHandler);
+    }
+    threeRenderer = null;
+  }
+  threeScene = null;
+  threeCamera = null;
+  threeControls = null;
+  threeNodes.length = 0;
+}
+
+// ─── Explorer 2D/3D Toggle ──────────────────────────────
+$('explorer2dBtn').addEventListener('click', () => {
+  $('explorer2dBtn').classList.add('active');
+  $('explorer3dBtn').classList.remove('active');
+  $('locExplorer').style.display = '';
+  $('locExplorer3d').style.display = 'none';
+  dispose3D();
+});
+$('explorer3dBtn').addEventListener('click', () => {
+  $('explorer3dBtn').classList.add('active');
+  $('explorer2dBtn').classList.remove('active');
+  const projName = $('locExplorer').dataset.projectName;
+  if (!projName || !locData) {
+    $('locExplorer3d').innerHTML = '<div class="chart-empty">Click a project in the Projects tab first</div>';
+  }
+  $('locExplorer').style.display = 'none';
+  $('locExplorer3d').style.display = '';
+  if (projName && locData) {
+    renderExplorer3D(projName, locData);
+  }
+});
+
+function renderExplorer3D(projName, data) {
+  const projFiles = (data.fileRows || []).filter(f => f.project_name === projName);
+  if (projFiles.length === 0) {
+    $('locExplorer3d').innerHTML = `<div class="chart-empty">No files for ${escHtml(projName)}</div>`;
+    return;
+  }
+  // Build same tree as renderExplorer
+  const tree = { name: projName, type: 'dir', children: [], totalAdded: 0, totalDeleted: 0, totalModified: 0 };
+  const dirMap = { '': tree };
+  for (const f of projFiles) {
+    const parts = f.file.split('/'); const fileName = parts.pop(); let currentPath = '';
+    for (const part of parts) {
+      const parentPath = currentPath; currentPath = currentPath ? `${currentPath}/${part}` : part;
+      if (!dirMap[currentPath]) {
+        const node = { name: part, type: 'dir', children: [], totalAdded: 0, totalDeleted: 0, totalModified: 0, parentPath };
+        dirMap[parentPath || ''].children.push(node); dirMap[currentPath] = node;
+      }
+    }
+    const fn = { name: fileName, type: 'file', ext: f.ext, added: f.added, deleted: f.deleted, modified: f.modified, net: f.net, parentPath: currentPath };
+    dirMap[currentPath || ''].children.push(fn);
+    let p = currentPath;
+    while (p !== undefined) {
+      if (dirMap[p]) { dirMap[p].totalAdded += f.added; dirMap[p].totalDeleted += f.deleted; dirMap[p].totalModified += f.modified; }
+      p = dirMap[p]?.parentPath; if (p === '') break;
+    }
+    tree.totalAdded += f.added; tree.totalDeleted += f.deleted; tree.totalModified += f.modified;
+  }
+
+  const container = $('locExplorer3d');
+  container.innerHTML = '';
+  // Async load Three.js only when needed
+  if (typeof THREE === 'undefined') {
+    container.innerHTML = '<div class="chart-empty">Loading 3D engine...</div>';
+    import('three').then(({ default: THREE_ }) => {
+      window.THREE = THREE_;
+      return import('three/addons/controls/OrbitControls.js');
+    }).then(({ OrbitControls }) => {
+      window.OrbitControls = OrbitControls;
+      container.innerHTML = '';
+      build3DTree(tree, container);
+    }).catch(() => {
+      container.innerHTML = '<div class="chart-empty">Failed to load 3D engine. Check your internet connection.</div>';
+    });
+  } else {
+    build3DTree(tree, container);
+  }
+}
+
+// ─── Modify renderExplorer to store project name for 3D toggle
+const _origRenderExplorer = renderExplorer;
+renderExplorer = function(container, projName, data) {
+  _origRenderExplorer(container, projName, data);
+  $('locExplorer').dataset.projectName = projName;
+};
 
 // ─── Comparisons ────────────────────────────────────────
 function setupComparison(currentData, reportType) {

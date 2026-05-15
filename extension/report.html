@@ -78,6 +78,18 @@
           </div>
         </header>
 
+        <div class="filter-bar" id="dashFilterBar" style="display:none">
+          <div class="filter-dropdown" id="filterProjectWrap">
+            <button class="filter-dropdown-btn" id="filterProjectBtn">Projects ▾</button>
+            <div class="filter-dropdown-menu" id="filterProjectMenu"></div>
+          </div>
+          <div class="filter-dropdown" id="filterContributorWrap">
+            <button class="filter-dropdown-btn" id="filterContributorBtn">Contributors ▾</button>
+            <div class="filter-dropdown-menu" id="filterContributorMenu"></div>
+          </div>
+          <div class="filter-chips" id="filterChips"></div>
+        </div>
+
         <div class="summary-grid" id="dashSummary"></div>
 
         <div class="chart-grid-2">
@@ -194,7 +206,7 @@
               <div class="chart-card"><div class="chart-card-header"><h3>Review Flow</h3></div><div class="chart-body" id="locReviewFlow"><div class="chart-empty">No data</div></div></div>
             </div>
           </div>
-          <div class="loc-tab-panel" id="locTabExplorer"><div class="chart-card"><div class="chart-card-header"><h3>Codebase Explorer</h3></div><div class="chart-body" id="locExplorer"><div class="chart-empty">Run a report, then click a project to explore</div></div></div></div>
+          <div class="loc-tab-panel" id="locTabExplorer"><div class="chart-card"><div class="chart-card-header"><h3>Codebase Explorer</h3><div style="display:flex;gap:0.35rem"><button class="preset-btn active" id="explorer2dBtn" style="font-size:0.65rem;padding:0.25rem 0.5rem">2D Tree</button><button class="preset-btn" id="explorer3dBtn" style="font-size:0.65rem;padding:0.25rem 0.5rem">3D View</button></div></div><div class="chart-body" id="locExplorer" style="min-height:300px"><div class="chart-empty">Run a report, then click a project to explore</div></div><div class="chart-body" id="locExplorer3d" style="display:none;min-height:400px;padding:0;position:relative"><div class="chart-empty" id="explorer3dEmpty">Switch to 3D after exploring a project</div></div></div></div>
 
           <!-- Comparison section -->
           <div class="chart-card" style="margin-top:1.5rem;display:none" id="locCompareSection">
@@ -232,6 +244,15 @@
     </main>
   </div>
   <div id="chartTooltip" class="chart-tooltip" style="display:none"></div>
+  <div id="tooltip3d" class="chart-tooltip" style="display:none;pointer-events:auto"></div>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
   <script src="report.js"></script>
 </body>
 </html>
