@@ -433,7 +433,6 @@ async function fetchDashboard(forceRefresh) {
     if (projects.length === 0) throw new Error('No projects found');
 
     // 3. Fetch all commits for max range (365 days) — store raw for client-side filtering
-    // Includes commits from ALL branches (fetches top 5 non-default branches per project)
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 365);
@@ -441,7 +440,6 @@ async function fetchDashboard(forceRefresh) {
     const until = endDate.toISOString();
 
     const allCommits = [];
-    const seenCommitIds = new Set();
     const dirChurn = {};
 
     for (let i = 0; i < projects.length; i++) {
@@ -451,17 +449,14 @@ async function fetchDashboard(forceRefresh) {
       const pct = 10 + Math.round((i / projects.length) * 80);
       setProgress(pct, `[${i + 1}/${projects.length}] ${projName}...`);
 
-      // 3a. Default branch commits
       const commits = await paginate(baseUrl, `/projects/${proj.id}/repository/commits`, {
         since, until, all: 'true', with_stats: 'true', per_page: 100,
       }, token, signal);
 
       for (const commit of commits) {
         if (signal.aborted) throw new Error('Cancelled');
-        if (!seenCommitIds.has(commit.id)) {
-          seenCommitIds.add(commit.id);
-          allCommits.push({ ...commit, project_name: projName, project_id: proj.id });
-        }
+        allCommits.push({ ...commit, project_name: projName, project_id: proj.id });
+
         // Churn: first 10 proj × 500 commits
         if (i < 10 && allCommits.length < 500) {
           try {
@@ -475,28 +470,6 @@ async function fetchDashboard(forceRefresh) {
           } catch {}
         }
       }
-
-      // 3b. Fetch additional branches (top 5 non-default, most recently updated)
-      try {
-        const branches = await paginate(baseUrl, `/projects/${proj.id}/repository/branches`, {}, token, signal);
-        const extraBranches = branches
-          .filter(b => !b.default)
-          .sort((a, b) => new Date(b.commit?.committed_date || 0) - new Date(a.commit?.committed_date || 0))
-          .slice(0, 5);
-        for (const branch of extraBranches) {
-          if (signal.aborted) throw new Error('Cancelled');
-          const branchCommits = await paginate(baseUrl, `/projects/${proj.id}/repository/commits`, {
-            ref_name: branch.name, since, until, all: 'true', with_stats: 'true', per_page: 100,
-          }, token, signal);
-          for (const bc of branchCommits) {
-            if (signal.aborted) throw new Error('Cancelled');
-            if (!seenCommitIds.has(bc.id)) {
-              seenCommitIds.add(bc.id);
-              allCommits.push({ ...bc, project_name: projName, project_id: proj.id });
-            }
-          }
-        }
-      } catch (e) { /* branch fetch is best-effort */ }
     }
 
     // 4. Aggregate from all raw commits for current dashDays
