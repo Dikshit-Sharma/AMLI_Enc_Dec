@@ -432,6 +432,7 @@ async function fetchDashboard(forceRefresh) {
     if (projects.length === 0) throw new Error('No projects found');
 
     // 3. Fetch all commits for max range (365 days) — store raw for client-side filtering
+    // Includes commits from ALL branches (fetches top 5 non-default branches per project)
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - 365);
@@ -439,6 +440,7 @@ async function fetchDashboard(forceRefresh) {
     const until = endDate.toISOString();
 
     const allCommits = [];
+    const seenCommitIds = new Set();
     const dirChurn = {};
 
     for (let i = 0; i < projects.length; i++) {
@@ -448,14 +450,17 @@ async function fetchDashboard(forceRefresh) {
       const pct = 10 + Math.round((i / projects.length) * 80);
       setProgress(pct, `[${i + 1}/${projects.length}] ${projName}...`);
 
+      // 3a. Default branch commits
       const commits = await paginate(baseUrl, `/projects/${proj.id}/repository/commits`, {
         since, until, all: 'true', with_stats: 'true', per_page: 100,
       }, token, signal);
 
       for (const commit of commits) {
         if (signal.aborted) throw new Error('Cancelled');
-        allCommits.push({ ...commit, project_name: projName, project_id: proj.id });
-
+        if (!seenCommitIds.has(commit.id)) {
+          seenCommitIds.add(commit.id);
+          allCommits.push({ ...commit, project_name: projName, project_id: proj.id });
+        }
         // Churn: first 10 proj × 500 commits
         if (i < 10 && allCommits.length < 500) {
           try {
@@ -469,6 +474,28 @@ async function fetchDashboard(forceRefresh) {
           } catch {}
         }
       }
+
+      // 3b. Fetch additional branches (top 5 non-default, most recently updated)
+      try {
+        const branches = await paginate(baseUrl, `/projects/${proj.id}/repository/branches`, {}, token, signal);
+        const extraBranches = branches
+          .filter(b => !b.default)
+          .sort((a, b) => new Date(b.commit?.committed_date || 0) - new Date(a.commit?.committed_date || 0))
+          .slice(0, 5);
+        for (const branch of extraBranches) {
+          if (signal.aborted) throw new Error('Cancelled');
+          const branchCommits = await paginate(baseUrl, `/projects/${proj.id}/repository/commits`, {
+            ref_name: branch.name, since, until, all: 'true', with_stats: 'true', per_page: 100,
+          }, token, signal);
+          for (const bc of branchCommits) {
+            if (signal.aborted) throw new Error('Cancelled');
+            if (!seenCommitIds.has(bc.id)) {
+              seenCommitIds.add(bc.id);
+              allCommits.push({ ...bc, project_name: projName, project_id: proj.id });
+            }
+          }
+        }
+      } catch (e) { /* branch fetch is best-effort */ }
     }
 
     // 4. Aggregate from all raw commits for current dashDays
@@ -1469,7 +1496,7 @@ function build3DTree(treeData, container) {
     const isRoot = depth === 0;
     const maxDepth = 3;
 
-    let pos, radius, nodeAngle;
+    let pos, radius, nodeAngle, fileCount = 0;
 
     if (isRoot) {
       pos = new THREE.Vector3(0, 0, 0);
@@ -1503,7 +1530,7 @@ function build3DTree(treeData, container) {
         );
       }
 
-      const fileCount = node._fileCount || 0;
+      fileCount = node._fileCount || 0;
       radius = 0.35 + Math.min(fileCount / 60, 0.55);
     } else {
       return null;
@@ -1780,6 +1807,19 @@ let dash3dActive = false;
 function build3DNetwork(data, container) {
   dispose3D();
 
+  // Process data first (for adaptive sizing)
+  const { projects, contributorAgg } = data;
+  const rawCommits = data.filteredCommits || data.rawCommits || [];
+  const projList = Object.values(projects).sort((a, b) => b.commits - a.commits);
+  const contribList = Object.values(contributorAgg || {}).sort((a, b) => Object.values(b.weeks).reduce((s, v) => s + v, 0) - Object.values(a.weeks).reduce((s, v) => s + v, 0));
+
+  if (projList.length === 0 && contribList.length === 0) return;
+
+  const totalNodeCount = Math.max(projList.length, contribList.length, 1);
+  const outerR = Math.min(14 + totalNodeCount * 0.12, 24);
+  const innerR = outerR * 0.65;
+  const sizeScale = Math.min(1, 20 / totalNodeCount);
+
   const W = container.clientWidth || 800;
   const H = container.clientHeight || 600;
 
@@ -1788,6 +1828,11 @@ function build3DNetwork(data, container) {
 
   const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
   camera.position.set(22, 14, 28);
+  // Pull back if many nodes
+  if (totalNodeCount > 20) {
+    const factor = totalNodeCount / 20;
+    camera.position.set(22 * factor, 14 * factor, 28 * factor);
+  }
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(W, H);
@@ -1826,21 +1871,15 @@ function build3DNetwork(data, container) {
   scene.add(dirLight);
 
   // Floor shadow
-  const shadowGeo = new THREE.CircleGeometry(18, 32);
+  const shadowDiscSize = Math.max(18, outerR * 1.4);
+  const shadowGeo = new THREE.CircleGeometry(shadowDiscSize, 32);
   const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.025, depthWrite: false });
   const shadowDisc = new THREE.Mesh(shadowGeo, shadowMat);
   shadowDisc.rotation.x = -Math.PI / 2;
   shadowDisc.position.y = -0.5;
   scene.add(shadowDisc);
 
-  // Data
-  const { projects, contributorAgg } = data;
-  const rawCommits = data.filteredCommits || data.rawCommits || [];
-  const projList = Object.values(projects).sort((a, b) => b.commits - a.commits).slice(0, 12);
-  const contribList = Object.values(contributorAgg || {}).sort((a, b) => Object.values(b.weeks).reduce((s, v) => s + v, 0) - Object.values(a.weeks).reduce((s, v) => s + v, 0)).slice(0, 12);
-
-  if (projList.length === 0 && contribList.length === 0) return;
-
+  // Edge map (repo ↔ contributor connections)
   const edgeMap = {};
   const projNames = new Set(projList.map(p => p.name));
   const contribNames = new Set(contribList.map(c => c.name));
@@ -1854,11 +1893,9 @@ function build3DNetwork(data, container) {
   }
 
   const allNodes = [];
-  const allNodeData = []; // { mesh, type, label, stats, connectedNodes, edges }
+  const allNodeData = [];
   const maxProj = Math.max(...projList.map(p => p.commits), 1);
   const maxContrib = Math.max(...contribList.map(c => Object.values(c.weeks).reduce((s, v) => s + v, 0)), 1);
-  const outerR = 14;
-  const innerR = 9;
   let selectedNode = null;
 
   // ─── Create repo nodes (outer ring) ──────────────────────
@@ -1866,7 +1903,7 @@ function build3DNetwork(data, container) {
     const angle = (i / projList.length) * Math.PI * 2 - Math.PI / 2;
     const x = Math.cos(angle) * outerR;
     const z = Math.sin(angle) * outerR;
-    const r = 0.55 + (p.commits / maxProj) * 0.65;
+    const r = (0.55 + (p.commits / maxProj) * 0.65) * sizeScale;
     const pal = BRANCH_PALETTE[i % BRANCH_PALETTE.length];
     const geo = new THREE.SphereGeometry(r, 24, 24);
     const mat = new THREE.MeshPhysicalMaterial({ color: pal.node, roughness: 0.25, metalness: 0.05, clearcoat: 0.1, emissive: pal.node, emissiveIntensity: 0.08 });
@@ -1903,7 +1940,7 @@ function build3DNetwork(data, container) {
     const x = Math.cos(angle) * innerR;
     const z = Math.sin(angle) * innerR;
     const total = Object.values(c.weeks).reduce((s, v) => s + v, 0);
-    const r = 0.4 + (total / maxContrib) * 0.5;
+    const r = (0.4 + (total / maxContrib) * 0.5) * sizeScale;
     const pal = BRANCH_PALETTE[(i + 3) % BRANCH_PALETTE.length];
     const geo = new THREE.SphereGeometry(r, 20, 20);
     const mat = new THREE.MeshPhysicalMaterial({ color: pal.node, roughness: 0.3, metalness: 0.05, emissive: pal.node, emissiveIntensity: 0.06 });
