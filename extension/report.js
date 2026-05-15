@@ -556,36 +556,46 @@ function renderTreemap(container, fileRows) {
   container.appendChild(svgEl);
 }
 
-// ─── 2. Bus Factor Bubble Chart ──────────────────────────
+// ─── 2. Ownership Risk (Bus Factor) ──────────────────────
 function renderBubbleChart(container, projects) {
   if (projects.length === 0) { container.innerHTML = '<div class="chart-empty">No project data</div>'; return; }
-  const maxFiles = Math.max(...projects.map(p => p.added + p.deleted + p.modified), 1);
   const maxCount = Math.max(...projects.map(p => p.count), 1);
-  const W = 600, H = 280;
+  const sorted = [...projects].sort((a, b) => a.count - b.count);
 
-  const svgEl = svg('svg', { width: '100%', height: H, viewBox: `0 0 ${W} ${H}` });
+  // Risk tiers based on contributor count (bus factor proxy)
+  const riskOf = (count) => count <= 2 ? 'high' : count <= 5 ? 'medium' : 'low';
+  const riskColor = (r) => r === 'high' ? '#ef4444' : r === 'medium' ? '#f59e0b' : '#10b981';
 
-  // Legend
-  svgEl.appendChild(svg('circle', { cx: '20', cy: '20', r: '8', fill: '#ef4444', opacity: '0.7' }));
-  svgEl.appendChild(svg('text', { x: '34', y: '24', fill: 'var(--text-muted)', 'font-size': '10' }, 'High risk'));
-  svgEl.appendChild(svg('circle', { cx: '140', cy: '20', r: '8', fill: '#f59e0b', opacity: '0.7' }));
-  svgEl.appendChild(svg('text', { x: '154', y: '24', fill: 'var(--text-muted)', 'font-size': '10' }, 'Medium'));
-  svgEl.appendChild(svg('circle', { cx: '250', cy: '20', r: '8', fill: '#10b981', opacity: '0.7' }));
-  svgEl.appendChild(svg('text', { x: '264', y: '24', fill: 'var(--text-muted)', 'font-size': '10' }, 'Shared'));
+  let html = `<div class="bf-grid">
+    <div class="bf-row bf-header">
+      <span class="bf-cell bf-repo">Repository</span>
+      <span class="bf-cell bf-count">${projects[0]?.count !== undefined ? 'MRs' : 'Commits'}</span>
+      <span class="bf-cell bf-risk">Risk</span>
+      <span class="bf-cell bf-bar"></span>
+    </div>`;
 
-  projects.forEach((p, i) => {
-    const size = Math.max(10, Math.sqrt((p.added + p.deleted + p.modified) / maxFiles) * 80);
-    const x = 40 + (i % 5) * 115 + Math.random() * 20;
-    const y = 50 + Math.floor(i / 5) * 75 + Math.random() * 15;
-    const risk = p.count <= 2 ? '#ef4444' : p.count <= 5 ? '#f59e0b' : '#10b981';
-    const opacity = p.count <= 2 ? 0.5 : p.count <= 5 ? 0.6 : 0.65;
+  for (const p of sorted) {
+    const risk = riskOf(p.count);
+    const color = riskColor(risk);
+    const label = risk === 'high' ? '🔴 Concentrated' : risk === 'medium' ? '🟡 Shared' : '🟢 Distributed';
+    const pct = Math.round((p.count / maxCount) * 100);
+    html += `
+      <div class="bf-row">
+        <span class="bf-cell bf-repo" title="${escHtml(p.name)}">${escHtml(p.name)}</span>
+        <span class="bf-cell bf-count">${p.count}</span>
+        <span class="bf-cell bf-risk"><span class="bf-badge" style="background:${color}20;color:${color};border-color:${color}40">${label}</span></span>
+        <span class="bf-cell bf-bar"><span class="bf-bar-fill" style="width:${pct}%;background:${color}"></span></span>
+      </div>`;
+  }
 
-    svgEl.appendChild(svg('circle', { cx: x, cy: y, r: size, fill: risk, opacity, stroke: 'var(--border)', 'stroke-width': '1' }));
-    svgEl.appendChild(svg('text', { x, y: y + 3, 'text-anchor': 'middle', fill: '#fff', 'font-size': '9', 'font-weight': '700' }, p.name.length > 12 ? p.name.slice(0, 10) + '…' : p.name));
-  });
+  html += `</div>
+    <div class="bf-footer">
+      <span>🔴 = 1-2 contributors (concentrated ownership)</span>
+      <span>🟡 = 3-5 contributors</span>
+      <span>🟢 = 6+ contributors (shared ownership)</span>
+    </div>`;
 
-  container.innerHTML = '';
-  container.appendChild(svgEl);
+  container.innerHTML = html;
 }
 
 // ─── 3. Activity Calendar ────────────────────────────────

@@ -188,6 +188,20 @@ body {
   text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 2rem;
 }
 
+/* ─── Bus Factor / Ownership Risk Grid ─────────────────── */
+.bf-grid { display: flex; flex-direction: column; gap: 0.25rem; width: 100%; }
+.bf-row { display: grid; grid-template-columns: 1fr 55px 120px 1fr; gap: 0.75rem; align-items: center; padding: 0.45rem 0.5rem; border-radius: 0.4rem; transition: background 0.1s; }
+.bf-row:hover { background: var(--bg-hover); }
+.bf-header { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); padding: 0.3rem 0.5rem 0.4rem; border-bottom: 1px solid var(--border); pointer-events: none; }
+.bf-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; }
+.bf-repo { font-weight: 600; color: var(--text); }
+.bf-count { font-weight: 700; color: var(--text-muted); text-align: center; font-size: 0.82rem; }
+.bf-risk { text-align: center; }
+.bf-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 0.35rem; font-size: 0.7rem; font-weight: 700; border: 1px solid; white-space: nowrap; }
+.bf-bar { height: 18px; background: var(--bg-input); border-radius: 0.35rem; overflow: hidden; }
+.bf-bar-fill { height: 100%; border-radius: 0.35rem; transition: width 0.5s ease; min-width: 4px; opacity: 0.7; }
+.bf-footer { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; padding-top: 0.75rem; font-size: 0.65rem; color: var(--text-muted); border-top: 1px solid var(--border); margin-top: 0.5rem; }
+
 /* ─── Text utilities ───────────────────────────────────── */
 .text-added { color: var(--added); }
 .text-deleted { color: var(--deleted); }
