@@ -184,6 +184,7 @@ function filterDash(days, filterProjects, filterContributors) {
   agg.fetchedAt = cachedDash.fetchedAt;
   agg.filteredCommits = commits; // store filtered commits for 3D network
   renderDashboard(agg, { fromCache: true });
+  refreshDashboard3D();
   return true;
 }
 
@@ -1807,19 +1808,6 @@ let dash3dActive = false;
 function build3DNetwork(data, container) {
   dispose3D();
 
-  // Process data first (for adaptive sizing)
-  const { projects, contributorAgg } = data;
-  const rawCommits = data.filteredCommits || data.rawCommits || [];
-  const projList = Object.values(projects).sort((a, b) => b.commits - a.commits);
-  const contribList = Object.values(contributorAgg || {}).sort((a, b) => Object.values(b.weeks).reduce((s, v) => s + v, 0) - Object.values(a.weeks).reduce((s, v) => s + v, 0));
-
-  if (projList.length === 0 && contribList.length === 0) return;
-
-  const totalNodeCount = Math.max(projList.length, contribList.length, 1);
-  const outerR = Math.min(14 + totalNodeCount * 0.12, 24);
-  const innerR = outerR * 0.65;
-  const sizeScale = Math.min(1, 20 / totalNodeCount);
-
   const W = container.clientWidth || 800;
   const H = container.clientHeight || 600;
 
@@ -1828,11 +1816,6 @@ function build3DNetwork(data, container) {
 
   const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
   camera.position.set(22, 14, 28);
-  // Pull back if many nodes
-  if (totalNodeCount > 20) {
-    const factor = totalNodeCount / 20;
-    camera.position.set(22 * factor, 14 * factor, 28 * factor);
-  }
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(W, H);
@@ -1871,13 +1854,23 @@ function build3DNetwork(data, container) {
   scene.add(dirLight);
 
   // Floor shadow
-  const shadowDiscSize = Math.max(18, outerR * 1.4);
-  const shadowGeo = new THREE.CircleGeometry(shadowDiscSize, 32);
+  const shadowGeo = new THREE.CircleGeometry(18, 32);
   const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.025, depthWrite: false });
   const shadowDisc = new THREE.Mesh(shadowGeo, shadowMat);
   shadowDisc.rotation.x = -Math.PI / 2;
   shadowDisc.position.y = -0.5;
   scene.add(shadowDisc);
+
+  // Data
+  const { projects, contributorAgg } = data;
+  const rawCommits = data.filteredCommits || data.rawCommits || [];
+  const projList = Object.values(projects).sort((a, b) => b.commits - a.commits).slice(0, 12);
+  const contribList = Object.values(contributorAgg || {}).sort((a, b) => Object.values(b.weeks).reduce((s, v) => s + v, 0) - Object.values(a.weeks).reduce((s, v) => s + v, 0)).slice(0, 12);
+
+  if (projList.length === 0 && contribList.length === 0) return;
+
+  const outerR = 14;
+  const innerR = 9;
 
   // Edge map (repo ↔ contributor connections)
   const edgeMap = {};
@@ -1903,7 +1896,7 @@ function build3DNetwork(data, container) {
     const angle = (i / projList.length) * Math.PI * 2 - Math.PI / 2;
     const x = Math.cos(angle) * outerR;
     const z = Math.sin(angle) * outerR;
-    const r = (0.55 + (p.commits / maxProj) * 0.65) * sizeScale;
+    const r = 0.55 + (p.commits / maxProj) * 0.65;
     const pal = BRANCH_PALETTE[i % BRANCH_PALETTE.length];
     const geo = new THREE.SphereGeometry(r, 24, 24);
     const mat = new THREE.MeshPhysicalMaterial({ color: pal.node, roughness: 0.25, metalness: 0.05, clearcoat: 0.1, emissive: pal.node, emissiveIntensity: 0.08 });
@@ -1940,7 +1933,7 @@ function build3DNetwork(data, container) {
     const x = Math.cos(angle) * innerR;
     const z = Math.sin(angle) * innerR;
     const total = Object.values(c.weeks).reduce((s, v) => s + v, 0);
-    const r = (0.4 + (total / maxContrib) * 0.5) * sizeScale;
+    const r = 0.4 + (total / maxContrib) * 0.5;
     const pal = BRANCH_PALETTE[(i + 3) % BRANCH_PALETTE.length];
     const geo = new THREE.SphereGeometry(r, 20, 20);
     const mat = new THREE.MeshPhysicalMaterial({ color: pal.node, roughness: 0.3, metalness: 0.05, emissive: pal.node, emissiveIntensity: 0.06 });
@@ -2212,6 +2205,16 @@ function hideDashboard3D() {
   $('dashCharts').style.display = '';
   dash3dActive = false;
   $('dash3dToggle').textContent = '🌐 3D Network';
+}
+
+function refreshDashboard3D() {
+  if (!dash3dActive || !lastDashData) return;
+  const container = $('dash3dContainer');
+  loadThreeJS().then(() => {
+    build3DNetwork(lastDashData, container);
+  }).catch(err => {
+    container.innerHTML = `<div class="chart-empty">3D refresh failed: ${escHtml(err.message || err)}</div>`;
+  });
 }
 
 // ─── Dashboard 3D Toggle ─────────────────────────────────
