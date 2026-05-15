@@ -1,173 +1,257 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GitLab LOC Report</title>
+  <title>RepoScope — Dashboard</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="report-page">
-    <div class="report-header">
-      <h1>GitLab LOC Report</h1>
-      <p>Lines of Code by merge requests or commits in a date range</p>
-    </div>
-
-    <!-- Form -->
-    <div class="card" id="formSection">
-      <div class="form-row">
-        <div class="form-group full-width">
-          <label>Report Type</label>
-          <select id="reportType" class="main-select">
-            <option value="mr">BY MR</option>
-            <option value="commit">BY COMMIT</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group full-width">
-          <label>GitLab Base URL</label>
-          <input type="text" id="baseUrl" value="https://repo.maxlifeinsurance.com/api/v4" placeholder="https://gitlab.example.com/api/v4">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Private Token</label>
-          <input type="password" id="token" placeholder="glpat-...">
-        </div>
-        <div class="form-group">
-          <label>Username</label>
-          <input type="text" id="username" placeholder="DLBPR02929">
-        </div>
-      </div>
-      <div class="form-row" id="commitAuthorRow" style="display:none">
-        <div class="form-group full-width">
-          <label>Commit Author (email or name)</label>
-          <input type="text" id="commitAuthor" placeholder="Auto-filled after user lookup, or enter manually">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Start Date</label>
-          <input type="date" id="startDate">
-        </div>
-        <div class="form-group">
-          <label>End Date</label>
-          <input type="date" id="endDate">
-        </div>
-      </div>
-      <button class="btn-primary" id="fetchBtn">Generate Report</button>
-    </div>
-
-    <!-- Progress -->
-    <div class="card" id="progressSection" style="display:none">
-      <div class="progress-section">
-        <div class="progress-text" id="progressText">Starting...</div>
-        <div class="progress-bar-bg">
-          <div class="progress-bar-fill" id="progressBar" style="width:0%"></div>
-        </div>
-        <button class="btn-secondary" id="cancelBtn">Cancel</button>
-      </div>
-    </div>
-
-    <!-- Error -->
-    <div id="errorSection" style="display:none"></div>
-
-    <!-- Results -->
-    <div id="resultsSection" style="display:none">
-      <div class="summary-grid" id="summaryGrid"></div>
-
-      <!-- Per-project -->
-      <div class="card" id="projectSection" style="display:none">
-        <div class="section-title">Per-Project Summary</div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th id="projectCountHeader">MRs</th>
-                <th>Added</th>
-                <th>Deleted</th>
-                <th>Modified</th>
-                <th>Net</th>
-              </tr>
-            </thead>
-            <tbody id="projectBody"></tbody>
-          </table>
-        </div>
+  <div class="app-layout">
+    <!-- ─── Sidebar ─── -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>RepoScope</h1>
+        <span class="sidebar-badge">GitLab</span>
       </div>
 
-      <!-- MR table (BY MR mode) -->
-      <div class="card" id="mrSection" style="display:none">
-        <div class="section-title">Merge Requests</div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>MR</th>
-                <th>Title</th>
-                <th>Merged</th>
-                <th>Added</th>
-                <th>Deleted</th>
-                <th>Modified</th>
-                <th>Net</th>
-              </tr>
-            </thead>
-            <tbody id="mrBody"></tbody>
-          </table>
+      <nav class="sidebar-nav">
+        <button class="nav-btn active" data-view="dashboard">📊 Dashboard</button>
+        <button class="nav-btn" data-view="loc-report">📋 LOC Report</button>
+      </nav>
+
+      <div class="sidebar-config">
+        <div class="sidebar-config-row">
+          <input type="text" id="sBaseUrl" placeholder="GitLab URL" value="https://repo.maxlifeinsurance.com/api/v4">
         </div>
+        <div class="sidebar-config-row">
+          <input type="password" id="sToken" placeholder="Private Token">
+        </div>
+        <button id="sFetchBtn" class="btn-primary" style="font-size:0.78rem;padding:0.5rem">🚀 Fetch Data</button>
+        <div id="sStatus" class="sidebar-status"></div>
       </div>
 
-      <!-- Commit table (BY COMMIT mode) -->
-      <div class="card" id="commitSection" style="display:none">
-        <div class="section-title">Commits</div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Commit</th>
-                <th>Message</th>
-                <th>Date</th>
-                <th>Added</th>
-                <th>Deleted</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody id="commitBody"></tbody>
-          </table>
+      <div class="sidebar-footer">
+        <button id="sThemeToggle" class="btn-icon-sm" title="Toggle theme">🌙</button>
+        <span class="sidebar-ver">v2.0</span>
+      </div>
+    </aside>
+
+    <!-- ─── Main Content ─── -->
+    <main class="main-content" id="mainContent">
+
+      <!-- Token screen (shown when no data) -->
+      <section id="screenWelcome" class="screen-center">
+        <div class="welcome-card">
+          <h1>🔍 RepoScope</h1>
+          <p>Enter your GitLab instance and token in the sidebar,<br>then click <strong>Fetch Data</strong> to see your dashboard.</p>
+          <div class="welcome-hints">
+            <span>📊 Team velocity &amp; trends</span>
+            <span>👥 Contributor timeline</span>
+            <span>📦 Per-project sparklines</span>
+            <span>📋 Detailed LOC reports</span>
+          </div>
         </div>
+      </section>
+
+      <!-- Loading bar (inline at top) -->
+      <div id="loadingBar" class="loading-bar-wrap" style="display:none">
+        <div class="loading-bar-row">
+          <div class="loading-spinner-sm"></div>
+          <span id="loadText">Fetching data...</span>
+        </div>
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="loadBar" style="width:0%"></div></div>
       </div>
 
-      <!-- Per-file -->
-      <div class="card" id="fileSection" style="display:none">
-        <div class="section-title">Per-File Breakdown</div>
-        <div class="table-wrap" id="fileTableWrap" style="display:none">
-          <table>
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th id="fileIdHeader">MR</th>
-                <th>File</th>
-                <th>Added</th>
-                <th>Deleted</th>
-                <th>Modified</th>
-                <th>Net</th>
-              </tr>
-            </thead>
-            <tbody id="fileBody"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+      <!-- ─── DASHBOARD VIEW ─── -->
+      <section id="viewDashboard" style="display:none">
+        <header class="view-header">
+          <div>
+            <h2>Dashboard</h2>
+            <p class="view-subtitle" id="dashSubtitle">Loading...</p>
+          </div>
+          <div class="preset-bar" id="presetBar">
+            <button class="preset-btn active" data-days="7">7d</button>
+            <button class="preset-btn" data-days="30">30d</button>
+            <button class="preset-btn" data-days="90">Quarter</button>
+            <button class="preset-btn" data-days="365">Year</button>
+          </div>
+          <button class="preset-btn" id="dash3dToggle" style="font-size:0.65rem;padding:0.25rem 0.5rem">🌐 3D Network</button>
+        </header>
 
-    <!-- Footer -->
-    <div class="footer">
-      Developed by Dikshit Sharma &bull;
-      <a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a>
-    </div>
+        <div class="filter-bar" id="dashFilterBar" style="display:none">
+          <div class="filter-dropdown" id="filterProjectWrap">
+            <button class="filter-dropdown-btn" id="filterProjectBtn">Projects ▾</button>
+            <div class="filter-dropdown-menu" id="filterProjectMenu"></div>
+          </div>
+          <div class="filter-dropdown" id="filterContributorWrap">
+            <button class="filter-dropdown-btn" id="filterContributorBtn">Contributors ▾</button>
+            <div class="filter-dropdown-menu" id="filterContributorMenu"></div>
+          </div>
+          <div class="filter-chips" id="filterChips"></div>
+        </div>
+
+        <div id="dashCharts">
+          <div class="summary-grid" id="dashSummary"></div>
+
+          <div class="chart-grid-2">
+            <div class="chart-card">
+              <div class="chart-card-header"><h3>Team Velocity</h3><span class="chart-hint">Weekly commits across all repos</span></div>
+              <div class="chart-body" id="velocityTrend"><div class="chart-empty">Fetch data to see velocity</div></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-card-header"><h3>Contributor Activity</h3><span class="chart-hint">Top contributors over time</span></div>
+              <div class="chart-body" id="contributorTimeline"><div class="chart-empty">Fetch data to see timeline</div></div>
+            </div>
+          </div>
+
+          <div class="chart-grid-2">
+            <div class="chart-card">
+              <div class="chart-card-header"><h3>Code Churn by Directory</h3><span class="chart-hint">Directories with most file modifications</span></div>
+              <div class="chart-body" id="codeChurn"><div class="chart-empty">Fetch data to see churn</div></div>
+            </div>
+            <div class="chart-card">
+              <div class="chart-card-header"><h3>Top Active Repos</h3><span class="chart-hint">Most commits per project</span></div>
+              <div class="chart-body" id="topRepos"><div class="chart-empty">Fetch data to see repos</div></div>
+            </div>
+          </div>
+
+          <div class="chart-card" style="margin-top:1.5rem">
+            <div class="chart-card-header"><h3>Project Sparklines</h3><span class="chart-hint">Weekly activity per repo — mini trends</span></div>
+            <div class="chart-body chart-body--sparklines" id="sparklines"><div class="chart-empty">Fetch data to see sparklines</div></div>
+          </div>
+        </div>
+
+        <div class="chart-card" id="dash3dContainer" style="display:none;min-height:780px;padding:0;position:relative;overflow:hidden">
+          <div class="chart-empty">Loading 3D network...</div>
+        </div>
+      </section>
+
+      <!-- ─── LOC REPORT VIEW ─── -->
+      <section id="viewLocReport" style="display:none">
+        <header class="view-header">
+          <div>
+            <h2>LOC Report</h2>
+            <p class="view-subtitle">Detailed lines-of-code analysis by merge request or commit</p>
+          </div>
+          <button id="locBackToDashboard" class="btn-secondary" style="flex:none;width:auto">← Dashboard</button>
+        </header>
+
+        <!-- Loc form -->
+        <div class="loc-form" id="locFormSection">
+          <div class="form-row">
+            <div class="form-group full-width">
+              <label>Report Type</label>
+              <select id="locReportType" class="main-select">
+                <option value="mr">BY MERGE REQUEST</option>
+                <option value="commit">BY COMMIT</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row" id="locUserIdRow">
+            <div class="form-group full-width">
+              <label>GitLab User ID or Username</label>
+              <input type="text" id="locUserId" placeholder="e.g. username or 12345 — used for MR/commit lookup">
+            </div>
+          </div>
+          <div class="form-row" id="locCommitAuthorRow" style="display:none">
+            <div class="form-group full-width">
+              <label>Commit Author (email or name)</label>
+              <input type="text" id="locCommitAuthor" placeholder="Auto-filled or enter manually">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Start Date</label>
+              <input type="date" id="locStartDate">
+            </div>
+            <div class="form-group">
+              <label>End Date</label>
+              <input type="date" id="locEndDate">
+            </div>
+          </div>
+          <div style="display:flex;gap:0.75rem">
+            <button class="btn-primary" id="locFetchBtn">Generate Report</button>
+            <button class="btn-secondary" id="locCancelBtn" style="display:none">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Loc progress -->
+        <div class="loc-progress" id="locProgressSection" style="display:none">
+          <div class="progress-text" id="locProgressText">Starting...</div>
+          <div class="progress-bar-bg"><div class="progress-bar-fill" id="locProgressBar" style="width:0%"></div></div>
+        </div>
+
+        <!-- Loc error -->
+        <div id="locErrorSection" style="display:none"></div>
+
+        <!-- Loc results -->
+        <section id="locResultsSection" style="display:none">
+          <div class="summary-grid" id="locSummaryGrid"></div>
+
+          <!-- Tab nav for LOC results -->
+          <nav class="tab-bar" id="locTabBar" style="margin-bottom:1.5rem">
+            <button class="tab-btn active" data-loc-tab="overview">📊 Overview</button>
+            <button class="tab-btn" data-loc-tab="calendar">📅 Activity</button>
+            <button class="tab-btn" data-loc-tab="projects">📦 Projects</button>
+            <button class="tab-btn" data-loc-tab="contributors">👥 Contributors</button>
+            <button class="tab-btn" data-loc-tab="explorer">🔍 Explorer</button>
+          </nav>
+
+          <div class="loc-tab-panel active" id="locTabOverview">
+            <div class="chart-grid-2">
+              <div class="chart-card"><div class="chart-card-header"><h3>Language Treemap</h3><span class="chart-hint">File extension distribution</span></div><div class="chart-body" id="locTreemap"><div class="chart-empty">No data</div></div></div>
+              <div class="chart-card"><div class="chart-card-header"><h3>Ownership Risk</h3><span class="chart-hint">Bus factor by repo</span></div><div class="chart-body" id="locOwnership"><div class="chart-empty">No data</div></div></div>
+            </div>
+            <div class="chart-card" style="margin-top:1.5rem"><div class="chart-card-header"><h3>Project Activity</h3><span class="chart-hint">Per-project counts</span></div><div class="chart-body" id="locProjectBars"><div class="chart-empty">No data</div></div></div>
+          </div>
+          <div class="loc-tab-panel" id="locTabCalendar"><div class="chart-card"><div class="chart-card-header"><h3>Activity Calendar</h3><span class="chart-hint">GitHub-style heatmap</span></div><div class="chart-body" id="locCalendar"><div class="chart-empty">No data</div></div></div></div>
+          <div class="loc-tab-panel" id="locTabProjects"><div class="chart-card"><div class="chart-header" style="padding:1rem 1.25rem"><h3>Per-Project Summary</h3></div><div class="chart-body" id="locProjectTable"><div class="chart-empty">No data</div></div></div></div>
+          <div class="loc-tab-panel" id="locTabContributors">
+            <div class="chart-grid-2">
+              <div class="chart-card"><div class="chart-card-header"><h3>Contributor Distribution</h3></div><div class="chart-body" id="locContributorBars"><div class="chart-empty">No data</div></div></div>
+              <div class="chart-card"><div class="chart-card-header"><h3>Review Flow</h3></div><div class="chart-body" id="locReviewFlow"><div class="chart-empty">No data</div></div></div>
+            </div>
+          </div>
+          <div class="loc-tab-panel" id="locTabExplorer"><div class="chart-card"><div class="chart-card-header"><h3>Codebase Explorer</h3><div style="display:flex;gap:0.35rem"><button class="preset-btn active" id="explorer2dBtn" style="font-size:0.65rem;padding:0.25rem 0.5rem">2D Tree</button><button class="preset-btn" id="explorer3dBtn" style="font-size:0.65rem;padding:0.25rem 0.5rem">3D View</button></div></div><div class="chart-body" id="locExplorer" style="min-height:300px"><div class="chart-empty">Run a report, then click a project to explore</div></div><div class="chart-body" id="locExplorer3d" style="display:none;min-height:520px;padding:0;position:relative;overflow:hidden"><div class="chart-empty" id="explorer3dEmpty">Switch to 3D after exploring a project</div></div></div></div>
+
+          <!-- Comparison section -->
+          <div class="chart-card" style="margin-top:1.5rem;display:none" id="locCompareSection">
+            <div class="chart-card-header">
+              <h3>Compare Periods</h3>
+              <span class="chart-hint">Compare current report with a previous period</span>
+            </div>
+            <div class="chart-body" style="flex-direction:column;gap:1rem">
+              <div class="compare-form" id="locCompareForm">
+                <div class="form-row" style="margin-bottom:0;width:100%">
+                  <div class="form-group">
+                    <label>Previous Period Start</label>
+                    <input type="date" id="locCompareStart">
+                  </div>
+                  <div class="form-group">
+                    <label>Previous Period End</label>
+                    <input type="date" id="locCompareEnd">
+                  </div>
+                </div>
+                <div style="display:flex;gap:0.5rem;align-items:flex-end">
+                  <button class="btn-primary" id="locCompareBtn" style="flex:none;width:auto">📊 Compare</button>
+                </div>
+              </div>
+              <!-- Compare progress -->
+              <div id="locCompareProgress" class="loc-progress" style="display:none;margin-bottom:0">
+                <div class="progress-text" id="locCompareProgressText">Fetching previous period...</div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill" id="locCompareProgressBar" style="width:0%"></div></div>
+              </div>
+              <div id="locCompareResults" style="display:none;width:100%"></div>
+            </div>
+          </div>
+        </section>
+      </section>
+
+    </main>
   </div>
+  <div id="chartTooltip" class="chart-tooltip" style="display:none"></div>
+  <div id="tooltip3d" class="chart-tooltip" style="display:none;pointer-events:auto"></div>
   <script src="report.js"></script>
 </body>
 </html>
