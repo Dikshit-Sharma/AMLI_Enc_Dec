@@ -1410,7 +1410,7 @@ function build3DTree(treeData, container) {
   controls.maxDistance = 35;
   controls.autoRotate = true;
   controls.autoRotateSpeed = 1.2;
-  controls.target.set(0, 0, 0);
+  controls.target.set(0, 2, 0);
 
   // Lights
   const ambient = new THREE.AmbientLight(0xffffff, 0.65);
@@ -1435,62 +1435,107 @@ function build3DTree(treeData, container) {
   let hoveredObj = null;
   let hoveredEdges = [];
 
-  // Recursive layout
+  // Simplify tree: only show directories, aggregate file counts
+  function simplifyTree(node) {
+    const files = [];
+    const dirChildren = [];
+    for (const c of (node.children || [])) {
+      if (c.type === 'file') {
+        files.push(c);
+      } else {
+        const s = simplifyTree(c);
+        if (s) dirChildren.push(s);
+      }
+    }
+    return {
+      ...node,
+      _files: files,
+      children: dirChildren,
+      _fileCount: files.length + dirChildren.reduce((s, c) => s + (c._fileCount || 0), 0),
+    };
+  }
+
+  const simpleTree = simplifyTree(treeData);
+
+  // Recursive layout (dirs only) — clean radial tree
   let branchCount = 0;
   const allGroup = [];
 
-  function layoutNode(node, parentPos, depth, angleBase, branchColor, parentNodeInfo) {
+  function layoutNode(node, parentPos, depth, parentAngle, branchColor, parentNodeInfo) {
     const isRoot = depth === 0;
-    const isDir = node.type === 'dir';
-    const colorIdx = branchColor !== undefined ? branchColor : (isRoot ? 0 : ((branchCount++) % BRANCH_PALETTE.length));
-    const pal = BRANCH_PALETTE[colorIdx % BRANCH_PALETTE.length];
+    const maxDepth = 3;
 
-    let pos;
-    let radius;
+    let pos, radius, nodeAngle;
+
     if (isRoot) {
       pos = new THREE.Vector3(0, 0, 0);
-      radius = 0.9;
-    } else {
-      const spread = 3.2 + depth * 1.2;
-      const children = parentNodeInfo ? parentNodeInfo.node.children || [] : [];
+      radius = 1.0;
+      nodeAngle = -Math.PI / 2;
+    } else if (depth <= maxDepth) {
+      const children = parentNodeInfo ? parentNodeInfo.children : [];
       const childIdx = parentNodeInfo ? parentNodeInfo.children.indexOf(node) : 0;
-      const totalChildren = Math.max(children.length, 1);
-      const angleStep = (Math.PI * 2) / Math.min(totalChildren, 12);
-      const aOff = angleBase + childIdx * angleStep + (depth * 0.3);
-      const dist = spread * (0.6 + Math.random() * 0.4);
-      const yOff = -0.3 + depth * 0.2 + (Math.random() - 0.5) * 0.4;
-      pos = new THREE.Vector3(
-        parentPos.x + Math.cos(aOff) * dist,
-        parentPos.y + yOff,
-        parentPos.z + Math.sin(aOff) * dist
-      );
-      if (isDir) radius = 0.55; else radius = 0.22 + (node.net !== undefined ? Math.min(Math.abs(node.net) / 200, 0.15) : 0);
+      const totalChildren = Math.min(children.length, 8);
+      if (childIdx >= 8) return null;
+
+      const levelStep = 3.0;
+      const radialDist = depth === 1 ? 4.5 : (depth === 2 ? 2.8 : 2.0);
+
+      if (depth === 1) {
+        nodeAngle = (childIdx / totalChildren) * Math.PI * 2 - Math.PI / 2;
+        pos = new THREE.Vector3(
+          Math.cos(nodeAngle) * radialDist,
+          levelStep,
+          Math.sin(nodeAngle) * radialDist
+        );
+      } else {
+        const arcRange = Math.PI * 0.6;
+        const halfArc = arcRange / 2;
+        nodeAngle = parentAngle + (totalChildren > 1 ?
+          (childIdx / (totalChildren - 1)) * arcRange - halfArc : 0);
+        pos = new THREE.Vector3(
+          parentPos.x + Math.cos(nodeAngle) * radialDist,
+          parentPos.y + levelStep,
+          parentPos.z + Math.sin(nodeAngle) * radialDist
+        );
+      }
+
+      const fileCount = node._fileCount || 0;
+      radius = 0.25 + Math.min(fileCount / 80, 0.5);
+    } else {
+      return null;
     }
 
+    const colorIdx = branchColor !== undefined ? branchColor :
+      (isRoot ? 0 : ((branchCount++) % BRANCH_PALETTE.length));
+    const pal = BRANCH_PALETTE[colorIdx % BRANCH_PALETTE.length];
+
     // Create sphere
-    const geo = new THREE.SphereGeometry(radius, isDir ? 24 : 16, isDir ? 24 : 16);
+    const geo = new THREE.SphereGeometry(radius, 24, 24);
     const mat = new THREE.MeshPhysicalMaterial({
       color: pal.node,
-      roughness: 0.25,
+      roughness: 0.3,
       metalness: 0.05,
       clearcoat: 0.1,
       emissive: pal.node,
-      emissiveIntensity: isRoot ? 0.25 : 0.08,
+      emissiveIntensity: isRoot ? 0.25 : 0.04,
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.copy(pos);
     mesh.castShadow = true;
+    const fileCount = node._fileCount || 0;
     mesh.userData = {
-      node, isDir, depth, label: node.name, ext: node.ext,
-      stats: isDir ? `+${node.totalAdded}/-${node.totalDeleted}/${node.modified || 0} modified` : `+${node.added}/-${node.deleted}/${node.modified}`,
-      pal, isRoot,
+      node, isDir: true, depth, label: node.name,
+      stats: `${fileCount} files · +${fmt(node.totalAdded)}/-${fmt(node.totalDeleted)}`,
+      pal, isRoot, fileCount, files: node._files || [],
     };
     scene.add(mesh);
     threeNodes.push(mesh);
 
     // Label
+    const displayName = isRoot ? node.name : `${node.name} (${fileCount})`;
+    const labelText = displayName.length > 22 ? displayName.slice(0, 20) + '…' : displayName;
     const labelColor = isRoot ? '#444' : '#666';
-    const label = makeLabel(node.name.length > 16 ? node.name.slice(0, 14) + '…' : node.name, labelColor);
+    const label = makeLabel(labelText, labelColor);
     label.position.copy(pos);
     label.position.y -= radius + 0.35;
     scene.add(label);
@@ -1498,7 +1543,7 @@ function build3DTree(treeData, container) {
     // Root glow rings
     if (isRoot) {
       for (let ri = 0; ri < 3; ri++) {
-        const ringGeo = new THREE.RingGeometry(radius + 0.15 + ri * 0.3, radius + 0.25 + ri * 0.3, 40);
+        const ringGeo = new THREE.RingGeometry(radius + 0.2 + ri * 0.4, radius + 0.35 + ri * 0.4, 40);
         const ringMat = new THREE.MeshBasicMaterial({
           color: pal.node, side: THREE.DoubleSide, transparent: true, opacity: 0.15 - ri * 0.04,
         });
@@ -1510,9 +1555,9 @@ function build3DTree(treeData, container) {
       }
     }
 
-    // Subtle shadow dot under each node
+    // Shadow dot
     const dotGeo = new THREE.CircleGeometry(radius * 1.2, 12);
-    const dotMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.06, depthWrite: false });
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.04, depthWrite: false });
     const dot = new THREE.Mesh(dotGeo, dotMat);
     dot.position.copy(pos);
     dot.position.y = -0.48;
@@ -1520,16 +1565,12 @@ function build3DTree(treeData, container) {
     scene.add(dot);
 
     // Edge to parent
-    const children = [];
     const edgeMeshes = [];
     if (parentPos && !isRoot) {
       const curve = makeCurve(parentPos, pos, depth);
-      const tubeGeo = new THREE.TubeGeometry(curve, 12, 0.025 + radius * 0.04, 6, false);
+      const tubeGeo = new THREE.TubeGeometry(curve, 10, 0.025 + radius * 0.025, 5, false);
       const tubeMat = new THREE.MeshPhysicalMaterial({
-        color: pal.edge,
-        transparent: true,
-        opacity: 0.35,
-        roughness: 0.5,
+        color: pal.edge, transparent: true, opacity: 0.2, roughness: 0.5,
       });
       const tube = new THREE.Mesh(tubeGeo, tubeMat);
       scene.add(tube);
@@ -1537,15 +1578,19 @@ function build3DTree(treeData, container) {
       threeEdgeMeshes.push(tube);
     }
 
-    const nodeInfo = { node, mesh, label, children, edgeMeshes, expanded: true, depth, pal, radius, pos };
+    const nodeInfo = {
+      node, mesh, label, children: [], edgeMeshes,
+      expanded: true, depth, pal, radius, pos, fileCount,
+      files: node._files || [],
+    };
     allGroup.push(nodeInfo);
 
-    // Recurse children
-    if (node.children && node.children.length > 0) {
-      const sorted = [...node.children].sort((a, b) => (b.totalAdded || b.net || 0) - (a.totalAdded || a.net || 0));
-      nodeInfo.children = sorted.map((child, ci) =>
-        layoutNode(child, pos, depth + 1, angleBase + ci * 0.5, colorIdx, { node, children: sorted })
-      );
+    // Recurse children (dirs only)
+    if (node.children && node.children.length > 0 && depth < maxDepth) {
+      const sorted = [...node.children].sort((a, b) => (b._fileCount || 0) - (a._fileCount || 0));
+      nodeInfo.children = sorted.map(child =>
+        layoutNode(child, pos, depth + 1, nodeAngle, colorIdx, { node, children: sorted })
+      ).filter(Boolean);
       for (const c of nodeInfo.children) {
         if (c) edgeMeshes.push(...c.edgeMeshes);
       }
@@ -1554,9 +1599,9 @@ function build3DTree(treeData, container) {
     return nodeInfo;
   }
 
-  threeNodeTree = layoutNode(treeData, null, 0, 0, 0, null);
+  threeNodeTree = layoutNode(simpleTree, null, 0, 0, 0, null);
 
-  // Click: toggle expand/collapse on directory nodes
+  // Click: show file details on directory nodes
   renderer.domElement.addEventListener('click', e => {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1565,29 +1610,56 @@ function build3DTree(treeData, container) {
     const hits = raycaster.intersectObjects(threeNodes);
     if (hits.length > 0) {
       const obj = hits[0].object;
-      if (obj.userData.isDir && !obj.userData.isRoot) {
-        const info = allGroup.find(g => g.mesh === obj);
-        if (info) toggleBranch(info);
+      const info = allGroup.find(g => g.mesh === obj);
+      if (info && info.isDir && !info.isRoot) {
+        // Toggle expand/collapse
+        info.expanded = !info.expanded;
+        function animBranch(nodeInfo, show) {
+          const s = show ? 1 : 0;
+          for (const c of nodeInfo.children) {
+            if (!c) continue;
+            c.mesh.scale.setScalar(s);
+            c.label.element.style.display = show ? '' : 'none';
+            for (const e of c.edgeMeshes) e.scale.set(1, s, 1);
+            if (!show || !c.expanded) animBranch(c, show && c.expanded);
+          }
+        }
+        animBranch(info, info.expanded);
+        info.mesh.material.emissiveIntensity = info.expanded ? 0.06 : 0.3;
+      }
+      // Show file list in tooltip for any dir click
+      if (info) {
+        const files = info.files || [];
+        const allDescendantFiles = collectFiles(info.node);
+        const totalFiles = allDescendantFiles.length;
+        const dirTip = info.isRoot ? '' : `<div class="tt-row"><span>Subdirectories</span><strong>${info.node.children?.filter(c => c.type === 'dir').length || 0}</strong></div><div class="tt-row"><span>Files</span><strong>${totalFiles}</strong></div>`;
+        const sampleFiles = allDescendantFiles.slice(0, 8).map(f =>
+          `<div class="tt-row"><span>📄 ${escHtml(f.name || f.file || '?')}</span><strong>+${f.added || 0}/-${f.deleted || 0}</strong></div>`
+        ).join('');
+        const more = allDescendantFiles.length > 8 ? `<div class="tt-row" style="color:var(--text-muted)">… and ${allDescendantFiles.length - 8} more</div>` : '';
+        threeTooltipEl.innerHTML = `
+          <div class="tt-header">📁 ${escHtml(info.node.name)}</div>
+          <div class="tt-row"><span>Lines</span><strong>+${fmt(info.node.totalAdded)}/-${fmt(info.node.totalDeleted)}</strong></div>
+          ${dirTip}
+          ${totalFiles > 0 ? `<div style="border-top:1px solid var(--border);margin:0.3rem 0;padding-top:0.3rem;font-size:0.7rem;font-weight:600;color:var(--text-muted)">FILES</div>${sampleFiles}${more}` : ''}
+          <div style="margin-top:0.3rem;font-size:0.65rem;color:var(--text-muted)">${info.expanded ? '▼ Click to collapse' : '▶ Click to expand'}</div>`;
+        threeTooltipEl.style.display = 'block';
+        const r = threeTooltipEl.getBoundingClientRect();
+        let tx = e.clientX + 12, ty = e.clientY - r.height - 10;
+        if (tx + r.width > window.innerWidth - 10) tx = e.clientX - r.width - 12;
+        if (ty < 10) ty = e.clientY + 12;
+        threeTooltipEl.style.left = tx + 'px';
+        threeTooltipEl.style.top = ty + 'px';
       }
     }
   });
 
-  function toggleBranch(info) {
-    info.expanded = !info.expanded;
-    const targetScale = info.expanded ? 1 : 0;
-    function animateBranch(nodeInfo, show) {
-      const scale = show ? 1 : 0;
-      for (const c of nodeInfo.children) {
-        if (!c) continue;
-        c.mesh.scale.setScalar(scale);
-        c.label.element.style.display = show ? '' : 'none';
-        for (const e of c.edgeMeshes) e.scale.set(1, scale, 1);
-        if (!show || !c.expanded) animateBranch(c, show && c.expanded);
-      }
+  function collectFiles(node) {
+    let all = [...(node._files || [])];
+    for (const c of (node.children || [])) {
+      all = all.concat(collectFiles(c));
     }
-    animateBranch(info, info.expanded);
-    // Update label
-    info.mesh.material.emissiveIntensity = info.expanded ? 0.12 : 0.25;
+    return all;
   }
 
   // Hover
@@ -1695,14 +1767,14 @@ let dash3dActive = false;
 function build3DNetwork(data, container) {
   dispose3D();
 
-  const W = container.clientWidth || 700;
-  const H = container.clientHeight || 450;
+  const W = container.clientWidth || 800;
+  const H = container.clientHeight || 600;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xf5f7fa);
 
   const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
-  camera.position.set(16, 10, 20);
+  camera.position.set(22, 14, 28);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(W, H);
@@ -1725,10 +1797,10 @@ function build3DNetwork(data, container) {
   const controls = new window.OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  controls.minDistance = 5;
-  controls.maxDistance = 40;
+  controls.minDistance = 8;
+  controls.maxDistance = 60;
   controls.autoRotate = true;
-  controls.autoRotateSpeed = 0.8;
+  controls.autoRotateSpeed = 0.6;
   controls.target.set(0, 0, 0);
 
   // Lights
@@ -1741,8 +1813,8 @@ function build3DNetwork(data, container) {
   scene.add(dirLight);
 
   // Floor shadow
-  const shadowGeo = new THREE.CircleGeometry(12, 32);
-  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.03, depthWrite: false });
+  const shadowGeo = new THREE.CircleGeometry(18, 32);
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.025, depthWrite: false });
   const shadowDisc = new THREE.Mesh(shadowGeo, shadowMat);
   shadowDisc.rotation.x = -Math.PI / 2;
   shadowDisc.position.y = -0.5;
@@ -1769,35 +1841,42 @@ function build3DNetwork(data, container) {
   }
 
   const allNodes = [];
+  const allNodeData = []; // { mesh, type, label, stats, connectedNodes, edges }
   const maxProj = Math.max(...projList.map(p => p.commits), 1);
   const maxContrib = Math.max(...contribList.map(c => Object.values(c.weeks).reduce((s, v) => s + v, 0)), 1);
-  const outerR = 7;
-  const innerR = 3.8;
+  const outerR = 14;
+  const innerR = 9;
+  let selectedNode = null;
 
-  // Project nodes (outer, pastel indigo)
+  // ─── Create repo nodes (outer ring) ──────────────────────
   projList.forEach((p, i) => {
     const angle = (i / projList.length) * Math.PI * 2 - Math.PI / 2;
     const x = Math.cos(angle) * outerR;
     const z = Math.sin(angle) * outerR;
-    const r = 0.45 + (p.commits / maxProj) * 0.55;
+    const r = 0.55 + (p.commits / maxProj) * 0.65;
     const pal = BRANCH_PALETTE[i % BRANCH_PALETTE.length];
-    const geo = new THREE.SphereGeometry(r, 20, 20);
+    const geo = new THREE.SphereGeometry(r, 24, 24);
     const mat = new THREE.MeshPhysicalMaterial({ color: pal.node, roughness: 0.25, metalness: 0.05, clearcoat: 0.1, emissive: pal.node, emissiveIntensity: 0.08 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, 0, z);
     mesh.castShadow = true;
-    mesh.userData = { type: 'repo', label: p.name, stats: `${p.commits} commits · +${fmt(p.added)} / -${fmt(p.deleted)}` };
+    const statsStr = `${p.commits} commits · +${fmt(p.added)} / -${fmt(p.deleted)}`;
+    mesh.userData = { type: 'repo', label: p.name, stats: statsStr, pal };
     scene.add(mesh);
     threeNodes.push(mesh);
     allNodes.push(mesh);
 
-    const label = makeLabel(p.name.length > 14 ? p.name.slice(0, 12) + '…' : p.name, '#555');
-    label.position.set(x, -r - 0.35, z);
+    const nd = { mesh, type: 'repo', label: p.name, stats: statsStr, connectedNodes: [], edges: [] };
+    allNodeData.push(nd);
+
+    const displayLabel = p.name.length > 16 ? p.name.slice(0, 14) + '…' : p.name;
+    const label = makeLabel(displayLabel, '#555');
+    label.position.set(x, -r - 0.4, z);
     scene.add(label);
 
     // Ring
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(r + 0.1, r + 0.25, 24),
+      new THREE.RingGeometry(r + 0.15, r + 0.35, 28),
       new THREE.MeshBasicMaterial({ color: pal.node, side: THREE.DoubleSide, transparent: true, opacity: 0.1 })
     );
     ring.position.set(x, -0.05, z);
@@ -1805,30 +1884,36 @@ function build3DNetwork(data, container) {
     scene.add(ring);
   });
 
-  // Contributor nodes (inner, pastel teal)
+  // ─── Create contributor nodes (inner ring) ───────────────
   contribList.forEach((c, i) => {
     const angle = (i / contribList.length) * Math.PI * 2 + Math.PI / 6;
     const x = Math.cos(angle) * innerR;
     const z = Math.sin(angle) * innerR;
     const total = Object.values(c.weeks).reduce((s, v) => s + v, 0);
-    const r = 0.3 + (total / maxContrib) * 0.4;
+    const r = 0.4 + (total / maxContrib) * 0.5;
     const pal = BRANCH_PALETTE[(i + 3) % BRANCH_PALETTE.length];
-    const geo = new THREE.SphereGeometry(r, 16, 16);
+    const geo = new THREE.SphereGeometry(r, 20, 20);
     const mat = new THREE.MeshPhysicalMaterial({ color: pal.node, roughness: 0.3, metalness: 0.05, emissive: pal.node, emissiveIntensity: 0.06 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, 0.2, z);
     mesh.castShadow = true;
-    mesh.userData = { type: 'contributor', label: c.name, stats: `${total} commits` };
+    const statsStr = `${total} commits`;
+    mesh.userData = { type: 'contributor', label: c.name, stats: statsStr, pal };
     scene.add(mesh);
     threeNodes.push(mesh);
     allNodes.push(mesh);
 
-    const label = makeLabel(c.name.length > 14 ? c.name.slice(0, 12) + '…' : c.name, '#666');
-    label.position.set(x, -r - 0.3, z);
+    const nd = { mesh, type: 'contributor', label: c.name, stats: statsStr, connectedNodes: [], edges: [] };
+    allNodeData.push(nd);
+
+    const displayLabel = c.name.length > 16 ? c.name.slice(0, 14) + '…' : c.name;
+    const label = makeLabel(displayLabel, '#666');
+    label.position.set(x, -r - 0.35, z);
     scene.add(label);
   });
 
-  // Curved edges
+  // ─── Curved edges between repos and contributors ────────
+  const edgeTubeMap = [];
   const maxEdge = Math.max(...Object.values(edgeMap).flatMap(pm => Object.values(pm)), 1);
   for (const pn of Object.keys(edgeMap)) {
     const pMesh = allNodes.find(m => m.userData.label === pn && m.userData.type === 'repo');
@@ -1838,22 +1923,171 @@ function build3DNetwork(data, container) {
       if (!cMesh) continue;
       const count = edgeMap[pn][cn];
       const curve = makeCurve(pMesh.position, cMesh.position, 1);
-      const thick = 0.02 + (count / maxEdge) * 0.08;
-      const tube = new THREE.Mesh(
-        new THREE.TubeGeometry(curve, 14, thick, 5, false),
-        new THREE.MeshPhysicalMaterial({ color: BRANCH_PALETTE[0].edge, transparent: true, opacity: 0.2 + (count / maxEdge) * 0.35, roughness: 0.5 })
-      );
+      const thick = 0.025 + (count / maxEdge) * 0.1;
+      const opacity = 0.15 + (count / maxEdge) * 0.35;
+      const tubeMat = new THREE.MeshPhysicalMaterial({ color: BRANCH_PALETTE[4].edge, transparent: true, opacity, roughness: 0.5 });
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, thick, 5, false), tubeMat);
       scene.add(tube);
       threeEdgeMeshes.push(tube);
+      edgeTubeMap.push({ tube, fromLabel: pn, toLabel: cn, origOpacity: opacity });
+
+      // Wire up connection tracking
+      const pData = allNodeData.find(d => d.mesh === pMesh);
+      const cData = allNodeData.find(d => d.mesh === cMesh);
+      if (pData) { pData.connectedNodes.push(cMesh); pData.edges.push(tube); }
+      if (cData) { cData.connectedNodes.push(pMesh); cData.edges.push(tube); }
     }
   }
 
-  // Hover
+  // ─── Highlight / dim helpers ─────────────────────────────
+  function highlightChain(nodeData) {
+    // Dim everything
+    for (const nd of allNodeData) {
+      nd.mesh.material.emissiveIntensity = 0.02;
+      nd.mesh.scale.setScalar(1);
+    }
+    for (const e of threeEdgeMeshes) {
+      const et = edgeTubeMap.find(t => t.tube === e);
+      e.material.opacity = et ? et.origOpacity * 0.15 : 0.03;
+    }
+    if (!nodeData) return;
+    // Brighten selected node
+    nodeData.mesh.material.emissiveIntensity = 0.5;
+    nodeData.mesh.scale.setScalar(1.3);
+    // Brighten connected nodes and edges
+    for (const cn of nodeData.connectedNodes) {
+      const nd = allNodeData.find(d => d.mesh === cn);
+      if (nd) nd.mesh.material.emissiveIntensity = 0.35;
+      cn.scale.setScalar(1.15);
+    }
+    for (const e of nodeData.edges) {
+      e.material.opacity = 0.8;
+    }
+  }
+
+  function resetChainHighlight() {
+    for (const nd of allNodeData) {
+      nd.mesh.material.emissiveIntensity = nd.type === 'repo' ? 0.08 : 0.06;
+      nd.mesh.scale.setScalar(1);
+    }
+    for (const e of threeEdgeMeshes) {
+      const et = edgeTubeMap.find(t => t.tube === e);
+      e.material.opacity = et ? et.origOpacity : 0.2;
+    }
+  }
+
+  // ─── Build chain tooltip ─────────────────────────────────
+  function buildChainTooltip(nodeData) {
+    const icon = nodeData.type === 'repo' ? '📦' : '👤';
+    const typeLabel = nodeData.type === 'repo' ? 'Repository' : 'Contributor';
+    let html = `<div class="tt-header">${icon} ${escHtml(nodeData.label)}</div>`;
+    html += `<div class="tt-row"><span>${typeLabel}</span><strong>${nodeData.stats}</strong></div>`;
+    if (nodeData.connectedNodes.length > 0) {
+      const connType = nodeData.type === 'repo' ? 'Contributors' : 'Repos';
+      const connIcon = nodeData.type === 'repo' ? '👤' : '📦';
+      html += `<div style="border-top:1px solid var(--border);margin:0.35rem 0;padding-top:0.35rem;font-size:0.7rem;font-weight:600;color:var(--text-muted)">CONNECTED ${connType.toUpperCase()} (click to follow chain)</div>`;
+      for (const cn of nodeData.connectedNodes) {
+        const nd = allNodeData.find(d => d.mesh === cn);
+        if (!nd) continue;
+        html += `<div style="display:flex;justify-content:space-between;gap:0.5rem;padding:0.15rem 0;cursor:pointer" data-chain-select="${escHtml(nd.label)}" data-chain-type="${nd.type}">
+          <span>${connIcon} ${escHtml(nd.label.length > 20 ? nd.label.slice(0, 18) + '…' : nd.label)}</span>
+          <strong style="font-size:0.7rem">${nd.stats}</strong>
+        </div>`;
+      }
+    }
+    html += `<div style="margin-top:0.3rem;font-size:0.6rem;color:var(--text-muted)">🔄 Click a connected node to navigate the chain</div>`;
+    return html;
+  }
+
+  // ─── Show tooltip at position ────────────────────────────
+  function showChainTooltip(clientX, clientY, html) {
+    threeTooltipEl.innerHTML = html;
+    threeTooltipEl.style.display = 'block';
+    const r = threeTooltipEl.getBoundingClientRect();
+    let tx = clientX + 12, ty = clientY - r.height - 10;
+    if (tx + r.width > window.innerWidth - 10) tx = clientX - r.width - 12;
+    if (ty < 10) ty = clientY + 12;
+    threeTooltipEl.style.left = tx + 'px';
+    threeTooltipEl.style.top = ty + 'px';
+  }
+
+  // ─── Tooltip chain navigation ────────────────────────────
+  if (threeTooltipEl._chainListener) {
+    threeTooltipEl.removeEventListener('click', threeTooltipEl._chainListener);
+  }
+  const chainHandler = e => {
+    const row = e.target.closest('[data-chain-select]');
+    if (!row) return;
+    const label = row.dataset.chainSelect;
+    const type = row.dataset.chainType;
+    const nd = allNodeData.find(d => d.label === label && d.type === type);
+    if (!nd) return;
+    selectedNode = nd;
+    highlightChain(nd);
+    showChainTooltip(e.clientX, e.clientY, buildChainTooltip(nd));
+  };
+  threeTooltipEl.addEventListener('click', chainHandler);
+  threeTooltipEl._chainListener = chainHandler;
+
+  // ─── Raycaster (shared between click and hover) ─────────
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   let hoveredObj = null;
 
+  // ─── Click handler ───────────────────────────────────────
+  renderer.domElement.addEventListener('click', e => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(threeNodes);
+
+    if (hits.length > 0) {
+      const obj = hits[0].object;
+      const nd = allNodeData.find(d => d.mesh === obj);
+      if (nd) {
+        if (selectedNode === nd) {
+          selectedNode = null;
+          resetChainHighlight();
+          threeTooltipEl.style.display = 'none';
+        } else {
+          selectedNode = nd;
+          highlightChain(nd);
+          showChainTooltip(e.clientX, e.clientY, buildChainTooltip(nd));
+        }
+        return;
+      }
+    }
+    selectedNode = null;
+    resetChainHighlight();
+    threeTooltipEl.style.display = 'none';
+  });
+
+  // ─── Hover handler ───────────────────────────────────────
+
   renderer.domElement.addEventListener('pointermove', e => {
+    if (selectedNode) {
+      // Keep chain visible, just update hover if on non-selected
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(threeNodes);
+
+      if (hoveredObj && hoveredObj !== selectedNode.mesh) {
+        hoveredObj.scale.setScalar(1);
+        hoveredObj = null;
+      }
+      if (hits.length > 0) {
+        const obj = hits[0].object;
+        if (obj !== selectedNode.mesh) {
+          hoveredObj = obj;
+          obj.scale.setScalar(1.15);
+        }
+      }
+      return;
+    }
+
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1862,8 +2096,8 @@ function build3DNetwork(data, container) {
 
     if (hoveredObj) {
       hoveredObj.scale.setScalar(1);
-      hoveredObj.material.emissiveIntensity = 0.08;
-      for (const e of threeEdgeMeshes) e.material.opacity = Math.min(e.material.opacity * 2, 0.55);
+      hoveredObj.material.emissiveIntensity =
+        (hoveredObj.userData.type === 'repo' ? 0.08 : 0.06);
       hoveredObj = null;
       threeTooltipEl.style.display = 'none';
     }
@@ -1873,22 +2107,15 @@ function build3DNetwork(data, container) {
       hoveredObj = obj;
       obj.scale.setScalar(1.25);
       obj.material.emissiveIntensity = 0.4;
-      // Dim unrelated edges
-      for (const e of threeEdgeMeshes) e.material.opacity *= 0.5;
 
       const d = obj.userData;
       const icon = d.type === 'repo' ? '📦' : '👤';
-      threeTooltipEl.innerHTML = `<div class="tt-header">${icon} ${escHtml(d.label)}</div><div class="tt-row"><span>${d.type === 'repo' ? 'Repository' : 'Contributor'}</span><strong>${d.stats}</strong></div>`;
-      threeTooltipEl.style.display = 'block';
-      const r = threeTooltipEl.getBoundingClientRect();
-      let tx = e.clientX + 12, ty = e.clientY - r.height - 10;
-      if (tx + r.width > window.innerWidth - 10) tx = e.clientX - r.width - 12;
-      if (ty < 10) ty = e.clientY + 12;
-      threeTooltipEl.style.left = tx + 'px';
-      threeTooltipEl.style.top = ty + 'px';
+      const tipHtml = `<div class="tt-header">${icon} ${escHtml(d.label)}</div><div class="tt-row"><span>${d.type === 'repo' ? 'Repository' : 'Contributor'}</span><strong>${d.stats}</strong></div><div style="margin-top:0.3rem;font-size:0.65rem;color:var(--text-muted)">🖱 Click to explore connections</div>`;
+      showChainTooltip(e.clientX, e.clientY, tipHtml);
     }
   });
 
+  // ─── Animation loop ──────────────────────────────────────
   function animate() {
     threeAnimId = requestAnimationFrame(animate);
     controls.update();
