@@ -85,27 +85,90 @@ function addHitTarget(svgEl, x, y, w, h, tooltipHtml) {
   return r;
 }
 
-// ─── Cached Results ──────────────────────────────────────
-function getCacheKey(baseUrl, username, days) {
-  return `rs_dash_${btoa(baseUrl)}_${username}_${days}`;
+// ─── Aggregation: filter raw commits by date range ──────
+function aggregateCommits(allCommits, startDate, endDate) {
+  const cutoffStart = startDate ? new Date(startDate) : null;
+  const cutoffEnd = endDate ? new Date(endDate) : null;
+  const filtered = cutoffStart || cutoffEnd
+    ? allCommits.filter(c => {
+        const d = new Date(c.created_at);
+        if (cutoffStart && d < cutoffStart) return false;
+        if (cutoffEnd && d > cutoffEnd) return false;
+        return true;
+      })
+    : allCommits;
+
+  const projectMap = {};
+  const weeklyAgg = {};
+  const contributorAgg = {};
+  const projWeekly = {};
+
+  for (const commit of filtered) {
+    const projName = commit.project_name;
+    const stats = commit.stats || { additions: 0, deletions: 0, total: 0 };
+
+    if (!projectMap[projName]) projectMap[projName] = { name: projName, commits: 0, added: 0, deleted: 0 };
+    projectMap[projName].commits++;
+    projectMap[projName].added += stats.additions;
+    projectMap[projName].deleted += stats.deletions;
+
+    const wk = getWeekKey(new Date(commit.created_at));
+    weeklyAgg[wk] = (weeklyAgg[wk] || 0) + 1;
+    if (!projWeekly[projName]) projWeekly[projName] = {};
+    projWeekly[projName][wk] = (projWeekly[projName][wk] || 0) + 1;
+
+    const author = commit.author_email || commit.author_name || 'unknown';
+    if (!contributorAgg[author]) contributorAgg[author] = { name: commit.author_name || author, weeks: {} };
+    contributorAgg[author].weeks[wk] = (contributorAgg[author].weeks[wk] || 0) + 1;
+  }
+
+  return {
+    projects: projectMap,
+    totalCommits: filtered.length,
+    totalProjects: Object.keys(projectMap).length,
+    totalAdded: Object.values(projectMap).reduce((s, p) => s + p.added, 0),
+    totalDeleted: Object.values(projectMap).reduce((s, p) => s + p.deleted, 0),
+    weeklyAgg,
+    contributorAgg: Object.fromEntries(Object.entries(contributorAgg).map(([k, v]) => [k, { name: v.name, weeks: v.weeks }])),
+    projWeekly,
+  };
 }
 
-function loadCache(baseUrl, username, days) {
+// ─── Cached Results ──────────────────────────────────────
+function getCacheKey(baseUrl) {
+  return `rs_dash_full_${btoa(baseUrl)}`;
+}
+
+function loadCache(baseUrl) {
   try {
-    const key = getCacheKey(baseUrl, username, days);
+    const key = getCacheKey(baseUrl);
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    if (Date.now() - data.ts < 5 * 60 * 1000) return data; // 5 min cache
+    if (Date.now() - data.ts < 5 * 60 * 1000) return data;
     return null;
   } catch { return null; }
 }
 
-function saveCache(baseUrl, username, days, data) {
+function saveCache(baseUrl, data) {
   try {
-    const key = getCacheKey(baseUrl, username, days);
+    const key = getCacheKey(baseUrl);
     localStorage.setItem(key, JSON.stringify({ ts: Date.now(), data }));
   } catch {}
+}
+
+// ─── Client-side filter: re-aggregate from cached raw data
+function filterDash(days) {
+  if (!cachedDash || !cachedDash.rawCommits) return false;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const agg = aggregateCommits(cachedDash.rawCommits, cutoff, new Date());
+  agg.dirChurn = cachedDash.dirChurn || [];
+  agg.days = days;
+  agg.user = cachedDash.user;
+  agg.fetchedAt = cachedDash.fetchedAt;
+  renderDashboard(agg, { fromCache: true });
+  return true;
 }
 
 // ─── GitLab API ──────────────────────────────────────────
@@ -183,35 +246,42 @@ function setStatus(msg, isError) {
 }
 
 // ─── Fetch Dashboard ─────────────────────────────────────
-$('sFetchBtn').addEventListener('click', fetchDashboard);
+$('sFetchBtn').addEventListener('click', () => fetchDashboard(true));
 $('presetBar').addEventListener('click', e => {
   const btn = e.target.closest('.preset-btn');
   if (!btn) return;
   qsa('.preset-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   dashDays = parseInt(btn.dataset.days, 10);
-  if (cachedDash) fetchDashboard();
+  // Filter from cache instead of re-fetching
+  if (!filterDash(dashDays)) {
+    // No cache available — do a full fetch
+    fetchDashboard();
+  }
 });
 
-async function fetchDashboard() {
+async function fetchDashboard(forceRefresh) {
   const baseUrl = $('sBaseUrl').value.trim();
   const token = $('sToken').value.trim();
   if (!baseUrl || !token) { setStatus('Enter URL and token', true); return; }
   saveConfig();
 
+  // Try loading from cache first (skip if forced)
+  if (!forceRefresh) {
+    const cached = loadCache(baseUrl);
+    if (cached && cached.data && cached.data.rawCommits) {
+      cachedDash = cached.data;
+      hide('screenWelcome');
+      hide('loadingBar');
+      filterDash(dashDays);
+      setStatus(`Cached — ${new Date(cached.ts).toLocaleTimeString()}`);
+      return;
+    }
+  }
+
   abortController = new AbortController();
   const signal = abortController.signal;
   setStatus('Fetching...');
-
-  // Check cache
-  const username = 'user';
-  const cached = loadCache(baseUrl, username, dashDays);
-  if (cached) {
-    cachedDash = cached.data;
-    renderDashboard(cachedDash);
-    setStatus(`Cached — ${new Date(cached.ts).toLocaleTimeString()}`);
-    return;
-  }
 
   hide('screenWelcome');
   show('loadingBar');
@@ -231,20 +301,15 @@ async function fetchDashboard() {
     const projects = await paginate(baseUrl, '/projects', { membership: true }, token, signal);
     if (projects.length === 0) throw new Error('No projects found');
 
-    // 3. Compute date range
+    // 3. Fetch all commits for max range (365 days) — store raw for client-side filtering
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - dashDays);
+    startDate.setDate(startDate.getDate() - 365);
     const since = startDate.toISOString();
     const until = endDate.toISOString();
 
-    // 4. Fetch commits for all projects (dashboard overview)
     const allCommits = [];
-    const projectMap = {};
-    const weeklyAgg = {};
-    const contributorAgg = {};
     const dirChurn = {};
-    const projWeekly = {}; // for sparklines
 
     for (let i = 0; i < projects.length; i++) {
       if (signal.aborted) throw new Error('Cancelled');
@@ -253,73 +318,50 @@ async function fetchDashboard() {
       const pct = 10 + Math.round((i / projects.length) * 80);
       setProgress(pct, `[${i + 1}/${projects.length}] ${projName}...`);
 
-      // limit to 100 most recent commits per project for dashboard speed
       const commits = await paginate(baseUrl, `/projects/${proj.id}/repository/commits`, {
         since, until, all: 'true', with_stats: 'true', per_page: 100,
       }, token, signal);
 
-      let pCommits = 0, pAdded = 0, pDeleted = 0;
-      projWeekly[projName] = {};
-
       for (const commit of commits) {
         if (signal.aborted) throw new Error('Cancelled');
-        const stats = commit.stats || { additions: 0, deletions: 0, total: 0 };
         allCommits.push({ ...commit, project_name: projName, project_id: proj.id });
-        pCommits++; pAdded += stats.additions; pDeleted += stats.deletions;
 
-        // Weekly aggregation
-        const wk = getWeekKey(new Date(commit.created_at));
-        weeklyAgg[wk] = (weeklyAgg[wk] || 0) + 1;
-        projWeekly[projName][wk] = (projWeekly[projName][wk] || 0) + 1;
-
-        // Contributor aggregation
-        const author = commit.author_email || commit.author_name || 'unknown';
-        if (!contributorAgg[author]) contributorAgg[author] = { name: commit.author_name || author, weeks: {} };
-        contributorAgg[author].weeks[wk] = (contributorAgg[author].weeks[wk] || 0) + 1;
-
-        // Fetch file diff for churn analysis (only for recent commits to limit API calls)
+        // Churn: first 10 proj × 500 commits
         if (i < 10 && allCommits.length < 500) {
           try {
             const diffRes = await apiFetch(baseUrl, `/projects/${proj.id}/repository/commits/${commit.id}/diff`, {}, token, signal);
             const diffs = await diffRes.json();
-            if (Array.isArray(diffs)) {
-              for (const d of diffs) {
-                const fp = d.new_path || d.old_path || '';
-                const dir = fp.includes('/') ? fp.split('/')[0] : '/';
-                dirChurn[dir] = (dirChurn[dir] || 0) + 1;
-              }
+            if (Array.isArray(diffs)) for (const d of diffs) {
+              const fp = d.new_path || d.old_path || '';
+              const dir = fp.includes('/') ? fp.split('/')[0] : '/';
+              dirChurn[dir] = (dirChurn[dir] || 0) + 1;
             }
           } catch {}
         }
       }
-
-      if (pCommits > 0) {
-        projectMap[projName] = { name: projName, commits: pCommits, added: pAdded, deleted: pDeleted };
-      }
     }
 
+    // 4. Aggregate from all raw commits for current dashDays
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - dashDays);
+    const agg = aggregateCommits(allCommits, cutoff, new Date());
     const data = {
-      user: user,
-      projects: projectMap,
-      totalCommits: allCommits.length,
-      totalProjects: Object.keys(projectMap).length,
-      totalAdded: Object.values(projectMap).reduce((s, p) => s + p.added, 0),
-      totalDeleted: Object.values(projectMap).reduce((s, p) => s + p.deleted, 0),
-      weeklyAgg,
-      contributorAgg: Object.fromEntries(Object.entries(contributorAgg).map(([k, v]) => [k, { name: v.name, weeks: v.weeks }])),
+      ...agg,
+      user,
       dirChurn: Object.entries(dirChurn).sort((a, b) => b[1] - a[1]),
-      projWeekly,
-      fetchedAt: new Date().toISOString(),
       days: dashDays,
+      fetchedAt: new Date().toISOString(),
+      rawCommits: allCommits,   // store for client-side re-filtering
+      rawProjects: projects,
     };
 
     cachedDash = data;
-    saveCache(baseUrl, username, dashDays, data);
+    saveCache(baseUrl, data);
 
     setProgress(98, 'Rendering...');
     hide('loadingBar');
     renderDashboard(data);
-    setStatus(`Ready — ${Object.keys(projectMap).length} repos, ${allCommits.length} commits`);
+    setStatus(`Ready — ${Object.keys(agg.projects).length} repos, ${agg.totalCommits} commits`);
 
   } catch (err) {
     hide('loadingBar');
@@ -349,7 +391,7 @@ function getWeekKey(date) {
 //  DASHBOARD RENDER
 // ═══════════════════════════════════════════════════════════
 
-function renderDashboard(data) {
+function renderDashboard(data, opts = {}) {
   const { projects, totalCommits, totalProjects, totalAdded, totalDeleted, weeklyAgg, contributorAgg, dirChurn, projWeekly } = data;
   const isMR = false; // dashboard uses commits
 
@@ -380,14 +422,16 @@ function renderDashboard(data) {
   // 5. Project Sparklines
   renderSparklines($('sparklines'), projWeekly, Object.keys(projects));
 
-  // Show dashboard
+  // Show dashboard (skip nav activation when filtering from cache — already on dashboard)
   hide('screenWelcome');
   hide('loadingBar');
-  qsa('.nav-btn').forEach(b => b.classList.remove('active'));
-  const dashBtn = qs('[data-view="dashboard"]');
-  if (dashBtn) dashBtn.classList.add('active');
-  hide('viewLocReport');
-  show('viewDashboard');
+  if (!opts.fromCache) {
+    qsa('.nav-btn').forEach(b => b.classList.remove('active'));
+    const dashBtn = qs('[data-view="dashboard"]');
+    if (dashBtn) dashBtn.classList.add('active');
+    hide('viewLocReport');
+    show('viewDashboard');
+  }
 }
 
 // ─── 1. Velocity Trend ──────────────────────────────────
@@ -774,10 +818,8 @@ async function startLOCReport() {
     show('locResultsSection');
     renderLOCResults(data, reportType);
 
-    // Show comparison button
-    $('locCompareSection').style.display = '';
-    $('locCompareBody').innerHTML = `<button class="btn-secondary" id="locCompareBtn">📊 Compare with Previous Period</button>`;
-    $('locCompareBtn').addEventListener('click', () => runComparison(data, reportType));
+    // Show comparison section
+    setupComparison(data, reportType);
 
   } catch (err) {
     if (err.message === 'Cancelled') {
@@ -1137,48 +1179,108 @@ function renderTreeNodes(node) {
 }
 
 // ─── Comparisons ────────────────────────────────────────
+function setupComparison(currentData, reportType) {
+  // Pre-fill compare dates relative to current report dates
+  const curStart = new Date($('locStartDate').value || Date.now());
+  const curEnd = new Date($('locEndDate').value || Date.now());
+  const range = curEnd.getTime() - curStart.getTime();
+  const prevEnd = new Date(curStart.getTime() - 86400000); // day before current start
+  const prevStart = new Date(prevEnd.getTime() - range);
+
+  $('locCompareStart').value = prevStart.toISOString().slice(0, 10);
+  $('locCompareEnd').value = prevEnd.toISOString().slice(0, 10);
+  $('locCompareSection').style.display = '';
+  $('locCompareResults').style.display = 'none';
+
+  // Replace old button with fresh one
+  const oldBtn = $('locCompareBtn');
+  const newBtn = oldBtn.cloneNode(true);
+  oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+  newBtn.id = 'locCompareBtn';
+  newBtn.addEventListener('click', () => runComparison(currentData, reportType));
+}
+
 async function runComparison(currentData, reportType) {
-  // Prompt for previous period end date
-  const prevEnd = prompt('Compare with previous period ending on (YYYY-MM-DD):', $('locStartDate').value || '');
-  if (!prevEnd) return;
-  const prevStart = prompt('Previous period start date (YYYY-MM-DD):', (() => { const d = new Date(prevEnd); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); })());
-  if (!prevStart) return;
+  const prevStart = $('locCompareStart').value;
+  const prevEnd = $('locCompareEnd').value;
+  if (!prevStart || !prevEnd) { alert('Enter both dates for the previous period.'); return; }
+  if (prevEnd < prevStart) { alert('End must be >= start.'); return; }
 
   const baseUrl = $('sBaseUrl').value.trim();
   const token = $('sToken').value.trim();
+
+  // Show spinner
+  $('locCompareSpinner').style.display = '';
+  $('locCompareBtn').disabled = true;
 
   abortController = new AbortController();
   const signal = abortController.signal;
 
   try {
-    // Fetch previous period
-    const usersRes = await apiFetch(baseUrl, '/users', { search: 'user' }, token, signal);
-    const users = await usersRes.json();
-    if (!Array.isArray(users) || users.length === 0) throw new Error('User not found');
-    const user = users[0];
+    // Determine user from same logic as startLOCReport
+    let user;
+    const userId = $('locUserId').value.trim();
+    if (userId && /^\d+$/.test(userId)) {
+      const uRes = await apiFetch(baseUrl, `/users/${userId}`, {}, token, signal);
+      user = await uRes.json();
+      if (!user || !user.id) throw new Error(`User not found for ID: ${userId}`);
+    } else if (userId) {
+      const uRes = await apiFetch(baseUrl, '/users', { search: userId }, token, signal);
+      const users = await uRes.json();
+      if (!Array.isArray(users) || users.length === 0) throw new Error(`User not found: ${userId}`);
+      user = users[0];
+    } else {
+      const uRes = await apiFetch(baseUrl, '/user', {}, token, signal);
+      user = await uRes.json();
+      if (!user || !user.id) throw new Error('Could not determine current user');
+    }
+
     const projects = await paginate(baseUrl, '/projects', { membership: true }, token, signal);
     const prevData = reportType === 'mr'
       ? await generateMRReport(baseUrl, token, user, projects, prevStart, prevEnd, signal)
       : await generateCommitReport(baseUrl, token, user, projects, prevStart, prevEnd, signal);
 
-    // Render comparison
     const ct = currentData.totals;
     const pt = prevData.totals;
-    const diff = (a, b) => { const d = a - b; return `${d >= 0 ? '+' : ''}${fmt(d)}`; };
+    const diffVal = (a, b) => { const d = a - b; return `${d >= 0 ? '+' : ''}${fmt(d)}`; };
     const pctChg = (a, b) => b === 0 ? '—' : `${Math.round(((a - b) / b) * 100)}%`;
 
-    $('locCompareSection').style.display = '';
-    $('locCompareBody').innerHTML = `
+    const rows = [
+      { label: 'Lines Added', cur: ct.total_added, prev: pt.total_added, up: 'up' },
+      { label: 'Lines Deleted', cur: ct.total_deleted, prev: pt.total_deleted, up: 'down' },
+      { label: 'Net LOC', cur: ct.total_net, prev: pt.total_net, up: 'up' },
+      { label: reportType === 'mr' ? 'MRs' : 'Commits', cur: ct.total_items, prev: pt.total_items, up: 'up' },
+      { label: 'Projects', cur: ct.total_projects, prev: pt.total_projects, up: 'up' },
+    ];
+
+    const label = reportType === 'mr' ? 'MRs' : 'Commits';
+
+    $('locCompareResults').innerHTML = `
+      <div style="margin-bottom:0.75rem;font-size:0.78rem;color:var(--text-muted)">
+        Comparing <strong>${prevStart}</strong> → <strong>${prevEnd}</strong>
+        <span style="margin:0 0.5rem">vs</span>
+        <strong>${$('locStartDate').value}</strong> → <strong>${$('locEndDate').value}</strong>
+      </div>
       <div class="compare-grid">
         <div class="compare-header"><span></span><span>Previous</span><span>Current</span><span>Change</span><span>%</span></div>
-        <div class="compare-row"><span>Lines Added</span><span>${fmt(pt.total_added)}</span><span>${fmt(ct.total_added)}</span><span class="${ct.total_added >= pt.total_added ? 'text-added' : 'text-deleted'}">${diff(ct.total_added, pt.total_added)}</span><span>${pctChg(ct.total_added, pt.total_added)}</span></div>
-        <div class="compare-row"><span>Lines Deleted</span><span>${fmt(pt.total_deleted)}</span><span>${fmt(ct.total_deleted)}</span><span class="${ct.total_deleted <= pt.total_deleted ? 'text-added' : 'text-deleted'}">${diff(ct.total_deleted, pt.total_deleted)}</span><span>${pctChg(ct.total_deleted, pt.total_deleted)}</span></div>
-        <div class="compare-row"><span>Net LOC</span><span>${fmt(pt.total_net)}</span><span>${fmt(ct.total_net)}</span><span class="${ct.total_net >= pt.total_net ? 'text-added' : 'text-deleted'}">${diff(ct.total_net, pt.total_net)}</span><span>${pctChg(ct.total_net, pt.total_net)}</span></div>
-        <div class="compare-row"><span>${reportType === 'mr' ? 'MRs' : 'Commits'}</span><span>${fmt(pt.total_items)}</span><span>${fmt(ct.total_items)}</span><span class="${ct.total_items >= pt.total_items ? 'text-added' : 'text-deleted'}">${diff(ct.total_items, pt.total_items)}</span><span>${pctChg(ct.total_items, pt.total_items)}</span></div>
-        <div class="compare-row"><span>Projects</span><span>${fmt(pt.total_projects)}</span><span>${fmt(ct.total_projects)}</span><span>${diff(ct.total_projects, pt.total_projects)}</span><span>${pctChg(ct.total_projects, pt.total_projects)}</span></div>
+        ${rows.map(r => {
+          const improved = r.up === 'up' ? r.cur >= r.prev : r.cur <= r.prev;
+          return `<div class="compare-row">
+            <span>${r.label}</span>
+            <span>${fmt(r.prev)}</span>
+            <span>${fmt(r.cur)}</span>
+            <span class="${improved ? 'text-added' : 'text-deleted'}">${diffVal(r.cur, r.prev)}</span>
+            <span class="${improved ? 'text-added' : 'text-deleted'}">${pctChg(r.cur, r.prev)}</span>
+          </div>`;
+        }).join('')}
       </div>`;
+    $('locCompareResults').style.display = '';
   } catch (err) {
-    alert('Comparison failed: ' + err.message);
+    $('locCompareResults').innerHTML = `<div class="error-banner">${escHtml(err.message)}</div>`;
+    $('locCompareResults').style.display = '';
+  } finally {
+    $('locCompareSpinner').style.display = 'none';
+    $('locCompareBtn').disabled = false;
   }
 }
 
