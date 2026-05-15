@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { parseCurl } from './artifactUtil';
+import { parseCurl, createSafeArtifactForAI } from './artifactUtil';
 import { SYSTEM_PROMPTS } from './ai/prompts';
 import useAI from './ai/useAI';
 import { extractJson } from './ai/extractJson';
@@ -73,8 +73,9 @@ export default function ArtifactAuditor({ artifact, onClose, onJumpToField }) {
   const scoreColor = report.score >= 80 ? 'var(--success)' : report.score >= 50 ? '#f59e0b' : 'var(--error)';
 
   const handleAIEnhance = async () => {
+    const safeArtifact = createSafeArtifactForAI(artifact);
     const result = await callAI(
-      JSON.stringify(artifact, null, 2),
+      JSON.stringify(safeArtifact, null, 2),
       SYSTEM_PROMPTS.artifactAuditor,
       0.1
     );

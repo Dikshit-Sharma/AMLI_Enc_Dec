@@ -47,6 +47,50 @@ function maskSensitiveData(data) {
 }
 
 /**
+ * Creates a safe copy of an artifact with all sensitive credential values masked.
+ * Keeps structure, URLs, header names, response schema — only replaces values
+ * of known credential keys with '***'. Safe to send to third-party AI APIs.
+ */
+export function createSafeArtifactForAI(art) {
+  if (!art) return art;
+  const safe = { ...art };
+
+  if (safe.aesKey) safe.aesKey = '***';
+  if (safe.id) safe.id = '***';
+
+  if (safe.curl) {
+    const parsed = parseCurl(safe.curl);
+    const maskedHeaders = maskSensitiveData(parsed.headers);
+    const maskedBody = parsed.body ? maskSensitiveData(parsed.body) : null;
+    safe.curl = JSON.stringify({ url: parsed.url, headers: maskedHeaders, body: maskedBody }, null, 2);
+  }
+
+  if (safe.response) {
+    try {
+      const parsed = JSON.parse(safe.response);
+      safe.response = JSON.stringify(maskSensitiveData(parsed), null, 2);
+    } catch { /* leave as-is if not valid JSON */ }
+  }
+
+  if (safe.extraRequests && Array.isArray(safe.extraRequests)) {
+    safe.extraRequests = safe.extraRequests.map(extra => {
+      const m = { ...extra };
+      if (m.request) {
+        try { const p = JSON.parse(m.request); m.request = JSON.stringify(maskSensitiveData(p), null, 2); }
+        catch { /* keep */ }
+      }
+      if (m.response) {
+        try { const p = JSON.parse(m.response); m.response = JSON.stringify(maskSensitiveData(p), null, 2); }
+        catch { /* keep */ }
+      }
+      return m;
+    });
+  }
+
+  return safe;
+}
+
+/**
  * Parses a curl command string to extract URL, Headers, and Body.
  */
 export function parseCurl(curlString) {

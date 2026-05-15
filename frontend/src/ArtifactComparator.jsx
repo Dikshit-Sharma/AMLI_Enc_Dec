@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createSafeArtifactForAI } from './artifactUtil';
 import { SYSTEM_PROMPTS } from './ai/prompts';
 import useAI from './ai/useAI';
 import { extractJson } from './ai/extractJson';
@@ -76,8 +77,10 @@ export default function ArtifactComparator({ artifactA, artifactB, onClose }) {
   const fieldDiffs = getFieldDiff(artifactA, artifactB);
 
   const handleAICompare = async () => {
+    const safeA = createSafeArtifactForAI(artifactA);
+    const safeB = createSafeArtifactForAI(artifactB);
     const result = await callAI(
-      JSON.stringify({ artifactA, artifactB }, null, 2),
+      JSON.stringify({ artifactA: safeA, artifactB: safeB }, null, 2),
       SYSTEM_PROMPTS.artifactComparator,
       0.1
     );
