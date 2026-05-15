@@ -164,7 +164,7 @@ export default function SmartTextArea({
   dark = false,
   id,
   showBeautify = true,
-  maxHeight = '75vh', // Limit growth to stay within page
+  maxHeight = '',
 }) {
   const textareaRef = useRef(null);
   const gutterRef = useRef(null);
@@ -186,13 +186,23 @@ export default function SmartTextArea({
   // ── Auto-resize (Disabled to prevent page expansion) ───
   // We now rely on CSS flexbox and maxHeight to control the editor's size.
 
+  const hasMaxHeight = maxHeight && maxHeight !== 'none';
+  const maxPx = useMemo(() => {
+    if (!hasMaxHeight) return Infinity;
+    const m = String(maxHeight);
+    if (m.includes('vh')) return (parseFloat(m) / 100) * window.innerHeight;
+    if (m.includes('px')) return parseFloat(m);
+    return parseFloat(m) || 500;
+  }, [maxHeight, hasMaxHeight]);
+
   const autoResize = useCallback(() => {
+    if (!hasMaxHeight) return;
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = 'auto';
     const sHeight = textarea.scrollHeight;
-    textarea.style.height = sHeight + 'px';
-  }, []);
+    textarea.style.height = Math.min(sHeight, maxPx) + 'px';
+  }, [maxPx, hasMaxHeight]);
 
   useEffect(() => {
     autoResize();
@@ -276,7 +286,7 @@ export default function SmartTextArea({
       </div>
 
       {/* Body: Gutter + Textarea */}
-      <div className="smart-editor__body" style={{ maxHeight }}>
+      <div className="smart-editor__body" style={{ ...(hasMaxHeight ? { maxHeight } : {}) }}>
         <div className="smart-editor__gutter" ref={gutterRef}>
           {lines.map((lineNum) => (
             <div
@@ -300,7 +310,7 @@ export default function SmartTextArea({
           readOnly={readOnly}
           spellCheck={false}
           wrap="off"
-          style={{ maxHeight, overflowY: 'auto' }}
+          style={{ ...(hasMaxHeight ? { maxHeight } : {}), overflowY: 'auto' }}
         />
       </div>
 
