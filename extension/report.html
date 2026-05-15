@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitLab LOC Report</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="report-page">
+    <div class="report-header">
+      <h1>GitLab LOC Report</h1>
+      <p>Lines of Code by merge requests or commits in a date range</p>
+    </div>
+
+    <!-- Form -->
+    <div class="card" id="formSection">
+      <div class="form-row">
+        <div class="form-group full-width">
+          <label>Report Type</label>
+          <select id="reportType" class="main-select">
+            <option value="mr">BY MR</option>
+            <option value="commit">BY COMMIT</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group full-width">
+          <label>GitLab Base URL</label>
+          <input type="text" id="baseUrl" value="https://repo.maxlifeinsurance.com/api/v4" placeholder="https://gitlab.example.com/api/v4">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Private Token</label>
+          <input type="password" id="token" placeholder="glpat-...">
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="username" placeholder="DLBPR02929">
+        </div>
+      </div>
+      <div class="form-row" id="commitAuthorRow" style="display:none">
+        <div class="form-group full-width">
+          <label>Commit Author (email or name)</label>
+          <input type="text" id="commitAuthor" placeholder="Auto-filled after user lookup, or enter manually">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Start Date</label>
+          <input type="date" id="startDate">
+        </div>
+        <div class="form-group">
+          <label>End Date</label>
+          <input type="date" id="endDate">
+        </div>
+      </div>
+      <button class="btn-primary" id="fetchBtn">Generate Report</button>
+    </div>
+
+    <!-- Progress -->
+    <div class="card" id="progressSection" style="display:none">
+      <div class="progress-section">
+        <div class="progress-text" id="progressText">Starting...</div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progressBar" style="width:0%"></div>
+        </div>
+        <button class="btn-secondary" id="cancelBtn">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div id="errorSection" style="display:none"></div>
+
+    <!-- Results -->
+    <div id="resultsSection" style="display:none">
+      <div class="summary-grid" id="summaryGrid"></div>
+
+      <!-- Per-project -->
+      <div class="card" id="projectSection" style="display:none">
+        <div class="section-title">Per-Project Summary</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th id="projectCountHeader">MRs</th>
+                <th>Added</th>
+                <th>Deleted</th>
+                <th>Modified</th>
+                <th>Net</th>
+              </tr>
+            </thead>
+            <tbody id="projectBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- MR table (BY MR mode) -->
+      <div class="card" id="mrSection" style="display:none">
+        <div class="section-title">Merge Requests</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>MR</th>
+                <th>Title</th>
+                <th>Merged</th>
+                <th>Added</th>
+                <th>Deleted</th>
+                <th>Modified</th>
+                <th>Net</th>
+              </tr>
+            </thead>
+            <tbody id="mrBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Commit table (BY COMMIT mode) -->
+      <div class="card" id="commitSection" style="display:none">
+        <div class="section-title">Commits</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Commit</th>
+                <th>Message</th>
+                <th>Date</th>
+                <th>Added</th>
+                <th>Deleted</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody id="commitBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Per-file -->
+      <div class="card" id="fileSection" style="display:none">
+        <div class="section-title">Per-File Breakdown</div>
+        <div class="table-wrap" id="fileTableWrap" style="display:none">
+          <table>
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th id="fileIdHeader">MR</th>
+                <th>File</th>
+                <th>Added</th>
+                <th>Deleted</th>
+                <th>Modified</th>
+                <th>Net</th>
+              </tr>
+            </thead>
+            <tbody id="fileBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      Developed by Dikshit Sharma &bull;
+      <a href="mailto:dikshit.sharma2580@gmail.com">dikshit.sharma2580@gmail.com</a>
+    </div>
+  </div>
+  <script src="report.js"></script>
+</body>
+</html>

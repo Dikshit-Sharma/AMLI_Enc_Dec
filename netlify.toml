@@ -2,6 +2,17 @@
   base = "frontend"
   command = "npm run build"
   publish = "dist"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/artifacts"
+  to = "/.netlify/functions/artifacts"
+  status = 200
+
+[[redirects]]
+  from = "/api/credentials"
+  to = "/.netlify/functions/credentials"
+  status = 200
 
 [[redirects]]
   from = "/*"

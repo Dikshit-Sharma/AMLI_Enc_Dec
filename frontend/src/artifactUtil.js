@@ -47,6 +47,50 @@ function maskSensitiveData(data) {
 }
 
 /**
+ * Creates a safe copy of an artifact with all sensitive credential values masked.
+ * Keeps structure, URLs, header names, response schema — only replaces values
+ * of known credential keys with '***'. Safe to send to third-party AI APIs.
+ */
+export function createSafeArtifactForAI(art) {
+  if (!art) return art;
+  const safe = { ...art };
+
+  if (safe.aesKey) safe.aesKey = '***';
+  if (safe.id) safe.id = '***';
+
+  if (safe.curl) {
+    const parsed = parseCurl(safe.curl);
+    const maskedHeaders = maskSensitiveData(parsed.headers);
+    const maskedBody = parsed.body ? maskSensitiveData(parsed.body) : null;
+    safe.curl = JSON.stringify({ url: parsed.url, headers: maskedHeaders, body: maskedBody }, null, 2);
+  }
+
+  if (safe.response) {
+    try {
+      const parsed = JSON.parse(safe.response);
+      safe.response = JSON.stringify(maskSensitiveData(parsed), null, 2);
+    } catch { /* leave as-is if not valid JSON */ }
+  }
+
+  if (safe.extraRequests && Array.isArray(safe.extraRequests)) {
+    safe.extraRequests = safe.extraRequests.map(extra => {
+      const m = { ...extra };
+      if (m.request) {
+        try { const p = JSON.parse(m.request); m.request = JSON.stringify(maskSensitiveData(p), null, 2); }
+        catch { /* keep */ }
+      }
+      if (m.response) {
+        try { const p = JSON.parse(m.response); m.response = JSON.stringify(maskSensitiveData(p), null, 2); }
+        catch { /* keep */ }
+      }
+      return m;
+    });
+  }
+
+  return safe;
+}
+
+/**
  * Parses a curl command string to extract URL, Headers, and Body.
  */
 export function parseCurl(curlString) {
@@ -77,7 +121,7 @@ export function parseCurl(curlString) {
   if (bodyMatch) {
     try {
       result.body = JSON.parse(bodyMatch[1]);
-    } catch (e) {
+    } catch {
       result.body = bodyMatch[1]; // Keep as string if not valid JSON
     }
   }
@@ -89,7 +133,7 @@ export function parseCurl(curlString) {
  * Decrypts payload if needed and formats the artifact text.
  */
 export async function generateArtifactText(artifact, decryptGCM, decryptCBC, shouldMask = false) {
-  const { jiraTicket, apiName, env, curl, response, encryption, aesKey, algo, numRequests, extraRequests } = artifact;
+  const { jiraTicket, apiName: _apiName, env, curl, response, encryption, aesKey, algo, numRequests, extraRequests } = artifact;
   const parsedCurl = parseCurl(curl);
 
   let resultText = `${jiraTicket} Artifacts (${env || 'DEV'})\n\n`;
@@ -115,7 +159,7 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC, sho
   const formatJSON = (val) => {
     try {
       return JSON.stringify(typeof val === 'string' ? JSON.parse(val) : val, null, 2);
-    } catch (e) {
+    } catch {
       return val;
     }
   };
@@ -141,14 +185,14 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC, sho
     let currentParsedReq;
     try {
       currentParsedReq = typeof reqObj === 'string' ? JSON.parse(reqObj) : reqObj;
-    } catch (e) {
+    } catch {
       currentParsedReq = reqObj;
     }
 
     let currentParsedRes;
     try {
       currentParsedRes = typeof resObj === 'string' ? JSON.parse(resObj) : resObj;
-    } catch (e) {
+    } catch {
       currentParsedRes = resObj;
     }
 
@@ -187,12 +231,12 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC, sho
         try {
           const parsedDecReq = typeof decReq === 'string' ? JSON.parse(decReq) : decReq;
           finalDecReq = formatJSON(maskSensitiveData(parsedDecReq));
-        } catch (e) { /* ignore if not JSON */ }
+        } catch { /* ignore if not JSON */ }
 
         try {
           const parsedDecRes = typeof decRes === 'string' ? JSON.parse(decRes) : decRes;
           finalDecRes = formatJSON(maskSensitiveData(parsedDecRes));
-        } catch (e) { /* ignore if not JSON */ }
+        } catch { /* ignore if not JSON */ }
       }
 
       resultText += `ENC REQUEST ${pairNum}:\n${formatJSON(currentParsedReq || {})}\n\n`;
@@ -237,4 +281,27 @@ export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC) 
 
   // Download Masked
   await download(true, '_Masked');
+}
+
+/**
+ * Generates a single ZIP containing original (unmasked) text for multiple artifacts.
+ * Used for bulk export from the Library.
+ */
+export async function generateBulkZip(artifacts, decryptGCM, decryptCBC) {
+  if (!artifacts?.length) return;
+  const zip = new JSZip();
+  for (const art of artifacts) {
+    const content = await generateArtifactText(art, decryptGCM, decryptCBC, false);
+    const fileName = `${art.jiraTicket || 'JIRA'}_${art.apiName || 'API'}.txt`;
+    zip.file(fileName, content);
+  }
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `Bulk_Export_${artifacts.length}_artifacts.zip`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
 }

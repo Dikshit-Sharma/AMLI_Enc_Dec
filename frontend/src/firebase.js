@@ -1,6 +1,5 @@
 // src/firebase.js
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { initializeFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported, logEvent } from "firebase/analytics";
 
 // Use Vite env vars (make sure these are set in Netlify + .env files)
@@ -33,21 +32,5 @@ export const logAnalyticsEvent = (eventName, params = {}) => {
     logEvent(analytics, eventName, params);
   }
 };
-
-/**
- * Citrix / firewalled networks:
- * - Force long-polling transport (bypasses broken WebChannel/WebSockets).
- * - Disable fetch streaming, which some corporate proxies choke on.
- * - (Optional) auto-detect can help in mixed environments—uncomment if needed.
- *
- * Keep persistence OFF initially; many enterprises block IndexedDB.
- * If you enable cache later and get errors, comment it back out.
- */
-export const db = initializeFirestore(app, {
-  experimentalForceLongPolling: true,
-  // experimentalAutoDetectLongPolling: true,
-  useFetchStreams: false,
-  // cache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }), // OPTIONAL
-});
 
 export { app };

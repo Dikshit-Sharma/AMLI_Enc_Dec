@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db, logAnalyticsEvent } from './firebase';
+import { logAnalyticsEvent } from './firebase';
+import { fetchArtifacts, addArtifacts } from './api';
 import { decrypt, decryptCBC } from './cryptoUtil';
-import { generateAndDownloadZip } from './artifactUtil';
+import { generateAndDownloadZip, generateArtifactText } from './artifactUtil';
+import ArtifactAuditor from './ArtifactAuditor';
+import useSmartPaste from './SmartPaste';
 
 export default function ArtifactsPage({ theme, toggleTheme }) {
   const [loading, setLoading] = useState(false);
@@ -12,6 +14,21 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   const [artifacts, setArtifacts] = useState([
     { jiraTicket: '', apiName: '', env: 'DEV', curl: '', response: '', encryption: 'Disabled', aesKey: '', algo: 'GCM', numRequests: 1, extraRequests: [] }
   ]);
+  const [auditIndex, setAuditIndex] = useState(null);
+  const [libraryForPaste, setLibraryForPaste] = useState([]);
+  const [maskedPreviews, setMaskedPreviews] = useState({});
+
+  const pasteSuggestion = useSmartPaste(libraryForPaste);
+
+  React.useEffect(() => {
+    const loadLibrary = async () => {
+      try {
+        const res = await fetchArtifacts();
+        setLibraryForPaste(res.artifacts);
+      } catch { /* library load is non-critical */ }
+    };
+    loadLibrary();
+  }, []);
 
   const handleArtifactCountChange = (count) => {
     const newCount = parseInt(count);
@@ -69,13 +86,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Database write timed out")), 5000)
       );
-      for (const art of artifactsToPush) {
-        const writePromise = addDoc(collection(db, 'artifacts'), {
-          ...art,
-          timestamp: serverTimestamp()
-        });
-        await Promise.race([writePromise, timeoutPromise]);
-      }
+      await Promise.race([addArtifacts(artifactsToPush), timeoutPromise]);
     } catch (e) {
       console.error("Error adding to library: ", e);
     }
@@ -111,6 +122,18 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
     }
   };
 
+  const handleMaskedPreview = async (index) => {
+    if (maskedPreviews[index]) {
+      setMaskedPreviews(prev => ({ ...prev, [index]: null }));
+      return;
+    }
+    try {
+      const text = await generateArtifactText(artifacts[index], decrypt, decryptCBC, true);
+      setMaskedPreviews(prev => ({ ...prev, [index]: text }));
+    } catch (err) {
+      setError('Preview failed: ' + err.message);
+    }
+  };
   return (
     <div className="container">
       <div className="card artifact-workspace workspace-fullscreen">
@@ -140,7 +163,31 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
 
           {artifacts.map((art, index) => (
             <div key={index} className="artifact-group-card">
-              <h3 className="artifact-title">Artifact {index + 1}</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 className="artifact-title" style={{ margin: 0 }}>Artifact {index + 1}</h3>
+                <button
+                  style={{
+                    background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)',
+                    borderRadius: '0.75rem', padding: '0.4rem 1rem', cursor: 'pointer',
+                    color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 600, width: 'auto', flex: 'none'
+                  }}
+                  onClick={() => setAuditIndex(index)}
+                >
+                  🔍 Audit
+                </button>
+                <button
+                  style={{
+                    background: maskedPreviews[index] ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.08)',
+                    border: `1px solid ${maskedPreviews[index] ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: '0.75rem', padding: '0.4rem 1rem', cursor: 'pointer',
+                    color: maskedPreviews[index] ? 'var(--success)' : 'var(--text-muted)',
+                    fontSize: '0.8rem', fontWeight: 600, width: 'auto', flex: 'none'
+                  }}
+                  onClick={() => handleMaskedPreview(index)}
+                >
+                  👁️ Masked
+                </button>
+              </div>
               <div className="form-row">
                 <div className="form-group flexify">
                   <label className="field-label">Jira Ticket</label>
@@ -162,7 +209,25 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
 
               <div className="form-group">
                 <label className="field-label">Curl Command</label>
-                <textarea className="main-input small-area" placeholder="Paste full curl here..." value={art.curl} onChange={(e) => updateArtifact(index, 'curl', e.target.value)} />
+                <textarea className="main-input small-area" placeholder="Paste full curl here..." value={art.curl} onChange={(e) => {
+                  updateArtifact(index, 'curl', e.target.value);
+                  pasteSuggestion.handleCurlChange(e.target.value);
+                }} />
+                {pasteSuggestion.suggestion && (
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      Detected: {pasteSuggestion.suggestion.apiName && `API: ${pasteSuggestion.suggestion.apiName}`}
+                      {pasteSuggestion.suggestion.env && ` · Env: ${pasteSuggestion.suggestion.env}`}
+                      {pasteSuggestion.suggestion.match && ` · Matched: ${pasteSuggestion.suggestion.match.apiName}`}
+                    </span>
+                    <button style={{ background: 'var(--primary)', border: 'none', borderRadius: '0.4rem', padding: '0.3rem 0.75rem', fontSize: '0.75rem', cursor: 'pointer', color: 'white', width: 'auto' }} onClick={() => pasteSuggestion.applySuggestion((field, val) => updateArtifact(index, field, val))}>
+                      Apply
+                    </button>
+                    <button style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '0.4rem', padding: '0.3rem 0.75rem', fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text)', width: 'auto' }} onClick={pasteSuggestion.dismissSuggestion}>
+                      Dismiss
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="form-group">
@@ -214,10 +279,28 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
                   </>
                 )}
               </div>
+              {maskedPreviews[index] && (
+                <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '1rem' }}>
+                  <label className="field-label" style={{ marginBottom: '0.5rem' }}>🔍 Masked Preview</label>
+                  <textarea className="main-input small-area" readOnly value={maskedPreviews[index]} style={{ minHeight: '150px', fontSize: '0.8rem', fontFamily: 'monospace', resize: 'vertical' }} />
+                </div>
+              )}
             </div>
           ))}
         </div>
       </div>
+
+      {auditIndex !== null && (
+        <ArtifactAuditor
+          artifact={artifacts[auditIndex]}
+          onClose={() => setAuditIndex(null)}
+          onJumpToField={(field) => {
+            const el = document.querySelector(`[name="art-${auditIndex}-${field}"]`);
+            if (el) el.focus();
+          }}
+        />
+      )}
+
       <div className="artifacts-actions-centered">
         <button className="btn-primary btn-sm-artifacts" onClick={handleGenerateArtifacts} disabled={loading}>
           {loading ? <div className="loader tiny"></div> : '🚀 Generate & Download Artifacts'}
