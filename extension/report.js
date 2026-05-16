@@ -2663,6 +2663,19 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
 
         var allUrls = directUrls.length > 0 ? directUrls : indirectUrls;
 
+        // File-level fallback: if per-method matching found nothing,
+        // check all URL keys used ANYWHERE in this controller file
+        if (allUrls.length === 0) {
+          for (var fi = 0; fi < keysToTrace.length; fi++) {
+            var fk = keysToTrace[fi];
+            var fu = urlKeyUsage[fk];
+            if (fu && fu.usageFiles.indexOf(cf) >= 0) {
+              var exists = allUrls.some(function(x) { return x.key === fk; });
+              if (!exists) allUrls.push({ url: fu.url, key: fu.key, propFile: fu.propFile || '' });
+            }
+          }
+        }
+
         // Collect unique propFile paths for file column
         var propFilesSet = {};
         allUrls.forEach(function(b) { if (b.propFile) propFilesSet[b.propFile] = true; });
@@ -2787,22 +2800,25 @@ function parseControllerFile(content, filePath) {
     if (bm) r.basePath = bm[1];
   }
 
-  // Parse @Value("${key}") private Type fieldName → key + fieldName
-  var valueFieldRe = /@Value\s*\(\s*["']\$\{([^}]+)\}["']\s*\)[^;]*?(?:private|public|protected|)\s+\w+[\[\]]*\s+(\w+)\s*(?:;|=)/g;
+  // Parse @Value("${key}") ... fieldName → key + fieldName (handles generic types)
+  // Match the last word before ; or = as the field name — works for all type patterns
+  var valueFieldRe = /@Value\s*\(\s*["']\$\{([^}]+)\}["']\s*\)([^;=]*?)(\w+)\s*(?:;|=)/g;
   var vf;
   while ((vf = valueFieldRe.exec(clean)) !== null) {
-    r.valueProps.push({ key: vf[1], fieldName: vf[2] });
+    r.valueProps.push({ key: vf[1], fieldName: vf[3] });
     var ln2 = content.slice(0, vf.index).split('\n').length;
     var ls2 = content.lastIndexOf('\n', vf.index) + 1;
     var le2 = content.indexOf('\n', vf.index);
     r.valueRefs.push({ file: filePath, line: ln2, snippet: content.slice(ls2, le2 > 0 ? le2 : content.length).trim() });
   }
 
-  // Fallback: plain ${key} extraction if no field-name style found
-  if (r.valueProps.length === 0) {
-    var vp = /\$\{([^}:]+)(?::[^}]*)?\}/g;
-    var vm;
-    while ((vm = vp.exec(clean)) !== null) {
+  // Plain ${key} extraction (no field name) — used as fallback for per-endpoint matching
+  var vp = /\$\{([^}:]+)(?::[^}]*)?\}/g;
+  var vm;
+  while ((vm = vp.exec(clean)) !== null) {
+    // Only add if not already captured by field-name regex
+    var already = r.valueProps.some(function(p) { return p.key === vm[1]; });
+    if (!already) {
       r.valueProps.push({ key: vm[1], fieldName: '' });
       var ln3 = content.slice(0, vm.index).split('\n').length;
       var ls3 = content.lastIndexOf('\n', vm.index) + 1;
@@ -2815,12 +2831,13 @@ function parseControllerFile(content, filePath) {
   var keyToField = {};
   r.valueProps.forEach(function(v) { if (v.fieldName) keyToField[v.key] = v.fieldName; });
 
-  // Parse @Autowired private Type fieldName → { type, fieldName }
-  var autoRe = /@Autowired[\s\S]*?(?:private\s+)?(\w+)\s+(\w+)\s*;/g;
+  // Parse @Autowired private Type fieldName — handles generics like List<UserService>
+  var autoRe = /@Autowired[^;]*?(?:private\s+)?(\w+)(?:<([^>]+)>)?\s+(\w+)\s*;/g;
   var am;
   while ((am = autoRe.exec(clean)) !== null) {
-    if (am[1] && am[1] !== 'Autowired' && !am[1].startsWith('@')) {
-      r.autowiredTypes.push({ type: am[1], fieldName: am[2] });
+    var typeName = am[2] || am[1];
+    if (typeName && typeName !== 'Autowired' && !typeName.startsWith('@')) {
+      r.autowiredTypes.push({ type: typeName, fieldName: am[3] });
     }
   }
 
@@ -2884,6 +2901,18 @@ function parseControllerFile(content, filePath) {
           if (/[\W_]/.test(chBefore) && /[\W_]/.test(chAfter)) {
             ep.matchedKeys.push(v.key);
           }
+        }
+      });
+    }
+
+    // Fallback: match plain ${key} in region text (for keys without extracted field names)
+    if (r.valueProps.length > 0) {
+      r.valueProps.forEach(function(v) {
+        if (v.fieldName) return; // already handled above
+        var dEnd = regionText.indexOf(';') + 1;
+        var bText = dEnd > 0 ? regionText.slice(dEnd) : regionText;
+        if (bText.indexOf('${' + v.key + '}') >= 0) {
+          ep.matchedKeys.push(v.key);
         }
       });
     }
