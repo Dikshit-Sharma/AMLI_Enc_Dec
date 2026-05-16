@@ -328,11 +328,12 @@ qsa('.nav-btn').forEach(btn => {
     hide('loadingBar');
     hide('viewDashboard');
     hide('viewLocReport');
-    const viewId = `view${btn.dataset.view === 'dashboard' ? 'Dashboard' : 'LocReport'}`;
-    const el = $(viewId);
+    hide('viewApiLib');
+    const viewMap = { dashboard: 'viewDashboard', 'loc-report': 'viewLocReport', 'api-lib': 'viewApiLib' };
+    const viewId = viewMap[btn.dataset.view] || '';
+    const el = viewId ? $(viewId) : null;
     if (el) {
       el.style.display = '';
-      // If loc report and no results yet, scroll form into view
       if (viewId === 'viewLocReport') {
         setTimeout(() => $('locFormSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
       }
@@ -2385,6 +2386,300 @@ async function runComparison(currentData, reportType) {
     $('locCompareProgress').style.display = 'none';
     $('locCompareBtn').disabled = false;
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  API LIB
+// ═══════════════════════════════════════════════════════════
+let apiLibData = [];
+let apiLibAbortController = null;
+
+$('apiLibScanBtn').addEventListener('click', () => scanApiLib());
+$('apiLibSearch').addEventListener('input', () => {
+  if (apiLibData.length > 0) renderApiLib(apiLibData);
+});
+
+async function scanApiLib() {
+  const baseUrl = $('sBaseUrl').value.trim();
+  const token = $('sToken').value.trim();
+  if (!baseUrl || !token) { setStatus('Enter URL and token', true); return; }
+
+  if (!cachedDash || !cachedDash.rawProjects) {
+    setStatus('Fetch dashboard first', true);
+    return;
+  }
+
+  const projects = cachedDash.rawProjects;
+  if (projects.length === 0) { setStatus('No projects found', true); return; }
+
+  if (apiLibAbortController) apiLibAbortController.abort();
+  apiLibAbortController = new AbortController();
+  const signal = apiLibAbortController.signal;
+
+  setStatus('Scanning API endpoints...');
+  hide('apiLibWelcome');
+  hide('apiLibEmpty');
+  hide('apiLibResults');
+  show('apiLibProgress');
+  $('apiLibProgressText').textContent = 'Scanning...';
+  $('apiLibProgressBar').style.width = '0%';
+  $('apiLibSearch').value = '';
+
+  const allEndpoints = [];
+  const repoCounts = {};
+
+  for (let i = 0; i < projects.length; i++) {
+    if (signal.aborted) { setStatus('Cancelled'); hide('apiLibProgress'); return; }
+    const proj = projects[i];
+    const projName = proj.name || proj.path_with_namespace || `Project ${proj.id}`;
+    const pct = Math.round((i / projects.length) * 100);
+    $('apiLibProgressText').textContent = `[${i + 1}/${projects.length}] ${projName}...`;
+    $('apiLibProgressBar').style.width = pct + '%';
+    // Allow UI to breathe
+    await new Promise(r => setTimeout(r, 0));
+
+    try {
+      const eps = await scanProjectEndpoints(baseUrl, token, proj, signal);
+      if (eps.length > 0) {
+        repoCounts[projName] = (repoCounts[projName] || 0) + eps.length;
+        for (const ep of eps) {
+          ep.repo = projName;
+          allEndpoints.push(ep);
+        }
+      }
+    } catch (err) {
+      if (err.message === 'Cancelled') { setStatus('Cancelled'); hide('apiLibProgress'); return; }
+    }
+  }
+
+  hide('apiLibProgress');
+
+  if (allEndpoints.length === 0) {
+    show('apiLibEmpty');
+    setStatus('No API endpoints found in any repo');
+    return;
+  }
+
+  apiLibData = allEndpoints;
+  renderApiLib(allEndpoints);
+
+  const repoList = Object.keys(repoCounts);
+  $('apiLibSummary').style.display = '';
+  $('apiLibSummary').innerHTML = `
+    <div class="summary-card sc-items"><div class="sc-value">${allEndpoints.length}</div><div class="sc-label">Endpoints</div></div>
+    <div class="summary-card sc-projects"><div class="sc-value">${repoList.length}</div><div class="sc-label">Repos</div></div>
+    <div class="summary-card sc-added"><div class="sc-value">${allEndpoints.filter(e => e.usages && e.usages.length > 0).length}</div><div class="sc-label">Traced</div></div>
+    <div class="summary-card sc-net"><div class="sc-value">${allEndpoints.reduce((s, e) => s + (e.usages ? e.usages.length : 0), 0)}</div><div class="sc-label">Total References</div></div>
+  `;
+
+  setStatus(`${allEndpoints.length} endpoints across ${repoList.length} repos`);
+}
+
+async function scanProjectEndpoints(baseUrl, token, proj, signal) {
+  if (signal.aborted) throw new Error('Cancelled');
+
+  const propFiles = await findPropertyFiles(baseUrl, token, proj.id, signal);
+  if (propFiles.length === 0) return [];
+
+  const endpoints = [];
+  for (const filePath of propFiles) {
+    if (signal.aborted) throw new Error('Cancelled');
+    try {
+      const content = await getFileContent(baseUrl, token, proj.id, filePath, signal);
+      const props = parseUrlProperties(content, filePath);
+      endpoints.push(...props);
+    } catch {}
+  }
+
+  if (endpoints.length === 0) return [];
+
+  for (const ep of endpoints) {
+    if (signal.aborted) throw new Error('Cancelled');
+    try {
+      ep.usages = await tracePropertyUsage(baseUrl, token, proj.id, ep.key, signal);
+    } catch {
+      ep.usages = [];
+    }
+  }
+
+  return endpoints;
+}
+
+async function findPropertyFiles(baseUrl, token, projId, signal) {
+  const items = await paginate(baseUrl, `/projects/${projId}/repository/tree`, {
+    recursive: true, per_page: 100
+  }, token, signal);
+  const exts = ['.properties', '.yml', '.yaml'];
+  return items
+    .filter(i => i.type === 'blob' && exts.some(e => i.name.endsWith(e)))
+    .map(i => i.path);
+}
+
+async function getFileContent(baseUrl, token, projId, filePath, signal) {
+  const enc = encodeURIComponent(filePath);
+  const res = await apiFetch(baseUrl, `/projects/${projId}/repository/files/${enc}/raw`, {}, token, signal);
+  return await res.text();
+}
+
+function parseUrlProperties(content, filePath) {
+  const results = [];
+  const ext = filePath.split('.').pop().toLowerCase();
+
+  if (ext === 'properties') {
+    for (const line of content.split('\n')) {
+      const t = line.trim();
+      if (!t || t.startsWith('#') || t.startsWith('!')) continue;
+      const m = t.match(/^([\w.-]+)\s*[=:]\s*(https?:\/\/\S+)/);
+      if (m) results.push({ key: m[1], url: m[2].replace(/["']/g, ''), file: filePath, usages: [] });
+    }
+  } else if (ext === 'yml' || ext === 'yaml') {
+    const lines = content.split('\n');
+    const path = [];
+    let prevDepth = -1;
+    for (const line of lines) {
+      const t = line.trimEnd();
+      if (!t || t.trim().startsWith('#')) continue;
+      const indent = t.length - t.trimStart().length;
+      const depth = Math.round(indent / 2);
+      const s = t.trim();
+      const ci = s.indexOf(':');
+      if (ci < 0) continue;
+      const key = s.slice(0, ci).trim();
+      const val = s.slice(ci + 1).trim();
+
+      if (val === '' || val === '|' || val === '>') {
+        if (depth > prevDepth) { path.push(key); }
+        else if (depth === prevDepth) { if (path.length) path[path.length - 1] = key; }
+        else {
+          const pop = prevDepth - depth;
+          for (let j = 0; j < pop && path.length; j++) path.pop();
+          path.push(key);
+        }
+      } else if (val.startsWith('http://') || val.startsWith('https://')) {
+        if (depth < prevDepth) {
+          const pop = prevDepth - depth;
+          for (let j = 0; j < pop && path.length; j++) path.pop();
+        }
+        if (depth === prevDepth && path.length) path[path.length - 1] = key;
+        const fullKey = [...path, key].join('.');
+        results.push({ key: fullKey, url: val.replace(/["']/g, ''), file: filePath, usages: [] });
+        continue;
+      }
+      prevDepth = depth;
+    }
+  }
+
+  return results;
+}
+
+async function tracePropertyUsage(baseUrl, token, projId, propKey, signal) {
+  const usages = [];
+  try {
+    const res = await apiFetch(baseUrl, `/projects/${projId}/search`, {
+      scope: 'blobs', search: propKey
+    }, token, signal);
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      for (const r of data.slice(0, 10)) {
+        const snippet = r.data || '';
+        // Find the relevant line around the match
+        const lines = snippet.split('\n');
+        const matchIdx = lines.findIndex(l => l.includes(propKey));
+        const ctxStart = Math.max(0, matchIdx - 1);
+        const ctxEnd = Math.min(lines.length, matchIdx + 2);
+        const context = lines.slice(ctxStart, ctxEnd).join('\n').trim();
+        usages.push({ file: r.filename, line: r.startline, snippet: context || propKey });
+      }
+    }
+  } catch {}
+  return usages;
+}
+
+function renderApiLib(data) {
+  const search = $('apiLibSearch').value.trim().toLowerCase();
+  let filtered = data;
+  if (search) {
+    filtered = data.filter(e =>
+      e.key.toLowerCase().includes(search) ||
+      e.url.toLowerCase().includes(search) ||
+      e.repo.toLowerCase().includes(search) ||
+      (e.usages || []).some(u => u.file.toLowerCase().includes(search))
+    );
+  }
+
+  const wrap = $('apiLibTableWrap');
+  hide('apiLibEmpty');
+  show('apiLibResults');
+
+  if (filtered.length === 0) {
+    wrap.innerHTML = `<div class="chart-empty">No results matching "${escHtml(search)}"</div>`;
+    return;
+  }
+
+  wrap.innerHTML = `
+    <table>
+      <thead><tr>
+        <th style="width:2rem">#</th>
+        <th>API</th>
+        <th>URL</th>
+        <th>Repo</th>
+        <th>File</th>
+        <th style="width:4rem">Refs</th>
+      </tr></thead>
+      <tbody id="apiLibBody">
+        ${filtered.map((e, i) => `
+          <tr class="api-lib-row" data-idx="${i}" style="cursor:pointer">
+            <td>${i + 1}</td>
+            <td><code style="font-size:0.75rem;color:var(--primary)">${escHtml(e.key)}</code></td>
+            <td><a href="${escHtml(e.url)}" target="_blank" style="color:var(--secondary);text-decoration:none;font-size:0.75rem" onclick="event.stopPropagation()">${escHtml(truncUrl(e.url))}</a></td>
+            <td style="font-size:0.75rem">${escHtml(e.repo)}</td>
+            <td style="font-size:0.7rem;color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(e.file)}">${escHtml(e.file)}</td>
+            <td style="text-align:center">${(e.usages || []).length > 0 ? `<span class="api-lib-ref-badge">${e.usages.length}</span>` : '<span style="color:var(--text-muted);font-size:0.7rem">—</span>'}</td>
+          </tr>
+          <tr class="api-lib-detail-row" data-parent="${i}" style="display:none">
+            <td colspan="6" style="padding:0">
+              <div class="api-lib-detail">
+                ${(e.usages || []).length > 0 ? `
+                  <div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.04em">Referenced in ${e.usages.length} file(s):</div>
+                  ${e.usages.map(u => `
+                    <div class="api-lib-usage">
+                      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem">
+                        <code style="font-size:0.72rem;color:var(--text)">${escHtml(u.file)}:${u.line}</code>
+                      </div>
+                      <pre style="font-size:0.7rem;background:var(--bg-input);padding:0.4rem 0.6rem;border-radius:0.35rem;overflow-x:auto;color:var(--text-muted);margin:0;border:1px solid var(--border)"><code>${escHtml(u.snippet)}</code></pre>
+                    </div>
+                  `).join('')}
+                ` : '<div style="font-size:0.75rem;color:var(--text-muted)">No code references found (maybe unused or referenced dynamically)</div>'}
+              </div>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  // Row click toggles detail
+  wrap.querySelectorAll('.api-lib-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const idx = row.dataset.idx;
+      const detailRow = wrap.querySelector(`.api-lib-detail-row[data-parent="${idx}"]`);
+      const isVisible = detailRow.style.display !== 'none';
+      // Close all others
+      wrap.querySelectorAll('.api-lib-detail-row').forEach(r => r.style.display = 'none');
+      wrap.querySelectorAll('.api-lib-row').forEach(r => r.classList.remove('api-lib-row--active'));
+      if (!isVisible) {
+        detailRow.style.display = '';
+        row.classList.add('api-lib-row--active');
+      }
+    });
+  });
+}
+
+function truncUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.hostname + (u.pathname.length > 30 ? u.pathname.slice(0, 28) + '…' : u.pathname) + u.search;
+  } catch { return url.length > 45 ? url.slice(0, 42) + '…' : url; }
 }
 
 // ═══════════════════════════════════════════════════════════

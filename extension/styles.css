@@ -846,6 +846,45 @@ tr:hover { background: var(--bg-hover); }
   color: var(--text);
 }
 
+/* ─── API LIB ──────────────────────────────────────────── */
+.api-lib-row--active td {
+  background: var(--primary-glow);
+}
+.api-lib-detail {
+  padding: 1rem 1.25rem;
+  background: var(--bg-input);
+  border-top: 1px solid var(--border);
+}
+.api-lib-usage {
+  margin-bottom: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+.api-lib-usage:last-child { margin-bottom: 0; }
+.api-lib-ref-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--primary-glow);
+  color: var(--primary);
+  border-radius: 999px;
+}
+#apiLibSearch:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+#viewApiLib .table-wrap {
+  max-height: 600px;
+}
+
 /* ─── Responsive ────────────────────────────────────────── */
 @media (max-width: 768px) {
   .app-layout { flex-direction: column; }
