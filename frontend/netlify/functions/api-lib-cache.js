@@ -41,8 +41,8 @@ const handler = async (event) => {
         const d = doc.data();
         projects.push({
           id: d.projectId,
-          name: d.projectName,
-          webUrl: d.projectUrl,
+          projectName: d.projectName,
+          projectUrl: d.projectUrl,
           endpoints: d.endpoints || [],
         });
       });

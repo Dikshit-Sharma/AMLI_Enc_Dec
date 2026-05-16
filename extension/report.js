@@ -337,9 +337,40 @@ qsa('.nav-btn').forEach(btn => {
       if (viewId === 'viewLocReport') {
         setTimeout(() => $('locFormSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
       }
-      if (viewId === 'viewApiLib' && apiLibData.length > 0) {
-        hide('apiLibWelcome');
-        renderApiLib(apiLibData);
+      if (viewId === 'viewApiLib') {
+        if (apiLibData.length > 0) {
+          hide('apiLibWelcome');
+          renderApiLib(apiLibData);
+        } else {
+          // Auto-load from cache on view switch
+          var baseUrl = $('sBaseUrl').value.trim();
+          var token = $('sToken').value.trim();
+          if (baseUrl && token) {
+            try {
+              var fnUrl = getFnUrl();
+              var tokHash = hashToken(token);
+              fetch(fnUrl + '?tokenHash=' + encodeURIComponent(tokHash) + '&baseUrl=' + encodeURIComponent(baseUrl))
+                .then(function(resp) { return resp.json(); })
+                .then(function(data) {
+                  if (data && data.projects && data.projects.length > 0) {
+                    var all = [];
+                    for (var pi = 0; pi < data.projects.length; pi++) {
+                      var p = data.projects[pi];
+                      for (var ei = 0; ei < (p.endpoints || []).length; ei++) {
+                        all.push(Object.assign({}, p.endpoints[ei], { repoName: p.projectName, repoUrl: p.projectUrl }));
+                      }
+                    }
+                    if (all.length > 0) {
+                      apiLibData = all;
+                      hide('apiLibWelcome');
+                      renderApiLib(all);
+                    }
+                  }
+                })
+                .catch(function() {});
+            } catch {}
+          }
+        }
       }
     } else {
       show('screenWelcome');
@@ -2541,19 +2572,18 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
   const ctrlFiles = await findControllerFiles(baseUrl, token, proj.id, branch, signal);
   if (ctrlFiles.length === 0) return { endpoints: [], controllerCount: 0 };
 
-  // Backward chain: for each URL property key, find which files in the project reference it
-  // Map: key → { url, propFile, key,	usageFiles: [filename, ...] }
+  // Backward chain: search ALL Java files (not just controllers) for each URL key usage
+  // Map: key → { url, propFile, key, usageFiles: [filename, ...] }
   const urlKeyUsage = {};
   for (const up of urlProps) {
     urlKeyUsage[up.key] = { url: up.url, key: up.key, propFile: up.propFile, usageFiles: [] };
   }
 
-  // Search project for each URL property key usage (limit to first 30 keys)
   const keysToTrace = Object.keys(urlKeyUsage).slice(0, 30);
   for (const k of keysToTrace) {
     if (signal.aborted) throw new Error('Cancelled');
     try {
-      const r = await apiFetch(baseUrl, '/projects/' + proj.id + '/search', { scope: 'blobs', search: k, ref: branch, per_page: 20 }, token, signal);
+      const r = await apiFetch(baseUrl, '/projects/' + proj.id + '/search', { scope: 'blobs', search: '${' + k + '}', ref: branch, per_page: 30 }, token, signal);
       const d = await r.json();
       if (Array.isArray(d)) {
         d.forEach(function(x) {
@@ -2576,56 +2606,74 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
       const parsed = parseControllerFile(content, cf);
       if (parsed.endpoints.length === 0 && !parsed.className) continue;
 
-      // Backward chain: match URLs whose key is used IN this controller file
-      const ctrlBackendUrls = [];
-      const matchedRefs = [];
-      for (const k of keysToTrace) {
-        const u = urlKeyUsage[k];
-        if (!u || u.usageFiles.length === 0) continue;
-        const usedInThisCtrl = u.usageFiles.some(function(f) { return f === cf; });
-        if (usedInThisCtrl) {
-          ctrlBackendUrls.push({ url: u.url, key: u.key, propFile: u.propFile });
-          // Update refs to include the controller file reference
-          const ln = content.split('\n').findIndex(function(l) { return l.includes('${' + k + '}'); });
-          if (ln >= 0) {
-            var snippet = content.split('\n').slice(Math.max(0, ln - 1), ln + 2).join('\n').trim();
-            matchedRefs.push({ file: cf, line: ln + 1, snippet: snippet || k });
-          }
-        }
-      }
-
-      // If no direct match, check autowired service files
-      if (ctrlBackendUrls.length === 0 && parsed.autowiredTypes.length > 0) {
-        const svcFiles = [];
-        for (const autoType of parsed.autowiredTypes.slice(0, 3)) {
-          if (signal.aborted) throw new Error('Cancelled');
-          try {
-            const impls = await findServiceImplFiles(baseUrl, token, proj.id, autoType, branch, signal);
-            impls.slice(0, 2).forEach(function(f) { svcFiles.push(f); });
-          } catch {}
-        }
-        for (const k of keysToTrace) {
-          const u = urlKeyUsage[k];
-          if (!u || u.usageFiles.length === 0) continue;
-          const usedInSvc = u.usageFiles.some(function(f) { return svcFiles.indexOf(f) >= 0; });
-          if (usedInSvc) {
-            ctrlBackendUrls.push({ url: u.url, key: u.key, propFile: u.propFile });
-          }
-        }
-      }
-
-      // Collect unique propFile paths for the file column
-      const propFilesSet = {};
-      ctrlBackendUrls.forEach(function(b) { if (b.propFile) propFilesSet[b.propFile] = true; });
-      const propFiles = Object.keys(propFilesSet);
-      const fileDisplay = propFiles.length > 0 ? propFiles.sort().join(', ') : cf;
-
+      // For each endpoint, find which backend URLs it directly or indirectly consumes
       for (const ep of parsed.endpoints) {
+        // Direct matches: @Value field names found in this endpoint's method body
+        const directUrls = [];
+        const matchedRefs = [];
+        const directKeys = ep.matchedKeys || [];
+        directKeys.forEach(function(k) {
+          const u = urlKeyUsage[k];
+          if (u && u.usageFiles.indexOf(cf) >= 0) {
+            directUrls.push({ url: u.url, key: u.key, propFile: u.propFile || '' });
+            // Reference tracking
+            var lines = content.split('\n');
+            var li = lines.findIndex(function(l) { return l.includes('${' + k + '}'); });
+            if (li >= 0) {
+              var s = lines.slice(Math.max(0, li - 1), li + 2).join('\n').trim();
+              matchedRefs.push({ file: cf, line: li + 1, snippet: s || k });
+            }
+          }
+        });
+
+        // Indirect matches: check autowired services called by this endpoint
+        // If an autowired fieldName appears in the endpoint region,
+        // find URL keys used in that service's implementation files
+        var indirectUrls = [];
+        if (ep.matchedAutowiredFieldNames && ep.matchedAutowiredFieldNames.length > 0) {
+          var autoFieldsInUse = ep.matchedAutowiredFieldNames;
+          for (var ai = 0; ai < autoFieldsInUse.length; ai++) {
+            var fld = autoFieldsInUse[ai];
+            // Find the type for this fieldName
+            var autoType = null;
+            for (var ati = 0; ati < parsed.autowiredTypes.length; ati++) {
+              if (parsed.autowiredTypes[ati].fieldName === fld) {
+                autoType = parsed.autowiredTypes[ati].type;
+                break;
+              }
+            }
+            if (!autoType) continue;
+            if (signal.aborted) throw new Error('Cancelled');
+            try {
+              var impls = await findServiceImplFiles(baseUrl, token, proj.id, autoType, branch, signal);
+              var svcFiles = impls.slice(0, 2);
+              // Check each URL key for usage in these service files
+              for (var ki = 0; ki < keysToTrace.length; ki++) {
+                var k2 = keysToTrace[ki];
+                var u2 = urlKeyUsage[k2];
+                if (!u2 || u2.usageFiles.length === 0) continue;
+                var usedInSvc = svcFiles.some(function(sf) { return u2.usageFiles.indexOf(sf) >= 0; });
+                if (usedInSvc) {
+                  indirectUrls.push({ url: u2.url, key: u2.key, propFile: u2.propFile || '' });
+                }
+              }
+            } catch {}
+          }
+        }
+
+        var allUrls = directUrls.length > 0 ? directUrls : indirectUrls;
+
+        // Collect unique propFile paths for file column
+        var propFilesSet = {};
+        allUrls.forEach(function(b) { if (b.propFile) propFilesSet[b.propFile] = true; });
+        var propFiles = Object.keys(propFilesSet);
+        var fileDisplay = propFiles.length > 0 ? propFiles.sort().join(', ') : cf;
+
         endpoints.push({
           endpoint: ep.method + ' ' + parsed.basePath + ep.path,
           httpMethod: ep.method,
           controllerClass: parsed.className,
-          backendUrls: ctrlBackendUrls.map(function(b) { return { url: b.url, key: b.key, propFile: b.propFile || '' }; }),
+          backendUrls: allUrls,
           file: fileDisplay,
           refs: matchedRefs.length > 0 ? matchedRefs : parsed.valueRefs,
         });
@@ -2722,27 +2770,145 @@ async function findControllerFiles(baseUrl, token, projId, branch, signal) {
 }
 
 function parseControllerFile(content, filePath) {
-  const r = { className: '', basePath: '', endpoints: [], autowiredTypes: [], valueProps: [], valueRefs: [] };
-  const clean = content.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  const cm = clean.match(/(?:public\s+)?class\s+(\w+)/);
+  var r = { className: '', basePath: '', endpoints: [], autowiredTypes: [], valueProps: [], valueRefs: [] };
+
+  // Safer comment stripping: block comments first, then line comments at line start only
+  var clean = content.replace(/\/\*[\s\S]*?\*\//g, '');
+  clean = clean.replace(/^[ \t]*\/\/.*$/gm, '');
+
+  // Class name
+  var cm = clean.match(/(?:public\s+)?class\s+(\w+)/);
   if (cm) r.className = cm[1];
-  const rm = clean.match(/@RequestMapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']/);
-  if (rm) r.basePath = rm[1];
-  const mp = /@(Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:(?:path|value)\s*=\s*)?["']([^"']*)["']/g;
-  let m;
-  while ((m = mp.exec(clean)) !== null) r.endpoints.push({ method: m[1].toUpperCase(), path: m[2] });
-  const vp = /\$\{([^}:]+)(?::[^}]*)?\}/g;
-  let vm;
-  while ((vm = vp.exec(clean)) !== null) {
-    r.valueProps.push({ key: vm[1] });
-    const ln = content.slice(0, vm.index).split('\n').length;
-    const ls = content.lastIndexOf('\n', vm.index) + 1;
-    const le = content.indexOf('\n', vm.index);
-    r.valueRefs.push({ file: filePath, line: ln, snippet: content.slice(ls, le > 0 ? le : content.length).trim() });
+
+  // Class-level @RequestMapping base path
+  var rm = clean.match(/@RequestMapping\s*\([^)]*\)/);
+  if (rm) {
+    var bm = rm[0].match(/(?:value|path)\s*=\s*["']([^"']+)["']/);
+    if (bm) r.basePath = bm[1];
   }
-  const ap = /@Autowired[\s\S]*?(?:private\s+)?(\w+)\s+\w+\s*;/g;
-  let a;
-  while ((a = ap.exec(clean)) !== null) { if (a[1] && a[1] !== 'Autowired' && !a[1].startsWith('@')) r.autowiredTypes.push(a[1]); }
+
+  // Parse @Value("${key}") private Type fieldName → key + fieldName
+  var valueFieldRe = /@Value\s*\(\s*["']\$\{([^}]+)\}["']\s*\)[^;]*?(?:private|public|protected|)\s+\w+[\[\]]*\s+(\w+)\s*(?:;|=)/g;
+  var vf;
+  while ((vf = valueFieldRe.exec(clean)) !== null) {
+    r.valueProps.push({ key: vf[1], fieldName: vf[2] });
+    var ln2 = content.slice(0, vf.index).split('\n').length;
+    var ls2 = content.lastIndexOf('\n', vf.index) + 1;
+    var le2 = content.indexOf('\n', vf.index);
+    r.valueRefs.push({ file: filePath, line: ln2, snippet: content.slice(ls2, le2 > 0 ? le2 : content.length).trim() });
+  }
+
+  // Fallback: plain ${key} extraction if no field-name style found
+  if (r.valueProps.length === 0) {
+    var vp = /\$\{([^}:]+)(?::[^}]*)?\}/g;
+    var vm;
+    while ((vm = vp.exec(clean)) !== null) {
+      r.valueProps.push({ key: vm[1], fieldName: '' });
+      var ln3 = content.slice(0, vm.index).split('\n').length;
+      var ls3 = content.lastIndexOf('\n', vm.index) + 1;
+      var le3 = content.indexOf('\n', vm.index);
+      r.valueRefs.push({ file: filePath, line: ln3, snippet: content.slice(ls3, le3 > 0 ? le3 : content.length).trim() });
+    }
+  }
+
+  // Build key→fieldName map
+  var keyToField = {};
+  r.valueProps.forEach(function(v) { if (v.fieldName) keyToField[v.key] = v.fieldName; });
+
+  // Parse @Autowired private Type fieldName → { type, fieldName }
+  var autoRe = /@Autowired[\s\S]*?(?:private\s+)?(\w+)\s+(\w+)\s*;/g;
+  var am;
+  while ((am = autoRe.exec(clean)) !== null) {
+    if (am[1] && am[1] !== 'Autowired' && !am[1].startsWith('@')) {
+      r.autowiredTypes.push({ type: am[1], fieldName: am[2] });
+    }
+  }
+
+  // Collect all endpoint annotations with their positions in `clean`
+  var annotations = [];
+
+  // Pattern 1: @GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @PatchMapping
+  var shortRe = /@(Get|Post|Put|Delete|Patch)Mapping\s*(?:\(([^)]*)\))?/g;
+  var sm;
+  while ((sm = shortRe.exec(clean)) !== null) {
+    var method1 = sm[1].toUpperCase();
+    var args1 = (sm[2] || '').trim();
+    var path1 = '';
+    if (args1) {
+      var pv1 = args1.match(/(?:path|value)\s*=\s*\{?\s*["']([^"']+)["']/);
+      if (pv1) { path1 = pv1[1]; } else {
+        var q1 = args1.match(/^["']([^"']*)["']/);
+        if (q1) path1 = q1[1];
+      }
+    }
+    annotations.push({ method: method1, path: path1, pos: sm.index });
+  }
+
+  // Pattern 2: @RequestMapping(method = RequestMethod.GET|POST|...) at method level
+  var reqMapRe = /@RequestMapping\s*\(([^)]*)\)/g;
+  var rmm;
+  while ((rmm = reqMapRe.exec(clean)) !== null) {
+    var args2 = rmm[1];
+    var methodM = args2.match(/method\s*=\s*(?:RequestMethod\.)?(\w+)/);
+    if (methodM) {
+      var method2 = methodM[1].toUpperCase();
+      var valM2 = args2.match(/(?:value|path)\s*=\s*["']([^"']+)["']/);
+      var path2 = valM2 ? valM2[1] : '';
+      annotations.push({ method: method2, path: path2, pos: rmm.index });
+    }
+  }
+
+  // Sort by position in file
+  annotations.sort(function(a, b) { return a.pos - b.pos; });
+
+  // Build endpoints with per-method matched keys
+  for (var i = 0; i < annotations.length; i++) {
+    var a = annotations[i];
+    var ep = { method: a.method, path: a.path, matchedKeys: [] };
+
+    // Determine region text for this endpoint: from this annotation to next one or EOF
+    var regionStart = a.pos;
+    var regionEnd = i + 1 < annotations.length ? annotations[i + 1].pos : clean.length;
+    var regionText = clean.slice(regionStart, regionEnd);
+
+    // Check which @Value field names appear in this method region
+    if (Object.keys(keyToField).length > 0) {
+      r.valueProps.forEach(function(v) {
+        if (!v.fieldName) return;
+        var declLineEnd = regionText.indexOf(';') + 1;
+        var bodyText = declLineEnd > 0 ? regionText.slice(declLineEnd) : regionText;
+        var idx = bodyText.indexOf(v.fieldName);
+        if (idx >= 0) {
+          var chBefore = idx > 0 ? bodyText[idx - 1] : ' ';
+          var chAfter = idx + v.fieldName.length < bodyText.length ? bodyText[idx + v.fieldName.length] : ' ';
+          if (/[\W_]/.test(chBefore) && /[\W_]/.test(chAfter)) {
+            ep.matchedKeys.push(v.key);
+          }
+        }
+      });
+    }
+
+    // Check which autowired field names appear in this method region
+    ep.matchedAutowiredFieldNames = [];
+    if (r.autowiredTypes.length > 0) {
+      var declEnd = regionText.indexOf(';') + 1;
+      var bodyOnly = declEnd > 0 ? regionText.slice(declEnd) : regionText;
+      r.autowiredTypes.forEach(function(at) {
+        if (!at.fieldName) return;
+        var ai = bodyOnly.indexOf(at.fieldName);
+        if (ai >= 0) {
+          var cb = ai > 0 ? bodyOnly[ai - 1] : ' ';
+          var ca = ai + at.fieldName.length < bodyOnly.length ? bodyOnly[ai + at.fieldName.length] : ' ';
+          if (/[\W_]/.test(cb) && /[\W_]/.test(ca)) {
+            ep.matchedAutowiredFieldNames.push(at.fieldName);
+          }
+        }
+      });
+    }
+
+    r.endpoints.push(ep);
+  }
+
   return r;
 }
 
@@ -2762,20 +2928,6 @@ async function findServiceImplFiles(baseUrl, token, projId, typeName, branch, si
     });
   } catch {}
   return [...results].slice(0, 3);
-}
-
-async function tracePropertyUsage(baseUrl, token, projId, propKey, ref, signal) {
-  try {
-    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: propKey, ref }, token, signal);
-    const d = await r.json();
-    if (!Array.isArray(d)) return [];
-    return d.slice(0, 10).map(x => {
-      const lines = (x.data || '').split('\n');
-      const mi = lines.findIndex(l => l.includes(propKey));
-      const ctx = lines.slice(Math.max(0, mi - 1), Math.min(lines.length, mi + 2)).join('\n').trim();
-      return { file: x.filename, line: x.startline, snippet: ctx || propKey };
-    });
-  } catch { return []; }
 }
 
 // ─── Render table (no nested backticks) ──────────────────
