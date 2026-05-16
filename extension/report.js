@@ -337,7 +337,7 @@ qsa('.nav-btn').forEach(btn => {
       if (viewId === 'viewLocReport') {
         setTimeout(() => $('locFormSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
       }
-      if (viewId === 'viewApiLib' && apiLibData.length > 0 && apiLibCacheKey === $('sBaseUrl').value.trim()) {
+      if (viewId === 'viewApiLib' && apiLibData.length > 0) {
         hide('apiLibWelcome');
         renderApiLib(apiLibData);
       }
@@ -2399,85 +2399,113 @@ async function runComparison(currentData, reportType) {
 // ═══════════════════════════════════════════════════════════
 let apiLibData = [];
 let apiLibAbortController = null;
-let apiLibCacheKey = null;
 
 $('apiLibScanBtn').addEventListener('click', () => scanApiLib());
 $('apiLibSearch').addEventListener('input', () => {
   if (apiLibData.length > 0) renderApiLib(apiLibData);
 });
+$('apiLibExportBtn').addEventListener('click', exportApiLibCsv);
 
-// Try loading cached API LIB data on page load
+// ─── Config persistence for Firebase function URL ────────
 try {
-  const cached = JSON.parse(localStorage.getItem('rs_api_lib') || 'null');
-  if (cached && cached.endpoints && cached.endpoints.length > 0) {
-    apiLibData = cached.endpoints;
-    apiLibCacheKey = cached.baseUrl;
-  }
+  const saved = JSON.parse(localStorage.getItem('rs_config') || '{}');
+  if (saved.apiLibFnUrl) $('sApiLibFnUrl').value = saved.apiLibFnUrl;
 } catch {}
-
-function saveApiLibCache(endpoints) {
+$('sApiLibFnUrl').addEventListener('input', () => {
   try {
-    const baseUrl = $('sBaseUrl').value.trim();
-    localStorage.setItem('rs_api_lib', JSON.stringify({
-      endpoints, baseUrl, ts: Date.now()
-    }));
-    apiLibCacheKey = baseUrl;
+    const cfg = JSON.parse(localStorage.getItem('rs_config') || '{}');
+    cfg.apiLibFnUrl = $('sApiLibFnUrl').value;
+    localStorage.setItem('rs_config', JSON.stringify(cfg));
   } catch {}
+});
+
+function getFnUrl() {
+  return $('sApiLibFnUrl').value.trim() || 'https://us-central1-apilib-5f40d.cloudfunctions.net/apiLib';
 }
 
+function hashToken(t) {
+  let h = 0;
+  for (let i = 0; i < t.length; i++) { h = ((h << 5) - h) + t.charCodeAt(i); h |= 0; }
+  return 'h' + Math.abs(h).toString(36);
+}
+
+// ─── Main scan ───────────────────────────────────────────
 async function scanApiLib(forceRefresh) {
   const baseUrl = $('sBaseUrl').value.trim();
   const token = $('sToken').value.trim();
   if (!baseUrl || !token) { setStatus('Enter URL and token', true); return; }
 
-  // Try cache first (unless forced)
-  if (!forceRefresh && apiLibData.length > 0 && apiLibCacheKey === baseUrl) {
-    hide('apiLibWelcome');
-    renderApiLib(apiLibData);
-    return;
+  hide('apiLibWelcome');
+  hide('apiLibEmpty');
+  hide('apiLibResults');
+  show('apiLibProgress');
+  $('apiLibProgressText').textContent = 'Loading...';
+  $('apiLibProgressBar').style.width = '0%';
+  $('apiLibSearch').value = '';
+
+  // Try Firestore cache first
+  if (!forceRefresh) {
+    try {
+      const fnUrl = getFnUrl();
+      const tokHash = hashToken(token);
+      const resp = await fetch(`${fnUrl}?tokenHash=${encodeURIComponent(tokHash)}&baseUrl=${encodeURIComponent(baseUrl)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.projects && data.projects.length > 0) {
+          const all = [];
+          for (const p of data.projects) {
+            for (const ep of (p.endpoints || [])) {
+              all.push({ ...ep, repoName: p.projectName, repoUrl: p.projectUrl });
+            }
+          }
+          if (all.length > 0) {
+            apiLibData = all;
+            hide('apiLibProgress');
+            renderApiLib(all);
+            setStatus(`${all.length} endpoints (cached)`);
+            return;
+          }
+        }
+      }
+    } catch {}
   }
 
   if (!cachedDash || !cachedDash.rawProjects) {
     setStatus('Fetch dashboard first', true);
+    hide('apiLibProgress');
     return;
   }
 
   const projects = cachedDash.rawProjects;
-  if (projects.length === 0) { setStatus('No projects found', true); return; }
+  if (projects.length === 0) { setStatus('No projects', true); hide('apiLibProgress'); return; }
 
   if (apiLibAbortController) apiLibAbortController.abort();
   apiLibAbortController = new AbortController();
   const signal = apiLibAbortController.signal;
 
-  setStatus('Scanning API endpoints...');
-  hide('apiLibWelcome');
-  hide('apiLibEmpty');
-  hide('apiLibResults');
-  show('apiLibProgress');
-  $('apiLibProgressText').textContent = 'Scanning...';
-  $('apiLibProgressBar').style.width = '0%';
-  $('apiLibSearch').value = '';
-
+  setStatus('Scanning...');
   const allEndpoints = [];
-  const repoCounts = {};
+  const fsProjects = [];
+  let ctrlCount = 0;
 
   for (let i = 0; i < projects.length; i++) {
     if (signal.aborted) { setStatus('Cancelled'); hide('apiLibProgress'); return; }
     const proj = projects[i];
-    const projName = proj.name || proj.path_with_namespace || `Project ${proj.id}`;
-    const pct = Math.round((i / projects.length) * 100);
-    $('apiLibProgressText').textContent = `[${i + 1}/${projects.length}] ${projName}...`;
-    $('apiLibProgressBar').style.width = pct + '%';
+    const pn = proj.name || proj.path_with_namespace || `Project ${proj.id}`;
+    $('apiLibProgressText').textContent = `[${i + 1}/${projects.length}] ${pn}...`;
+    $('apiLibProgressBar').style.width = Math.round((i / projects.length) * 100) + '%';
     await new Promise(r => setTimeout(r, 0));
 
     try {
-      const eps = await scanProjectEndpoints(baseUrl, token, proj, signal);
-      if (eps.length > 0) {
-        repoCounts[projName] = (repoCounts[projName] || 0) + eps.length;
-        for (const ep of eps) {
-          ep.repo = projName;
+      const r = await scanProjectControllers(baseUrl, token, proj, signal);
+      if (r.endpoints.length > 0) {
+        for (const ep of r.endpoints) {
+          ep.repoName = pn;
+          ep.repoUrl = proj.web_url || `${baseUrl.replace(/\/api\/v4\/?$/, '')}/${proj.path_with_namespace || pn}`;
           allEndpoints.push(ep);
         }
+        fsProjects.push({ id: proj.id, name: pn, webUrl: proj.web_url || '', endpoints: r.endpoints });
+        ctrlCount += r.controllerCount;
       }
     } catch (err) {
       if (err.message === 'Cancelled') { setStatus('Cancelled'); hide('apiLibProgress'); return; }
@@ -2485,253 +2513,333 @@ async function scanApiLib(forceRefresh) {
   }
 
   hide('apiLibProgress');
-
-  if (allEndpoints.length === 0) {
-    show('apiLibEmpty');
-    setStatus('No API endpoints found in any repo');
-    return;
-  }
+  if (allEndpoints.length === 0) { show('apiLibEmpty'); setStatus('No controller endpoints found'); return; }
 
   apiLibData = allEndpoints;
-  saveApiLibCache(allEndpoints);
   renderApiLib(allEndpoints);
 
-  const repoList = Object.keys(repoCounts);
-  $('apiLibSummary').style.display = '';
-  $('apiLibSummary').innerHTML = `
-    <div class="summary-card sc-items"><div class="sc-value">${allEndpoints.length}</div><div class="sc-label">Endpoints</div></div>
-    <div class="summary-card sc-projects"><div class="sc-value">${repoList.length}</div><div class="sc-label">Repos</div></div>
-    <div class="summary-card sc-added"><div class="sc-value">${allEndpoints.filter(e => e.usages && e.usages.length > 0).length}</div><div class="sc-label">Traced</div></div>
-    <div class="summary-card sc-net"><div class="sc-value">${allEndpoints.reduce((s, e) => s + (e.usages ? e.usages.length : 0), 0)}</div><div class="sc-label">Total References</div></div>
-  `;
-
-  setStatus(`${allEndpoints.length} endpoints across ${repoList.length} repos`);
-}
-
-async function scanProjectEndpoints(baseUrl, token, proj, signal) {
-  if (signal.aborted) throw new Error('Cancelled');
-
-  // Find the branch with the latest commit
-  const branch = await findLatestBranch(baseUrl, token, proj.id, signal);
-  if (!branch) return [];
-
-  const propFiles = await findPropertyFiles(baseUrl, token, proj.id, branch, signal);
-  if (propFiles.length === 0) return [];
-
-  const endpoints = [];
-  for (const filePath of propFiles) {
-    if (signal.aborted) throw new Error('Cancelled');
+  // Save to Firestore cache
+  if (fsProjects.length > 0) {
     try {
-      const content = await getFileContent(baseUrl, token, proj.id, filePath, branch, signal);
-      const props = parseUrlProperties(content, filePath);
-      endpoints.push(...props);
+      const fnUrl = getFnUrl();
+      await fetch(fnUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tokenHash: hashToken(token), baseUrl, projects: fsProjects }) });
     } catch {}
   }
 
-  if (endpoints.length === 0) return [];
-
-  for (const ep of endpoints) {
-    if (signal.aborted) throw new Error('Cancelled');
-    try {
-      ep.usages = await tracePropertyUsage(baseUrl, token, proj.id, ep.key, branch, signal);
-    } catch {
-      ep.usages = [];
-    }
-  }
-
-  return endpoints;
+  const repoSet = new Set(allEndpoints.map(e => e.repoName));
+  const buSet = new Set();
+  allEndpoints.forEach(e => (e.backendUrls || []).forEach(b => buSet.add(b.url)));
+  $('apiLibSummary').style.display = '';
+  $('apiLibSummary').innerHTML = `
+    <div class="summary-card sc-items"><div class="sc-value">${allEndpoints.length}</div><div class="sc-label">Endpoints</div></div>
+    <div class="summary-card sc-projects"><div class="sc-value">${repoSet.size}</div><div class="sc-label">Repos</div></div>
+    <div class="summary-card sc-added"><div class="sc-value">${buSet.size}</div><div class="sc-label">Backend URLs</div></div>
+    <div class="summary-card sc-net"><div class="sc-value">${ctrlCount}</div><div class="sc-label">Controllers</div></div>`;
+  setStatus(`${allEndpoints.length} endpoints, ${repoSet.size} repos`);
 }
 
+// ─── Per-project controller scan ─────────────────────────
+async function scanProjectControllers(baseUrl, token, proj, signal) {
+  const branch = await findLatestBranch(baseUrl, token, proj.id, signal);
+  if (!branch) return { endpoints: [], controllerCount: 0 };
+
+  const urlProps = await findUrlProperties(baseUrl, token, proj.id, branch, signal);
+  const ctrlFiles = await findControllerFiles(baseUrl, token, proj.id, branch, signal);
+  if (ctrlFiles.length === 0) return { endpoints: [], controllerCount: 0 };
+
+  const endpoints = [];
+
+  for (const cf of ctrlFiles.slice(0, 15)) {
+    if (signal.aborted) throw new Error('Cancelled');
+    try {
+      const content = await getFileContent(baseUrl, token, proj.id, cf, branch, signal);
+      const parsed = parseControllerFile(content, cf);
+      if (parsed.endpoints.length === 0 && !parsed.className) continue;
+
+      const directKeys = new Set(parsed.valueProps.map(v => v.key));
+      const svcKeys = new Set();
+
+      for (const autoType of parsed.autowiredTypes.slice(0, 5)) {
+        if (signal.aborted) throw new Error('Cancelled');
+        try {
+          const impls = await findServiceImplFiles(baseUrl, token, proj.id, autoType, branch, signal);
+          for (const ip of impls.slice(0, 2)) {
+            try {
+              const ic = await getFileContent(baseUrl, token, proj.id, ip, branch, signal);
+              extractValueProps(ic).forEach(v => svcKeys.add(v.key));
+            } catch {}
+          }
+        } catch {}
+      }
+
+      const allKeys = new Set([...directKeys, ...svcKeys]);
+      let matchedBu = urlProps.filter(p => allKeys.has(p.key));
+
+      // Fallback: project-level @Value search for URL props
+      if (matchedBu.length === 0) {
+        for (const up of urlProps) {
+          try {
+            const refs = await tracePropertyUsage(baseUrl, token, proj.id, up.key, branch, signal);
+            if (refs.length > 0) {
+              matchedBu.push(up);
+              for (const r of refs) {
+                if (!parsed.valueRefs.some(x => x.file === r.file && x.line === r.line)) parsed.valueRefs.push(r);
+              }
+            }
+          } catch {}
+        }
+      }
+
+      for (const ep of parsed.endpoints) {
+        endpoints.push({
+          endpoint: `${ep.method} ${parsed.basePath}${ep.path}`,
+          httpMethod: ep.method,
+          controllerClass: parsed.className,
+          backendUrls: matchedBu.map(b => ({ url: b.url, key: b.key })),
+          file: cf,
+          refs: parsed.valueRefs,
+        });
+      }
+    } catch {}
+  }
+
+  return { endpoints, controllerCount: ctrlFiles.length };
+}
+
+// ─── Reused helpers ──────────────────────────────────────
 async function findLatestBranch(baseUrl, token, projId, signal) {
   try {
-    const branches = await paginate(baseUrl, `/projects/${projId}/repository/branches`, {
-      per_page: 100
-    }, token, signal);
+    const branches = await paginate(baseUrl, `/projects/${projId}/repository/branches`, { per_page: 100 }, token, signal);
     if (branches.length === 0) return null;
     branches.sort((a, b) => new Date(b.commit.committed_date) - new Date(a.commit.committed_date));
     return branches[0].name;
   } catch {
-    // Fall back to default branch
     try {
-      const projRes = await apiFetch(baseUrl, `/projects/${projId}`, {}, token, signal);
-      const projData = await projRes.json();
-      return projData.default_branch || 'main';
+      const r = await apiFetch(baseUrl, `/projects/${projId}`, {}, token, signal);
+      const d = await r.json();
+      return d.default_branch || 'main';
     } catch { return null; }
   }
 }
 
 async function findPropertyFiles(baseUrl, token, projId, ref, signal) {
-  const items = await paginate(baseUrl, `/projects/${projId}/repository/tree`, {
-    recursive: true, per_page: 100, ref
-  }, token, signal);
+  const items = await paginate(baseUrl, `/projects/${projId}/repository/tree`, { recursive: true, per_page: 100, ref }, token, signal);
   const exts = ['.properties', '.yml', '.yaml'];
-  return items
-    .filter(i => i.type === 'blob' && exts.some(e => i.name.endsWith(e)))
-    .map(i => i.path);
+  return items.filter(i => i.type === 'blob' && exts.some(e => i.name.endsWith(e))).map(i => i.path);
 }
 
-async function getFileContent(baseUrl, token, projId, filePath, ref, signal) {
-  const enc = encodeURIComponent(filePath);
-  const res = await apiFetch(baseUrl, `/projects/${projId}/repository/files/${enc}/raw`, { ref }, token, signal);
-  return await res.text();
+async function getFileContent(baseUrl, token, projId, fp, ref, signal) {
+  const enc = encodeURIComponent(fp);
+  const r = await apiFetch(baseUrl, `/projects/${projId}/repository/files/${enc}/raw`, { ref }, token, signal);
+  return await r.text();
+}
+
+async function findUrlProperties(baseUrl, token, projId, branch, signal) {
+  const files = await findPropertyFiles(baseUrl, token, projId, branch, signal);
+  const out = [];
+  for (const f of files) {
+    if (signal.aborted) throw new Error('Cancelled');
+    try { out.push(...parseUrlProperties(await getFileContent(baseUrl, token, projId, f, branch, signal), f)); } catch {}
+  }
+  return out;
 }
 
 function parseUrlProperties(content, filePath) {
-  const results = [];
+  const out = [];
   const ext = filePath.split('.').pop().toLowerCase();
-
   if (ext === 'properties') {
     for (const line of content.split('\n')) {
       const t = line.trim();
       if (!t || t.startsWith('#') || t.startsWith('!')) continue;
       const m = t.match(/^([\w.-]+)\s*[=:]\s*(https?:\/\/\S+)/);
-      if (m) results.push({ key: m[1], url: m[2].replace(/["']/g, ''), file: filePath, usages: [] });
+      if (m) out.push({ key: m[1], url: m[2].replace(/["']/g, '') });
     }
   } else if (ext === 'yml' || ext === 'yaml') {
-    const lines = content.split('\n');
-    const path = [];
-    let prevDepth = -1;
+    const lines = content.split('\n'); const path = []; let pd = -1;
     for (const line of lines) {
-      const t = line.trimEnd();
-      if (!t || t.trim().startsWith('#')) continue;
-      const indent = t.length - t.trimStart().length;
-      const depth = Math.round(indent / 2);
-      const s = t.trim();
-      const ci = s.indexOf(':');
-      if (ci < 0) continue;
-      const key = s.slice(0, ci).trim();
-      const val = s.slice(ci + 1).trim();
-
-      if (val === '' || val === '|' || val === '>') {
-        if (depth > prevDepth) { path.push(key); }
-        else if (depth === prevDepth) { if (path.length) path[path.length - 1] = key; }
-        else {
-          const pop = prevDepth - depth;
-          for (let j = 0; j < pop && path.length; j++) path.pop();
-          path.push(key);
-        }
-      } else if (val.startsWith('http://') || val.startsWith('https://')) {
-        if (depth < prevDepth) {
-          const pop = prevDepth - depth;
-          for (let j = 0; j < pop && path.length; j++) path.pop();
-        }
-        if (depth === prevDepth && path.length) path[path.length - 1] = key;
-        const fullKey = [...path, key].join('.');
-        results.push({ key: fullKey, url: val.replace(/["']/g, ''), file: filePath, usages: [] });
-        continue;
+      const t = line.trimEnd(); if (!t || t.trim().startsWith('#')) continue;
+      const d = Math.round((t.length - t.trimStart().length) / 2);
+      const s = t.trim(); const ci = s.indexOf(':'); if (ci < 0) continue;
+      const k = s.slice(0, ci).trim(); const v = s.slice(ci + 1).trim();
+      if (v === '' || v === '|' || v === '>') {
+        if (d > pd) path.push(k);
+        else if (d === pd) { if (path.length) path[path.length - 1] = k; }
+        else { for (let j = pd - d; j > 0 && path.length; j--) path.pop(); path.push(k); }
+      } else if (v.startsWith('http://') || v.startsWith('https://')) {
+        if (d < pd) for (let j = pd - d; j > 0 && path.length; j--) path.pop();
+        if (d === pd && path.length) path[path.length - 1] = k;
+        out.push({ key: [...path, k].join('.'), url: v.replace(/["']/g, '') });
       }
-      prevDepth = depth;
+      pd = d;
     }
   }
+  return out;
+}
 
-  return results;
+async function findControllerFiles(baseUrl, token, projId, branch, signal) {
+  const files = new Set();
+  try {
+    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@RestController', per_page: 50 }, token, signal);
+    const d = await r.json();
+    if (Array.isArray(d)) d.forEach(x => { if (x.filename && x.filename.endsWith('.java')) files.add(x.filename); });
+  } catch {}
+  try {
+    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@Controller', per_page: 50 }, token, signal);
+    const d = await r.json();
+    if (Array.isArray(d)) d.forEach(x => { if (x.filename && x.filename.endsWith('.java') && !x.filename.endsWith('Test.java')) files.add(x.filename); });
+  } catch {}
+  return [...files];
+}
+
+function parseControllerFile(content, filePath) {
+  const r = { className: '', basePath: '', endpoints: [], autowiredTypes: [], valueProps: [], valueRefs: [] };
+  const clean = content.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const cm = clean.match(/(?:public\s+)?class\s+(\w+)/);
+  if (cm) r.className = cm[1];
+  const rm = clean.match(/@RequestMapping\s*\(\s*(?:value\s*=\s*)?["']([^"']+)["']/);
+  if (rm) r.basePath = rm[1];
+  const mp = /@(Get|Post|Put|Delete|Patch)Mapping\s*\(\s*(?:(?:path|value)\s*=\s*)?["']([^"']*)["']/g;
+  let m;
+  while ((m = mp.exec(clean)) !== null) r.endpoints.push({ method: m[1].toUpperCase(), path: m[2] });
+  const vp = /\$\{([^}:]+)(?::[^}]*)?\}/g;
+  let vm;
+  while ((vm = vp.exec(clean)) !== null) {
+    r.valueProps.push({ key: vm[1] });
+    const ln = content.slice(0, vm.index).split('\n').length;
+    const ls = content.lastIndexOf('\n', vm.index) + 1;
+    const le = content.indexOf('\n', vm.index);
+    r.valueRefs.push({ file: filePath, line: ln, snippet: content.slice(ls, le > 0 ? le : content.length).trim() });
+  }
+  const ap = /@Autowired[\s\S]*?(?:private\s+)?(\w+)\s+\w+\s*;/g;
+  let a;
+  while ((a = ap.exec(clean)) !== null) { if (a[1] && a[1] !== 'Autowired' && !a[1].startsWith('@')) r.autowiredTypes.push(a[1]); }
+  return r;
+}
+
+function extractValueProps(content) {
+  const out = []; const vp = /\$\{([^}:]+)(?::[^}]*)?\}/g; let m;
+  while ((m = vp.exec(content)) !== null) out.push({ key: m[1] });
+  return out;
+}
+
+async function findServiceImplFiles(baseUrl, token, projId, typeName, branch, signal) {
+  const results = new Set();
+  try {
+    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: typeName, per_page: 20 }, token, signal);
+    const d = await r.json();
+    if (Array.isArray(d)) d.forEach(x => {
+      if (x.filename && x.filename.endsWith('.java') && x.data && (x.data.includes('class ') || x.data.includes('@Service') || x.data.includes('implements'))) results.add(x.filename);
+    });
+  } catch {}
+  return [...results].slice(0, 3);
 }
 
 async function tracePropertyUsage(baseUrl, token, projId, propKey, ref, signal) {
-  const usages = [];
   try {
-    const res = await apiFetch(baseUrl, `/projects/${projId}/search`, {
-      scope: 'blobs', search: propKey, ref
-    }, token, signal);
-    const data = await res.json();
-    if (Array.isArray(data)) {
-      for (const r of data.slice(0, 10)) {
-        const snippet = r.data || '';
-        const lines = snippet.split('\n');
-        const matchIdx = lines.findIndex(l => l.includes(propKey));
-        const ctxStart = Math.max(0, matchIdx - 1);
-        const ctxEnd = Math.min(lines.length, matchIdx + 2);
-        const context = lines.slice(ctxStart, ctxEnd).join('\n').trim();
-        usages.push({ file: r.filename, line: r.startline, snippet: context || propKey });
-      }
-    }
-  } catch {}
-  return usages;
+    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: propKey, ref }, token, signal);
+    const d = await r.json();
+    if (!Array.isArray(d)) return [];
+    return d.slice(0, 10).map(x => {
+      const lines = (x.data || '').split('\n');
+      const mi = lines.findIndex(l => l.includes(propKey));
+      const ctx = lines.slice(Math.max(0, mi - 1), Math.min(lines.length, mi + 2)).join('\n').trim();
+      return { file: x.filename, line: x.startline, snippet: ctx || propKey };
+    });
+  } catch { return []; }
 }
 
+// ─── Render table (no nested backticks) ──────────────────
 function renderApiLib(data) {
-  const search = $('apiLibSearch').value.trim().toLowerCase();
-  let filtered = data;
-  if (search) {
-    filtered = data.filter(e =>
-      e.key.toLowerCase().includes(search) ||
-      e.url.toLowerCase().includes(search) ||
-      e.repo.toLowerCase().includes(search) ||
-      (e.usages || []).some(u => u.file.toLowerCase().includes(search))
-    );
-  }
-
+  const q = $('apiLibSearch').value.trim().toLowerCase();
+  const f = q ? data.filter(function(e) {
+    return e.endpoint.toLowerCase().includes(q) || e.repoName.toLowerCase().includes(q) ||
+      e.repoUrl.toLowerCase().includes(q) || e.file.toLowerCase().includes(q) ||
+      (e.controllerClass || '').toLowerCase().includes(q) ||
+      (e.backendUrls || []).some(function(b) { return b.url.toLowerCase().includes(q) || b.key.toLowerCase().includes(q); });
+  }) : data;
   const wrap = $('apiLibTableWrap');
-  hide('apiLibEmpty');
-  show('apiLibResults');
+  hide('apiLibEmpty'); show('apiLibResults');
+  if (f.length === 0) { wrap.innerHTML = '<div class="chart-empty">No results matching "' + escHtml(q) + '"</div>'; return; }
 
-  if (filtered.length === 0) {
-    wrap.innerHTML = `<div class="chart-empty">No results matching "${escHtml(search)}"</div>`;
-    return;
+  var html = '<table><thead><tr><th style="width:2rem">#</th><th>API</th><th>Repo URL</th><th>Repo</th><th>Backend URL(s)</th><th>File</th><th style="width:4rem">Refs</th></tr></thead><tbody>';
+
+  for (var i = 0; i < f.length; i++) {
+    var e = f[i];
+    var buHtml = '';
+    if ((e.backendUrls || []).length > 0) {
+      for (var j = 0; j < e.backendUrls.length; j++) {
+        var b = e.backendUrls[j];
+        buHtml += '<div style="margin:0.15rem 0;word-break:break-all"><span style="color:var(--text-muted)">' + escHtml(b.key) + '</span>: <span style="color:var(--secondary)">' + escHtml(b.url.length > 40 ? b.url.slice(0, 38) + '\u2026' : b.url) + '</span></div>';
+      }
+    } else {
+      buHtml = '<span style="color:var(--text-muted)">\u2014</span>';
+    }
+
+    var refBadge = (e.refs || []).length > 0
+      ? '<span class="api-lib-ref-badge">' + e.refs.length + '</span>'
+      : '<span style="color:var(--text-muted);font-size:0.7rem">\u2014</span>';
+
+    var repoDisplay = (e.repoUrl || '').replace(/^https?:\/\//, '');
+    if (repoDisplay.length > 35) repoDisplay = repoDisplay.slice(0, 35);
+
+    html += '<tr class="api-lib-row" data-idx="' + i + '" style="cursor:pointer">'
+      + '<td>' + (i + 1) + '</td>'
+      + '<td style="font-size:0.75rem"><code style="color:var(--primary)">' + escHtml(e.httpMethod || '') + '</code> <span>' + escHtml(e.endpoint) + '</span></td>'
+      + '<td style="font-size:0.7rem"><a href="' + escHtml(e.repoUrl) + '" target="_blank" style="color:var(--secondary);text-decoration:none" onclick="event.stopPropagation()">' + escHtml(repoDisplay) + '\u2026</a></td>'
+      + '<td style="font-size:0.75rem">' + escHtml(e.repoName) + '</td>'
+      + '<td style="font-size:0.7rem;max-width:200px">' + buHtml + '</td>'
+      + '<td style="font-size:0.7rem;color:var(--text-muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(e.file) + '">' + escHtml((e.file || '').split('/').pop()) + '</td>'
+      + '<td style="text-align:center">' + refBadge + '</td></tr>';
+
+    var detailHtml = '';
+    if ((e.backendUrls || []).length > 0) {
+      detailHtml += '<div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.04em">Backend URLs consumed:</div>';
+      for (var j = 0; j < e.backendUrls.length; j++) {
+        detailHtml += '<div class="api-lib-usage" style="margin-bottom:0.35rem;padding:0.4rem 0.6rem"><code style="font-size:0.72rem;color:var(--text)">' + escHtml(e.backendUrls[j].key) + '</code><br><span style="font-size:0.72rem;color:var(--secondary);word-break:break-all">' + escHtml(e.backendUrls[j].url) + '</span></div>';
+      }
+    }
+    if ((e.refs || []).length > 0) {
+      detailHtml += '<div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin:0.75rem 0 0.5rem;text-transform:uppercase;letter-spacing:0.04em">References (' + e.refs.length + '):</div>';
+      for (var j = 0; j < e.refs.length; j++) {
+        var u = e.refs[j];
+        detailHtml += '<div class="api-lib-usage"><code style="font-size:0.72rem;color:var(--text)">' + escHtml(u.file) + ':' + u.line + '</code><pre style="font-size:0.7rem;background:var(--bg-input);padding:0.4rem 0.6rem;border-radius:0.35rem;overflow-x:auto;color:var(--text-muted);margin:0.25rem 0 0;border:1px solid var(--border);max-height:80px;overflow-y:auto"><code>' + escHtml(u.snippet) + '</code></pre></div>';
+      }
+    }
+    html += '<tr class="api-lib-detail-row" data-parent="' + i + '" style="display:none"><td colspan="7" style="padding:0"><div class="api-lib-detail">' + detailHtml + '</div></td></tr>';
   }
 
-  wrap.innerHTML = `
-    <table>
-      <thead><tr>
-        <th style="width:2rem">#</th>
-        <th>API</th>
-        <th>URL</th>
-        <th>Repo</th>
-        <th>File</th>
-        <th style="width:4rem">Refs</th>
-      </tr></thead>
-      <tbody id="apiLibBody">
-        ${filtered.map((e, i) => `
-          <tr class="api-lib-row" data-idx="${i}" style="cursor:pointer">
-            <td>${i + 1}</td>
-            <td><code style="font-size:0.75rem;color:var(--primary)">${escHtml(e.key)}</code></td>
-            <td><a href="${escHtml(e.url)}" target="_blank" style="color:var(--secondary);text-decoration:none;font-size:0.75rem" onclick="event.stopPropagation()">${escHtml(truncUrl(e.url))}</a></td>
-            <td style="font-size:0.75rem">${escHtml(e.repo)}</td>
-            <td style="font-size:0.7rem;color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(e.file)}">${escHtml(e.file)}</td>
-            <td style="text-align:center">${(e.usages || []).length > 0 ? `<span class="api-lib-ref-badge">${e.usages.length}</span>` : '<span style="color:var(--text-muted);font-size:0.7rem">—</span>'}</td>
-          </tr>
-          <tr class="api-lib-detail-row" data-parent="${i}" style="display:none">
-            <td colspan="6" style="padding:0">
-              <div class="api-lib-detail">
-                ${(e.usages || []).length > 0 ? `
-                  <div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.04em">Referenced in ${e.usages.length} file(s):</div>
-                  ${e.usages.map(u => `
-                    <div class="api-lib-usage">
-                      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.25rem">
-                        <code style="font-size:0.72rem;color:var(--text)">${escHtml(u.file)}:${u.line}</code>
-                      </div>
-                      <pre style="font-size:0.7rem;background:var(--bg-input);padding:0.4rem 0.6rem;border-radius:0.35rem;overflow-x:auto;color:var(--text-muted);margin:0;border:1px solid var(--border)"><code>${escHtml(u.snippet)}</code></pre>
-                    </div>
-                  `).join('')}
-                ` : '<div style="font-size:0.75rem;color:var(--text-muted)">No code references found (maybe unused or referenced dynamically)</div>'}
-              </div>
-            </td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
 
-  wrap.querySelectorAll('.api-lib-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const idx = row.dataset.idx;
-      const detailRow = wrap.querySelector(`.api-lib-detail-row[data-parent="${idx}"]`);
-      const isVisible = detailRow.style.display !== 'none';
-      wrap.querySelectorAll('.api-lib-detail-row').forEach(r => r.style.display = 'none');
-      wrap.querySelectorAll('.api-lib-row').forEach(r => r.classList.remove('api-lib-row--active'));
-      if (!isVisible) {
-        detailRow.style.display = '';
-        row.classList.add('api-lib-row--active');
-      }
+  wrap.querySelectorAll('.api-lib-row').forEach(function(row) {
+    row.addEventListener('click', function() {
+      var idx = row.getAttribute('data-idx');
+      var det = wrap.querySelector('.api-lib-detail-row[data-parent="' + idx + '"]');
+      var vis = det && det.style.display !== 'none';
+      wrap.querySelectorAll('.api-lib-detail-row').forEach(function(r) { r.style.display = 'none'; });
+      wrap.querySelectorAll('.api-lib-row').forEach(function(r) { r.classList.remove('api-lib-row--active'); });
+      if (det && !vis) { det.style.display = ''; row.classList.add('api-lib-row--active'); }
     });
   });
 }
 
-function truncUrl(url) {
-  try {
-    const u = new URL(url);
-    return u.hostname + (u.pathname.length > 30 ? u.pathname.slice(0, 28) + '…' : u.pathname) + u.search;
-  } catch { return url.length > 45 ? url.slice(0, 42) + '…' : url; }
+// ─── CSV export ──────────────────────────────────────────
+function exportApiLibCsv() {
+  if (!apiLibData || apiLibData.length === 0) { setStatus('No data to export', true); return; }
+  var rows = [['#', 'HTTP Method', 'Endpoint', 'Controller Class', 'Repo URL', 'Repo Name', 'Backend URL(s)', 'File', 'Ref Count']];
+  for (var i = 0; i < apiLibData.length; i++) {
+    var e = apiLibData[i];
+    var bu = (e.backendUrls || []).map(function(b) { return b.key + '=' + b.url; }).join('; ');
+    rows.push([i + 1, e.httpMethod || '', e.endpoint, e.controllerClass || '', e.repoUrl || '', e.repoName || '', bu, e.file || '', (e.refs || []).length]);
+  }
+  var csv = rows.map(function(r) { return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+  var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'api-lib-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  setStatus('Exported ' + apiLibData.length + ' rows');
 }
 
 // ═══════════════════════════════════════════════════════════

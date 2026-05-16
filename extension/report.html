@@ -254,13 +254,19 @@
         <header class="view-header">
           <div>
             <h2>🔌 API Library</h2>
-            <p class="view-subtitle">API endpoints discovered from property files across all repos</p>
+            <p class="view-subtitle">Controller API endpoints &amp; backend URLs consumed across all repos</p>
           </div>
-          <div style="display:flex;gap:0.5rem;align-items:center">
-            <input type="text" id="apiLibSearch" placeholder="Search endpoints..." style="padding:0.4rem 0.65rem;border:1px solid var(--border);border-radius:0.4rem;font-size:0.78rem;background:var(--bg-input);color:var(--text);font-family:inherit;width:220px">
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <input type="text" id="apiLibSearch" placeholder="Search endpoints..." style="padding:0.4rem 0.65rem;border:1px solid var(--border);border-radius:0.4rem;font-size:0.78rem;background:var(--bg-input);color:var(--text);font-family:inherit;width:200px">
             <button class="btn-primary" id="apiLibScanBtn" style="font-size:0.72rem;padding:0.4rem 0.8rem">🔍 Scan</button>
+            <button class="btn-secondary" id="apiLibExportBtn" style="font-size:0.72rem;padding:0.4rem 0.8rem">📥 CSV</button>
           </div>
         </header>
+
+        <div class="sidebar-config-row" style="margin-bottom:1rem;display:flex;gap:0.5rem;align-items:center">
+          <input type="text" id="sApiLibFnUrl" placeholder="Firebase function URL" value="https://us-central1-apilib-5f40d.cloudfunctions.net/apiLib" style="flex:1;padding:0.4rem 0.65rem;border:1px solid var(--border);border-radius:0.4rem;font-size:0.72rem;background:var(--bg-input);color:var(--text);font-family:inherit">
+          <span style="font-size:0.65rem;color:var(--text-muted)">(cache endpoint)</span>
+        </div>
 
         <div id="apiLibProgress" style="display:none" class="loc-progress">
           <div class="progress-text" id="apiLibProgressText">Scanning...</div>
@@ -273,16 +279,16 @@
           <div id="apiLibTableWrap" class="table-wrap"></div>
         </div>
 
-        <div id="apiLibEmpty" style="display:none" class="chart-card"><div class="chart-empty">No API endpoints found in scanned repos.</div></div>
+        <div id="apiLibEmpty" style="display:none" class="chart-card"><div class="chart-empty">No controller endpoints found in scanned repos.</div></div>
 
         <div id="apiLibWelcome" class="chart-card">
           <div class="chart-empty">
             <strong>🔌 API Library</strong><br><br>
-            Scans all GitLab repos for API endpoint URLs defined in property files.<br>
-            Traces <code>@Value</code> usage to show where each endpoint is consumed.<br><br>
+            Scans all GitLab repos for Spring <code>@RestController</code> endpoints<br>
+            and traces which backend URLs (from property files) each controller consumes.<br><br>
             <span style="font-size:0.75rem;color:var(--text-muted)">
-              Supports <code>application.properties</code>, <code>application.yml</code>, <code>bootstrap.properties</code> &amp; more.<br>
-              Click <strong>Scan</strong> to begin — uses your GitLab token for repo access.
+              Supports <code>application.properties</code>, <code>application.yml</code>, <code>@Value</code>, autowired service tracing.<br>
+              Click <strong>Scan</strong> to begin — results cached in Firestore for fast reload.
             </span>
           </div>
         </div>

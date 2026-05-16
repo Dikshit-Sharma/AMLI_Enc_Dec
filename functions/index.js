@@ -4,6 +4,80 @@ admin.initializeApp();
 
 const db = admin.firestore();
 
+// ─── API LIB: store/retrieve scan results per project ─────
+exports.apiLib = functions.region('us-central1').https.onRequest(async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  try {
+    if (req.method === 'POST') {
+      const { tokenHash, baseUrl, projects } = req.body;
+      if (!tokenHash || !baseUrl || !Array.isArray(projects)) {
+        res.status(400).json({ error: 'tokenHash, baseUrl, and projects[] required' });
+        return;
+      }
+
+      const batch = db.batch();
+      for (const proj of projects) {
+        if (!proj.id) continue;
+        const docRef = db.collection('api-lib-cache').doc(`${tokenHash}_${proj.id}`);
+        batch.set(docRef, {
+          tokenHash,
+          baseUrl,
+          projectId: proj.id,
+          projectName: proj.name || '',
+          projectUrl: proj.webUrl || '',
+          endpoints: proj.endpoints || [],
+          scannedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+      res.json({ ok: true, count: projects.length });
+      return;
+    }
+
+    if (req.method === 'GET') {
+      const tokenHash = (req.query.tokenHash || '').trim();
+      const baseUrl = (req.query.baseUrl || '').trim();
+      if (!tokenHash || !baseUrl) {
+        res.status(400).json({ error: 'tokenHash and baseUrl query params required' });
+        return;
+      }
+
+      const snapshot = await db
+        .collection('api-lib-cache')
+        .where('tokenHash', '==', tokenHash)
+        .where('baseUrl', '==', baseUrl)
+        .get();
+
+      const projects = snapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          projectId: d.projectId,
+          projectName: d.projectName,
+          projectUrl: d.projectUrl,
+          endpoints: d.endpoints || [],
+          scannedAt: d.scannedAt?.toDate?.().toISOString() ?? null,
+        };
+      });
+
+      res.json({ projects, count: projects.length });
+      return;
+    }
+
+    res.status(405).json({ error: 'Method not allowed' });
+  } catch (err) {
+    console.error('apiLib error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 exports.artifacts = functions.region('us-central1').https.onRequest(async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -17,8 +91,10 @@ exports.artifacts = functions.region('us-central1').https.onRequest(async (req, 
   try {
     if (req.method === 'GET') {
       const search = (req.query.search || '').trim().toLowerCase();
+      const rawLimit = req.query.limit ? parseInt(req.query.limit) : 0;
+      const cursor = req.query.cursor || null;
 
-      // If searching, fetch ALL and filter server-side (Firestore has no CONTAINS)
+      // If search is present, fetch ALL and filter server-side
       if (search) {
         const snapshot = await db
           .collection('artifacts')
@@ -41,10 +117,24 @@ exports.artifacts = functions.region('us-central1').https.onRequest(async (req, 
         return;
       }
 
-      // Paginated: limit + cursor
-      const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-      const cursor = req.query.cursor || null;
+      // No limit → return ALL artifacts (for no-pagination frontend)
+      if (!rawLimit || rawLimit <= 0) {
+        const snapshot = await db
+          .collection('artifacts')
+          .orderBy('timestamp', 'desc')
+          .get();
 
+        const artifacts = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return { id: doc.id, ...data, timestamp: data.timestamp?.toDate?.().toISOString() ?? null };
+        });
+
+        res.json({ artifacts, total: artifacts.length });
+        return;
+      }
+
+      // Paginated: limit + cursor
+      const limit = Math.min(rawLimit, 100);
       let query = db
         .collection('artifacts')
         .orderBy('timestamp', 'desc')
