@@ -364,6 +364,15 @@ qsa('.nav-btn').forEach(btn => {
                       apiLibData = all;
                       hide('apiLibWelcome');
                       renderApiLib(all);
+                      var rs3 = new Set(all.map(function(e) { return e.repoName; }));
+                      var bs3 = new Set();
+                      all.forEach(function(e) { (e.backendUrls || []).forEach(function(b) { bs3.add(b.url); }); });
+                      var cs3 = new Set(all.map(function(e) { return e.controllerClass; }));
+                      $('apiLibSummary').style.display = '';
+                      $('apiLibSummary').innerHTML = '<div class="summary-card sc-items"><div class="sc-value">' + all.length + '</div><div class="sc-label">Endpoints</div></div><div class="summary-card sc-projects"><div class="sc-value">' + rs3.size + '</div><div class="sc-label">Repos</div></div><div class="summary-card sc-added"><div class="sc-value">' + bs3.size + '</div><div class="sc-label">Backend URLs</div></div><div class="summary-card sc-net"><div class="sc-value">' + cs3.size + '</div><div class="sc-label">Controllers</div></div>';
+                      $('apiLibTabBar').style.display = '';
+                      var ft3 = document.querySelector('#apiLibTabBar .tab-btn');
+                      if (ft3) ft3.click();
                     }
                   }
                 })
@@ -2428,6 +2437,7 @@ async function runComparison(currentData, reportType) {
 //  API LIB
 // ═══════════════════════════════════════════════════════════
 let apiLibData = [];
+let apiLibUnlinkedUrls = [];
 let apiLibAbortController = null;
 
 $('apiLibScanBtn').addEventListener('click', () => scanApiLib(true));
@@ -2435,6 +2445,27 @@ $('apiLibSearch').addEventListener('input', () => {
   if (apiLibData.length > 0) renderApiLib(apiLibData);
 });
 $('apiLibExportBtn').addEventListener('click', exportApiLibCsv);
+$('apiLibReportBtn').addEventListener('click', downloadApiLibReport);
+$('apiLibHasUrlToggle').addEventListener('change', function() {
+  if (apiLibData.length > 0) renderApiLib(apiLibData);
+});
+
+// API LIB tab navigation
+document.querySelectorAll('#apiLibTabBar .tab-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#apiLibTabBar .tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    document.querySelectorAll('.api-lib-tab-panel').forEach(function(p) { p.classList.remove('active'); p.style.display = 'none'; });
+    var tabId = 'apiLibTab' + btn.dataset.apiLibTab.charAt(0).toUpperCase() + btn.dataset.apiLibTab.slice(1);
+    var panel = $(tabId);
+    if (panel) { panel.classList.add('active'); panel.style.display = ''; }
+    // Activate tab-specific render
+    if (btn.dataset.apiLibTab === 'overview' && apiLibData.length > 0) renderApiLibOverview(apiLibData);
+    if (btn.dataset.apiLibTab === 'unlinked' && apiLibData.length > 0) renderApiLibUnlinked(apiLibData);
+    if (btn.dataset.apiLibTab === 'depmap') showApiLibDepmap();
+    if (btn.dataset.apiLibTab === 'crossrepo') showApiLibCrossrepo();
+  });
+});
 
 function getFnUrl() {
   return 'https://amliai.netlify.app/api/api-lib-cache';
@@ -2485,7 +2516,17 @@ async function scanApiLib(forceRefresh) {
             apiLibData = all;
             hide('apiLibProgress');
             renderApiLib(all);
-            setStatus(`${all.length} endpoints (cached)`);
+            // Show summary and tab bar for cached data
+            var repoSet2 = new Set(all.map(function(e) { return e.repoName; }));
+            var buSet2 = new Set();
+            all.forEach(function(e) { (e.backendUrls || []).forEach(function(b) { buSet2.add(b.url); }); });
+            var ctrlSet2 = new Set(all.map(function(e) { return e.controllerClass; }));
+            $('apiLibSummary').style.display = '';
+            $('apiLibSummary').innerHTML = '<div class="summary-card sc-items"><div class="sc-value">' + all.length + '</div><div class="sc-label">Endpoints</div></div><div class="summary-card sc-projects"><div class="sc-value">' + repoSet2.size + '</div><div class="sc-label">Repos</div></div><div class="summary-card sc-added"><div class="sc-value">' + buSet2.size + '</div><div class="sc-label">Backend URLs</div></div><div class="summary-card sc-net"><div class="sc-value">' + ctrlSet2.size + '</div><div class="sc-label">Controllers</div></div>';
+            $('apiLibTabBar').style.display = '';
+            var firstTab = document.querySelector('#apiLibTabBar .tab-btn');
+            if (firstTab) firstTab.click();
+            setStatus(all.length + ' endpoints (cached)');
             return;
           }
         }
@@ -2512,6 +2553,7 @@ async function scanApiLib(forceRefresh) {
   const allEndpoints = [];
   const fsProjects = [];
   let ctrlCount = 0;
+  var allUnlinkedUrls = [];
 
   for (let i = 0; i < projects.length; i++) {
     if (signal.aborted) { setStatus('Cancelled'); hide('apiLibProgress'); return; }
@@ -2532,6 +2574,10 @@ async function scanApiLib(forceRefresh) {
         fsProjects.push({ id: proj.id, name: pn, webUrl: proj.web_url || '', endpoints: r.endpoints });
         ctrlCount += r.controllerCount;
       }
+      if (r.unlinkedUrls && r.unlinkedUrls.length > 0) {
+        r.unlinkedUrls.forEach(function(u) { u.repoName = pn; u.repoUrl = proj.web_url || ''; });
+        allUnlinkedUrls = allUnlinkedUrls.concat(r.unlinkedUrls);
+      }
     } catch (err) {
       if (err.message === 'Cancelled') { setStatus('Cancelled'); hide('apiLibProgress'); return; }
     }
@@ -2541,6 +2587,7 @@ async function scanApiLib(forceRefresh) {
   if (allEndpoints.length === 0) { show('apiLibEmpty'); setStatus('No controller endpoints found'); return; }
 
   apiLibData = allEndpoints;
+  apiLibUnlinkedUrls = allUnlinkedUrls;
   renderApiLib(allEndpoints);
 
   // Save to Firestore cache
@@ -2560,6 +2607,10 @@ async function scanApiLib(forceRefresh) {
     <div class="summary-card sc-projects"><div class="sc-value">${repoSet.size}</div><div class="sc-label">Repos</div></div>
     <div class="summary-card sc-added"><div class="sc-value">${buSet.size}</div><div class="sc-label">Backend URLs</div></div>
     <div class="summary-card sc-net"><div class="sc-value">${ctrlCount}</div><div class="sc-label">Controllers</div></div>`;
+  $('apiLibTabBar').style.display = '';
+  // Activate first tab
+  var firstTab = document.querySelector('#apiLibTabBar .tab-btn');
+  if (firstTab) firstTab.click();
   setStatus(`${allEndpoints.length} endpoints, ${repoSet.size} repos`);
 }
 
@@ -2579,7 +2630,7 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
     urlKeyUsage[up.key] = { url: up.url, key: up.key, propFile: up.propFile, usageFiles: [] };
   }
 
-  const keysToTrace = Object.keys(urlKeyUsage).slice(0, 30);
+  const keysToTrace = Object.keys(urlKeyUsage);
   for (const k of keysToTrace) {
     if (signal.aborted) throw new Error('Cancelled');
     try {
@@ -2598,8 +2649,10 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
   }
 
   const endpoints = [];
+  const usedUrlKeys = {};
+  const unusedUrlKeys = {};
 
-  for (const cf of ctrlFiles.slice(0, 50)) {
+  for (const cf of ctrlFiles) {
     if (signal.aborted) throw new Error('Cancelled');
     try {
       const content = await getFileContent(baseUrl, token, proj.id, cf, branch, signal);
@@ -2682,6 +2735,8 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
         var propFiles = Object.keys(propFilesSet);
         var fileDisplay = propFiles.length > 0 ? propFiles.sort().join(', ') : cf;
 
+        allUrls.forEach(function(bu) { usedUrlKeys[bu.key] = true; });
+
         endpoints.push({
           endpoint: ep.method + ' ' + parsed.basePath + ep.path,
           httpMethod: ep.method,
@@ -2694,7 +2749,17 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
     } catch {}
   }
 
-  return { endpoints, controllerCount: ctrlFiles.length };
+  for (var uk in urlKeyUsage) {
+    if (!usedUrlKeys[uk]) {
+      unusedUrlKeys[uk] = urlKeyUsage[uk];
+    }
+  }
+  var unlinkedList = [];
+  for (var uk in unusedUrlKeys) {
+    unlinkedList.push({ key: unusedUrlKeys[uk].key, url: unusedUrlKeys[uk].url, propFile: unusedUrlKeys[uk].propFile || '', usageCount: unusedUrlKeys[uk].usageFiles.length });
+  }
+
+  return { endpoints, controllerCount: ctrlFiles.length, unlinkedUrls: unlinkedList };
 }
 
 // ─── Reused helpers ──────────────────────────────────────
@@ -2962,12 +3027,17 @@ async function findServiceImplFiles(baseUrl, token, projId, typeName, branch, si
 // ─── Render table (no nested backticks) ──────────────────
 function renderApiLib(data) {
   const q = $('apiLibSearch').value.trim().toLowerCase();
-  const f = q ? data.filter(function(e) {
+  const hasUrlFilter = $('apiLibHasUrlToggle').checked;
+  let filtered = data;
+  if (hasUrlFilter) {
+    filtered = filtered.filter(function(e) { return e.backendUrls && e.backendUrls.length > 0; });
+  }
+  const f = q ? filtered.filter(function(e) {
     return e.endpoint.toLowerCase().includes(q) || e.repoName.toLowerCase().includes(q) ||
       e.repoUrl.toLowerCase().includes(q) || e.file.toLowerCase().includes(q) ||
       (e.controllerClass || '').toLowerCase().includes(q) ||
       (e.backendUrls || []).some(function(b) { return (b.propFile || '').toLowerCase().includes(q) || b.url.toLowerCase().includes(q) || b.key.toLowerCase().includes(q); });
-  }) : data;
+  }) : filtered;
   const wrap = $('apiLibTableWrap');
   hide('apiLibEmpty'); show('apiLibResults');
   if (f.length === 0) { wrap.innerHTML = '<div class="chart-empty">No results matching "' + escHtml(q) + '"</div>'; return; }
@@ -3021,6 +3091,12 @@ function renderApiLib(data) {
         var propInfo = b.propFile ? ' <span style="font-size:0.65rem;color:var(--text-muted)">(' + escHtml(b.propFile.split('/').pop()) + ')</span>' : '';
         detailHtml += '<div class="api-lib-usage" style="margin-bottom:0.35rem;padding:0.4rem 0.6rem"><code style="font-size:0.72rem;color:var(--text)">' + escHtml(b.key) + '</code>' + propInfo + '<br><span style="font-size:0.72rem;color:var(--secondary);word-break:break-all">' + escHtml(b.url) + '</span></div>';
       }
+      // Backend URL source tree
+      var sourceTreeHtml = buildBackendUrlSourceTree(e.backendUrls);
+      if (sourceTreeHtml) {
+        detailHtml += '<div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin:0.75rem 0 0.5rem;text-transform:uppercase;letter-spacing:0.04em">Backend URL Source Tree:</div>'
+          + '<div class="api-lib-source-tree">' + sourceTreeHtml + '</div>';
+      }
     }
     if ((e.refs || []).length > 0) {
       detailHtml += '<div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin:0.75rem 0 0.5rem;text-transform:uppercase;letter-spacing:0.04em">References (' + e.refs.length + '):</div>';
@@ -3065,6 +3141,671 @@ function exportApiLibCsv() {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
   setStatus('Exported ' + apiLibData.length + ' rows');
+}
+
+// ─── Render API LIB Overview (endpoints per repo + method distribution) ──
+function renderApiLibOverview(data) {
+  var repoMap = {};
+  var methodMap = {};
+  for (var i = 0; i < data.length; i++) {
+    var e = data[i];
+    var rn = e.repoName || 'unknown';
+    if (!repoMap[rn]) repoMap[rn] = 0;
+    repoMap[rn]++;
+    var m = e.httpMethod || 'UNKNOWN';
+    if (!methodMap[m]) methodMap[m] = 0;
+    methodMap[m]++;
+  }
+
+  // Endpoints per repo
+  var repoEntries = Object.entries(repoMap).sort(function(a, b) { return b[1] - a[1]; });
+  var repoChart = $('apiLibRepoChart');
+  if (repoEntries.length === 0) {
+    repoChart.innerHTML = '<div class="chart-empty">No data</div>';
+  } else {
+    var maxRepo = repoEntries[0][1];
+    var rh = '';
+    for (var ri = 0; ri < repoEntries.length; ri++) {
+      var pct = Math.round((repoEntries[ri][1] / maxRepo) * 100);
+      rh += '<div class="api-lib-bar-row">'
+        + '<span class="api-lib-bar-label" title="' + escHtml(repoEntries[ri][0]) + '">' + escHtml(repoEntries[ri][0]) + '</span>'
+        + '<div class="api-lib-bar-track"><div class="api-lib-bar-fill" style="width:' + pct + '%"></div></div>'
+        + '<span class="api-lib-bar-count">' + repoEntries[ri][1] + '</span></div>';
+    }
+    repoChart.innerHTML = '<div style="width:100%;padding:0.5rem 0">' + rh + '</div>';
+  }
+
+  // HTTP Method distribution
+  var methodEntries = Object.entries(methodMap).sort(function(a, b) { return b[1] - a[1]; });
+  var methodChart = $('apiLibMethodChart');
+  if (methodEntries.length === 0) {
+    methodChart.innerHTML = '<div class="chart-empty">No data</div>';
+  } else {
+    var maxMethod = methodEntries[0][1];
+    var mh = '';
+    var methodColors = { GET: '#60a5fa', POST: '#34d399', PUT: '#fbbf24', DELETE: '#f87171', PATCH: '#a78bfa' };
+    for (var mi = 0; mi < methodEntries.length; mi++) {
+      var me = methodEntries[mi];
+      var pct2 = Math.round((me[1] / maxMethod) * 100);
+      var color = methodColors[me[0]] || '#6366f1';
+      mh += '<div class="api-lib-method-row">'
+        + '<span class="api-lib-method-label" style="color:' + color + '">' + me[0] + '</span>'
+        + '<div class="api-lib-method-track"><div class="api-lib-method-fill" style="width:' + pct2 + '%;background:' + color + '"></div></div>'
+        + '<span class="api-lib-method-count">' + me[1] + '</span></div>';
+    }
+    methodChart.innerHTML = '<div style="width:100%;padding:0.5rem 0">' + mh + '</div>';
+  }
+}
+
+// ─── Render API LIB Unlinked URLs ─────────────────────────
+function renderApiLibUnlinked(data) {
+  var wrap = $('apiLibUnlinkedWrap');
+  if (!apiLibUnlinkedUrls || apiLibUnlinkedUrls.length === 0) {
+    wrap.innerHTML = '<div class="chart-empty">No unlinked URLs found. All property file URLs are consumed by controllers.</div>';
+    return;
+  }
+  var html = '<div style="width:100%"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.75rem">'
+    + 'Found <strong>' + apiLibUnlinkedUrls.length + '</strong> URL(s) defined in property files but not consumed by any controller endpoint.</div>'
+    + '<div class="table-wrap" style="max-height:500px"><table class="api-lib-unlinked-table"><thead><tr>'
+    + '<th>#</th><th>Property Key</th><th>URL</th><th>Property File</th><th>Repo</th></tr></thead><tbody>';
+  for (var ui = 0; ui < apiLibUnlinkedUrls.length; ui++) {
+    var u = apiLibUnlinkedUrls[ui];
+    html += '<tr><td>' + (ui + 1) + '</td>'
+      + '<td><code style="color:var(--primary);font-size:0.72rem">' + escHtml(u.key) + '</code></td>'
+      + '<td style="word-break:break-all;color:var(--secondary)">' + escHtml(u.url) + '</td>'
+      + '<td style="font-size:0.68rem;color:var(--text-muted)">' + escHtml(u.propFile) + '</td>'
+      + '<td style="font-size:0.72rem">' + escHtml(u.repoName || '') + '</td></tr>';
+  }
+  html += '</tbody></table></div></div>';
+  wrap.innerHTML = html;
+}
+
+// ─── 3D Dependency Map ────────────────────────────────────
+var depmapActive = false;
+
+function showApiLibDepmap() {
+  var container = $('depmapContainer');
+  var empty = $('depmapEmpty');
+  if (!apiLibData || apiLibData.length === 0) {
+    empty.style.display = '';
+    container.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  container.style.display = '';
+  container.innerHTML = '<div class="chart-empty">Loading 3D dependency map...</div>';
+  loadThreeJS().then(function() {
+    buildApiLibDepmap(container);
+  }).catch(function(err) {
+    container.innerHTML = '<div class="chart-empty">3D failed: ' + escHtml(err.message || err) + '</div>';
+  });
+}
+
+function buildApiLibDepmap(container) {
+  dispose3D();
+  var W = container.clientWidth || 800;
+  var H = container.clientHeight || 600;
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf5f7fa);
+  var camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
+  camera.position.set(0, 8, 18);
+  camera.lookAt(0, 0, 0);
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+  var labelRenderer = new window.CSS2DRenderer();
+  labelRenderer.setSize(W, H);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  container.appendChild(labelRenderer.domElement);
+  var controls = new window.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxDistance = 40;
+  controls.minDistance = 3;
+  var ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambient);
+  var hemi = new THREE.HemisphereLight(0xffffff, 0xddeeff, 0.5);
+  scene.add(hemi);
+  var dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(5, 10, 7);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+  var shadowGeo = new THREE.CircleGeometry(12, 32);
+  var shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.025, depthWrite: false });
+  var shadowDisc = new THREE.Mesh(shadowGeo, shadowMat);
+  shadowDisc.rotation.x = -Math.PI / 2;
+  shadowDisc.position.y = -0.1;
+  scene.add(shadowDisc);
+
+  // Collect endpoints with backend URLs for the graph
+  var nodes = [];
+  var edgeData = [];
+  var nodeMap = {};
+  var endpointColor = '#6366f1';
+  var backendUrlColor = '#10b981';
+  var usedEndpoints = apiLibData.filter(function(e) { return e.backendUrls && e.backendUrls.length > 0; });
+
+  usedEndpoints.forEach(function(ep) {
+    var epKey = 'ep:' + ep.endpoint + '|' + ep.repoName;
+    if (!nodeMap[epKey]) {
+      nodeMap[epKey] = { id: epKey, label: ep.endpoint, type: 'endpoint', repo: ep.repoName, group: ep.repoName };
+      nodes.push(nodeMap[epKey]);
+    }
+    (ep.backendUrls || []).forEach(function(bu) {
+      var buKey = 'bu:' + bu.url;
+      if (!nodeMap[buKey]) {
+        nodeMap[buKey] = { id: buKey, label: bu.key, type: 'backend', url: bu.url, propFile: bu.propFile };
+        nodes.push(nodeMap[buKey]);
+      }
+      edgeData.push({ from: epKey, to: buKey });
+    });
+  });
+
+  if (nodes.length === 0) {
+    container.innerHTML = '<div class="chart-empty">No endpoints with backend URLs to visualize.</div>';
+    return;
+  }
+
+  // Layout: endpoints left, backend urls right
+  var epNodes = nodes.filter(function(n) { return n.type === 'endpoint'; });
+  var buNodes = nodes.filter(function(n) { return n.type === 'backend'; });
+  var radius = Math.max(6, Math.max(epNodes.length, buNodes.length) * 1.2);
+
+  epNodes.forEach(function(n, i) {
+    var angle = (i / epNodes.length) * Math.PI * 2 - Math.PI / 2;
+    n.x = -radius * 0.6;
+    n.y = Math.sin(angle) * radius * 0.5;
+    n.z = Math.cos(angle) * radius * 0.5;
+  });
+  buNodes.forEach(function(n, i) {
+    var angle = (i / buNodes.length) * Math.PI * 2 - Math.PI / 2;
+    n.x = radius * 0.6;
+    n.y = Math.sin(angle) * radius * 0.5;
+    n.z = Math.cos(angle) * radius * 0.5;
+  });
+
+  var nodeMeshes = [];
+  var colorMap = {};
+  var repoColors = ['#6366f1', '#22d3ee', '#f59e0b', '#ef4444', '#10b981', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4'];
+  var colorIdx = 0;
+  epNodes.forEach(function(n) {
+    if (!colorMap[n.repo]) { colorMap[n.repo] = repoColors[colorIdx % repoColors.length]; colorIdx++; }
+  });
+
+  epNodes.forEach(function(n) {
+    var r = 0.35;
+    var geo = new THREE.SphereGeometry(r, 20, 20);
+    var mat = new THREE.MeshPhysicalMaterial({ color: colorMap[n.repo] || endpointColor, roughness: 0.25, metalness: 0.05, emissive: colorMap[n.repo] || endpointColor, emissiveIntensity: 0.08 });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(n.x, n.y, n.z);
+    mesh.castShadow = true;
+    mesh.userData = { type: 'endpoint', label: n.label, repo: n.repo };
+    scene.add(mesh);
+    nodeMeshes.push(mesh);
+
+    // Label
+    var div = document.createElement('div');
+    div.textContent = n.label.length > 20 ? n.label.slice(0, 18) + '...' : n.label;
+    div.style.cssText = 'color:#0f172a;font-size:10px;font-weight:600;background:rgba(255,255,255,0.9);padding:2px 6px;border-radius:4px;border:1px solid rgba(0,0,0,0.08);pointer-events:none;white-space:nowrap';
+    var label = new window.CSS2DObject(div);
+    label.position.set(n.x, n.y - r - 0.5, n.z);
+    scene.add(label);
+  });
+
+  buNodes.forEach(function(n) {
+    var r = 0.3;
+    var geo = new THREE.SphereGeometry(r, 20, 20);
+    var mat = new THREE.MeshPhysicalMaterial({ color: backendUrlColor, roughness: 0.3, metalness: 0.05, emissive: backendUrlColor, emissiveIntensity: 0.06 });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(n.x, n.y, n.z);
+    mesh.castShadow = true;
+    mesh.userData = { type: 'backend', label: n.label, url: n.url };
+    scene.add(mesh);
+    nodeMeshes.push(mesh);
+
+    var div = document.createElement('div');
+    div.textContent = n.label.length > 20 ? n.label.slice(0, 18) + '...' : n.label;
+    div.style.cssText = 'color:#059669;font-size:10px;font-weight:600;background:rgba(255,255,255,0.9);padding:2px 6px;border-radius:4px;border:1px solid rgba(0,0,0,0.08);pointer-events:none;white-space:nowrap';
+    var label = new window.CSS2DObject(div);
+    label.position.set(n.x, n.y - r - 0.5, n.z);
+    scene.add(label);
+  });
+
+  edgeData.forEach(function(ed) {
+    var fromN = nodeMap[ed.from];
+    var toN = nodeMap[ed.to];
+    if (!fromN || !toN) return;
+    var fromPos = new THREE.Vector3(fromN.x, fromN.y, fromN.z);
+    var toPos = new THREE.Vector3(toN.x, toN.y, toN.z);
+    var mid = new THREE.Vector3().addVectors(fromPos, toPos).multiplyScalar(0.5);
+    mid.y += 0.5;
+    var curve = new THREE.CatmullRomCurve3([fromPos, mid, toPos]);
+    var tubeGeo = new THREE.TubeGeometry(curve, 12, 0.025, 5, false);
+    var tubeMat = new THREE.MeshPhysicalMaterial({ color: '#94a3b8', transparent: true, opacity: 0.35, roughness: 0.5 });
+    var tube = new THREE.Mesh(tubeGeo, tubeMat);
+    scene.add(tube);
+  });
+
+  // Legend
+  var legendDiv = document.createElement('div');
+  legendDiv.style.cssText = 'position:absolute;bottom:10px;left:10px;font-size:10px;background:rgba(255,255,255,0.9);padding:6px 10px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);pointer-events:none';
+  var legendHtml = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + backendUrlColor + ';margin-right:4px"></span> Backend URL &nbsp;&nbsp;';
+  var seenColors = {};
+  for (var ri2 = 0; ri2 < epNodes.length; ri2++) {
+    var n2 = epNodes[ri2];
+    if (!seenColors[n2.repo]) {
+      seenColors[n2.repo] = true;
+      legendHtml += '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + (colorMap[n2.repo]) + ';margin-right:4px;margin-left:8px"></span> ' + n2.repo.slice(0, 12) + ' ';
+    }
+  }
+  legendDiv.innerHTML = legendHtml;
+  container.appendChild(legendDiv);
+
+  // Interaction
+  var raycaster = new THREE.Raycaster();
+  var pointer = new THREE.Vector2();
+  var tooltipEl2 = document.getElementById('tooltip3d') || (function() {
+    var el = document.createElement('div'); el.id = 'tooltip3d'; el.className = 'chart-tooltip';
+    el.style.cssText = 'display:none;pointer-events:auto;position:fixed;z-index:9999';
+    document.body.appendChild(el); return el;
+  })();
+
+  renderer.domElement.addEventListener('mousemove', function(ev) {
+    var rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    var intersects = raycaster.intersectObjects(nodeMeshes);
+    if (intersects.length > 0) {
+      var hit = intersects[0].object;
+      var ud = hit.userData;
+      var tipHtml = '<div class="tt-header">' + escHtml(ud.label) + '</div>';
+      if (ud.type === 'endpoint') tipHtml += '<div class="tt-row"><span>Repo</span><strong>' + escHtml(ud.repo) + '</strong></div>';
+      if (ud.type === 'backend') tipHtml += '<div class="tt-row"><span>URL</span><strong style="word-break:break-all;font-size:0.65rem">' + escHtml(ud.url) + '</strong></div>';
+      tooltipEl2.innerHTML = tipHtml;
+      tooltipEl2.style.display = 'block';
+      var tx = ev.clientX + 12, ty = ev.clientY - 30;
+      if (tx + 200 > window.innerWidth) tx = ev.clientX - 220;
+      if (ty < 10) ty = ev.clientY + 12;
+      tooltipEl2.style.left = tx + 'px';
+      tooltipEl2.style.top = ty + 'px';
+    } else {
+      tooltipEl2.style.display = 'none';
+    }
+  });
+
+  renderer.domElement.addEventListener('mouseleave', function() {
+    tooltipEl2.style.display = 'none';
+  });
+
+  threeScene = scene;
+  threeCamera = camera;
+  threeRenderer = renderer;
+  threeLabelRenderer = labelRenderer;
+  threeControls = controls;
+
+  function animate() {
+    threeAnimId = requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+  }
+  animate();
+
+  var resizeHandler = function() {
+    var w2 = container.clientWidth || 800;
+    var h2 = container.clientHeight || 600;
+    camera.aspect = w2 / h2;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w2, h2);
+    labelRenderer.setSize(w2, h2);
+  };
+  window.addEventListener('resize', resizeHandler);
+  renderer.domElement._resizeHandler = resizeHandler;
+}
+
+// ─── Cross-Repo View ──────────────────────────────────────
+function showApiLibCrossrepo() {
+  var container = $('crossrepoContainer');
+  var empty = $('crossrepoEmpty');
+  if (!apiLibData || apiLibData.length === 0) {
+    empty.style.display = '';
+    container.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  container.style.display = '';
+  container.innerHTML = '<div class="chart-empty">Building cross-repo graph...</div>';
+  loadThreeJS().then(function() {
+    buildApiLibCrossrepo(container);
+  }).catch(function(err) {
+    container.innerHTML = '<div class="chart-empty">3D failed: ' + escHtml(err.message || err) + '</div>';
+  });
+}
+
+function buildApiLibCrossrepo(container) {
+  dispose3D();
+  var W = container.clientWidth || 800;
+  var H = container.clientHeight || 600;
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf5f7fa);
+  var camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
+  camera.position.set(0, 6, 16);
+  camera.lookAt(0, 0, 0);
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+  var labelRenderer = new window.CSS2DRenderer();
+  labelRenderer.setSize(W, H);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  container.appendChild(labelRenderer.domElement);
+  var controls = new window.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxDistance = 40;
+  controls.minDistance = 3;
+  var ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambient);
+  var hemi = new THREE.HemisphereLight(0xffffff, 0xddeeff, 0.5);
+  scene.add(hemi);
+  var dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(5, 10, 7);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+  var shadowGeo = new THREE.CircleGeometry(14, 32);
+  var shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.025, depthWrite: false });
+  var shadowDisc = new THREE.Mesh(shadowGeo, shadowMat);
+  shadowDisc.rotation.x = -Math.PI / 2;
+  shadowDisc.position.y = -0.1;
+  scene.add(shadowDisc);
+
+  // Build repo→backend URL mapping (cross-repo consumption)
+  var repoBackendMap = {};
+  var backendReposMap = {};
+  apiLibData.forEach(function(ep) {
+    var rn = ep.repoName || 'unknown';
+    if (!repoBackendMap[rn]) repoBackendMap[rn] = {};
+    (ep.backendUrls || []).forEach(function(bu) {
+      repoBackendMap[rn][bu.url] = true;
+      if (!backendReposMap[bu.url]) backendReposMap[bu.url] = {};
+      backendReposMap[bu.url][rn] = true;
+    });
+  });
+
+  // Find shared backend URLs (consumed by >1 repo)
+  var sharedUrls = [];
+  for (var bu in backendReposMap) {
+    var repos = Object.keys(backendReposMap[bu]);
+    if (repos.length > 1) {
+      sharedUrls.push({ url: bu, repos: repos, count: repos.length });
+    }
+  }
+  // Also find repos that share any backend
+  var repoRepos = {};
+  var repoList = Object.keys(repoBackendMap).sort();
+  repoList.forEach(function(r) {
+    repoRepos[r] = {};
+    repoList.forEach(function(r2) {
+      if (r === r2) return;
+      for (var bu2 in repoBackendMap[r]) {
+        if (repoBackendMap[r2][bu2]) {
+          repoRepos[r][r2] = (repoRepos[r][r2] || 0) + 1;
+        }
+      }
+    });
+  });
+
+  var maxShared = repoList.reduce(function(mx, r) {
+    return Math.max(mx, Object.keys(repoRepos[r] || {}).length);
+  }, 1);
+
+  var repoNodes = [];
+  var repoColors = ['#6366f1', '#22d3ee', '#f59e0b', '#ef4444', '#10b981', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4', '#84cc16', '#d946ef'];
+  repoList.forEach(function(r, i) {
+    var angle = (i / repoList.length) * Math.PI * 2 - Math.PI / 2;
+    var rad = Math.max(4, repoList.length * 0.8);
+    repoNodes.push({ name: r, x: Math.cos(angle) * rad, z: Math.sin(angle) * rad, color: repoColors[i % repoColors.length] });
+  });
+
+  var linkMeshes = [];
+  repoNodes.forEach(function(n, i) {
+    var r = 0.5;
+    var geo = new THREE.SphereGeometry(r, 24, 24);
+    var mat = new THREE.MeshPhysicalMaterial({ color: n.color, roughness: 0.25, metalness: 0.05, emissive: n.color, emissiveIntensity: 0.1 });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(n.x, 0, n.z);
+    mesh.castShadow = true;
+    mesh.userData = { type: 'repo', name: n.name };
+    scene.add(mesh);
+
+    var div = document.createElement('div');
+    div.textContent = n.name.length > 16 ? n.name.slice(0, 14) + '...' : n.name;
+    div.style.cssText = 'color:#0f172a;font-size:10px;font-weight:700;background:rgba(255,255,255,0.95);padding:3px 8px;border-radius:4px;border:1px solid ' + n.color + ';pointer-events:none;white-space:nowrap';
+    var label = new window.CSS2DObject(div);
+    label.position.set(n.x, -r - 0.6, n.z);
+    scene.add(label);
+
+    // Draw edges to connected repos
+    for (var j = i + 1; j < repoNodes.length; j++) {
+      var n2 = repoNodes[j];
+      var sharedCount = repoRepos[n.name] && repoRepos[n.name][n2.name] ? repoRepos[n.name][n2.name] : 0;
+      if (sharedCount > 0) {
+        var fromPos = new THREE.Vector3(n.x, 0, n.z);
+        var toPos = new THREE.Vector3(n2.x, 0, n2.z);
+        var mid2 = new THREE.Vector3().addVectors(fromPos, toPos).multiplyScalar(0.5);
+        mid2.y += 0.3 + sharedCount * 0.15;
+        var curve2 = new THREE.CatmullRomCurve3([fromPos, mid2, toPos]);
+        var thickness = 0.02 + sharedCount * 0.015;
+        var opacity = Math.min(0.1 + sharedCount * 0.08, 0.5);
+        var tubeMat2 = new THREE.MeshPhysicalMaterial({ color: '#6366f1', transparent: true, opacity: opacity, roughness: 0.5 });
+        var tube2 = new THREE.Mesh(new THREE.TubeGeometry(curve2, 16, thickness, 5, false), tubeMat2);
+        scene.add(tube2);
+        linkMeshes.push(tube2);
+      }
+    }
+  });
+
+  // Legend
+  var legendDiv = document.createElement('div');
+  legendDiv.style.cssText = 'position:absolute;bottom:10px;left:10px;font-size:10px;background:rgba(255,255,255,0.9);padding:6px 10px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);pointer-events:none';
+  legendDiv.innerHTML = '<div><strong>Cross-Repo Backend URL Sharing</strong><br><span style="color:#6366f1">●</span> Nodes = Repositories &nbsp; <span style="color:#6366f1">━</span> Edges = Shared backend URLs<br>'
+    + 'Shared URLs: ' + sharedUrls.length + ' &nbsp;|&nbsp; Repos: ' + repoList.length + ' &nbsp;|&nbsp; Endpoints: ' + apiLibData.length + '</div>';
+  container.appendChild(legendDiv);
+
+  // Shared URLs detail panel
+  if (sharedUrls.length > 0) {
+    var detailDiv = document.createElement('div');
+    detailDiv.style.cssText = 'position:absolute;top:10px;right:10px;font-size:10px;background:rgba(255,255,255,0.95);padding:8px 12px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);max-height:200px;overflow-y:auto;max-width:280px';
+    var detailHtml = '<div style="font-weight:700;margin-bottom:4px;color:var(--text)">Shared Backend URLs</div>';
+    sharedUrls.slice(0, 15).forEach(function(su) {
+      detailHtml += '<div style="margin:2px 0;word-break:break-all;color:var(--text-muted)"><span style="color:#10b981">●</span> ' + escHtml(su.url.slice(0, 40)) + '... <span style="font-weight:600">(' + su.repos.join(', ') + ')</span></div>';
+    });
+    if (sharedUrls.length > 15) detailHtml += '<div style="color:var(--text-muted)">... and ' + (sharedUrls.length - 15) + ' more</div>';
+    detailDiv.innerHTML = detailHtml;
+    container.appendChild(detailDiv);
+  }
+
+  threeScene = scene;
+  threeCamera = camera;
+  threeRenderer = renderer;
+  threeLabelRenderer = labelRenderer;
+  threeControls = controls;
+  threeNodes.length = 0;
+  threeEdgeMeshes.length = 0;
+
+  function animate() {
+    threeAnimId = requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+  }
+  animate();
+
+  var resizeHandler = function() {
+    var w2 = container.clientWidth || 800;
+    var h2 = container.clientHeight || 600;
+    camera.aspect = w2 / h2;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w2, h2);
+    labelRenderer.setSize(w2, h2);
+  };
+  window.addEventListener('resize', resizeHandler);
+  renderer.domElement._resizeHandler = resizeHandler;
+}
+
+// ─── Backend URL Source Tree builder ──────────────────────
+function buildBackendUrlSourceTree(backendUrls) {
+  if (!backendUrls || backendUrls.length === 0) return '';
+  var tree = {};
+  backendUrls.forEach(function(bu) {
+    var pf = bu.propFile || 'unknown';
+    if (!tree[pf]) tree[pf] = [];
+    tree[pf].push(bu);
+  });
+  var html = '';
+  var sortedFiles = Object.keys(tree).sort();
+  sortedFiles.forEach(function(pf) {
+    var displayName = pf.split('/').pop() || pf;
+    html += '<div class="tree-node"><span class="tree-propfile">' + escHtml(displayName) + '</span></div>';
+    tree[pf].forEach(function(bu) {
+      html += '<div class="tree-node" style="padding-left:1rem"><span class="tree-arrow">└─</span><span class="tree-field">' + escHtml(bu.key) + '</span><span class="tree-arrow">→</span><span class="tree-url">' + escHtml(bu.url) + '</span></div>';
+    });
+  });
+  return html;
+}
+
+// ─── Download API LIB Report ──────────────────────────────
+function downloadApiLibReport() {
+  if (!apiLibData || apiLibData.length === 0) { setStatus('No data to export', true); return; }
+  var repoMap = {};
+  var methodMap = {};
+  var totalUrls = 0;
+  apiLibData.forEach(function(e) {
+    var rn = e.repoName || 'unknown';
+    if (!repoMap[rn]) repoMap[rn] = { endpoints: 0, controllers: new Set(), backendUrls: new Set(), urls: [] };
+    repoMap[rn].endpoints++;
+    if (e.controllerClass) repoMap[rn].controllers.add(e.controllerClass);
+    (e.backendUrls || []).forEach(function(bu) {
+      repoMap[rn].backendUrls.add(bu.url);
+      repoMap[rn].urls.push(bu);
+      totalUrls++;
+    });
+    var m = e.httpMethod || 'UNKNOWN';
+    if (!methodMap[m]) methodMap[m] = 0;
+    methodMap[m]++;
+  });
+
+  var now = new Date().toISOString().slice(0, 10);
+  var lines = [];
+  lines.push('================================================================================');
+  lines.push('  API LIBRARY REPORT');
+  lines.push('  Generated: ' + now);
+  lines.push('  Total Endpoints: ' + apiLibData.length);
+  lines.push('  Total Repos: ' + Object.keys(repoMap).length);
+  lines.push('  Total Backend URLs: ' + totalUrls);
+  lines.push('  Unlinked URLs: ' + (apiLibUnlinkedUrls ? apiLibUnlinkedUrls.length : 0));
+  lines.push('================================================================================');
+  lines.push('');
+
+  lines.push('--- ENDPOINTS PER REPO ---');
+  var repoEntries = Object.entries(repoMap).sort(function(a, b) { return b[1].endpoints - a[1].endpoints; });
+  repoEntries.forEach(function(re) {
+    lines.push('  ' + re[0] + ': ' + re[1].endpoints + ' endpoints, ' + re[1].controllers.size + ' controllers, ' + re[1].backendUrls.size + ' backend URLs');
+  });
+  lines.push('');
+
+  lines.push('--- HTTP METHOD DISTRIBUTION ---');
+  var methodEntries = Object.entries(methodMap).sort(function(a, b) { return b[1] - a[1]; });
+  methodEntries.forEach(function(me) {
+    lines.push('  ' + me[0] + ': ' + me[1]);
+  });
+  lines.push('');
+
+  lines.push('--- ALL ENDPOINTS ---');
+  lines.push('  #,HTTP Method,Endpoint,Controller Class,Repo,Backend URLs,Files');
+  apiLibData.forEach(function(e, i) {
+    var buStr = (e.backendUrls || []).map(function(b) { return b.key + '=' + b.url; }).join('; ');
+    lines.push('  ' + (i + 1) + ',"' + e.httpMethod + '","' + e.endpoint + '","' + (e.controllerClass || '') + '","' + e.repoName + '","' + buStr + '","' + (e.file || '') + '"');
+  });
+  lines.push('');
+
+  if (apiLibUnlinkedUrls && apiLibUnlinkedUrls.length > 0) {
+    lines.push('--- UNLINKED URLs ---');
+    lines.push('  #,Key,URL,Property File,Repo');
+    apiLibUnlinkedUrls.forEach(function(u, i) {
+      lines.push('  ' + (i + 1) + ',"' + u.key + '","' + u.url + '","' + (u.propFile || '') + '","' + (u.repoName || '') + '"');
+    });
+    lines.push('');
+  }
+
+  lines.push('--- CROSS-REPO BACKEND URL SHARING ---');
+  var backendReposMap2 = {};
+  apiLibData.forEach(function(ep) {
+    (ep.backendUrls || []).forEach(function(bu) {
+      if (!backendReposMap2[bu.url]) backendReposMap2[bu.url] = new Set();
+      backendReposMap2[bu.url].add(ep.repoName);
+    });
+  });
+  var sharedUrls2 = Object.entries(backendReposMap2).filter(function(e) { return e[1].size > 1; }).sort(function(a, b) { return b[1].size - a[1].size; });
+  sharedUrls2.forEach(function(su) {
+    lines.push('  ' + su[0] + ' → ' + [...su[1]].join(', '));
+  });
+  if (sharedUrls2.length === 0) lines.push('  No shared backend URLs found across repos.');
+  lines.push('');
+
+  lines.push('--- BACKEND URL SOURCE TREE ---');
+  var urlPropMap = {};
+  apiLibData.forEach(function(ep) {
+    (ep.backendUrls || []).forEach(function(bu) {
+      var pf = bu.propFile || 'unknown';
+      if (!urlPropMap[pf]) urlPropMap[pf] = [];
+      if (urlPropMap[pf].indexOf(bu.url) < 0) urlPropMap[pf].push(bu.url);
+    });
+  });
+  for (var pf2 in urlPropMap) {
+    lines.push('  ' + pf2);
+    urlPropMap[pf2].forEach(function(u) { lines.push('    └─ ' + u); });
+  }
+  lines.push('');
+
+  lines.push('--- ENDPOINT DEPENDENCY MAP ---');
+  var depEdgeCount = 0;
+  apiLibData.forEach(function(ep) {
+    if (ep.backendUrls && ep.backendUrls.length > 0) {
+      lines.push('  ' + ep.endpoint + ' (via ' + ep.repoName + ')');
+      ep.backendUrls.forEach(function(bu) {
+        lines.push('    └─ ' + bu.key + ' → ' + bu.url + (bu.propFile ? ' [' + bu.propFile + ']' : ''));
+        depEdgeCount++;
+      });
+    }
+  });
+  if (depEdgeCount === 0) lines.push('  No endpoint-to-backend-URL dependencies found.');
+  lines.push('');
+
+  lines.push('================================================================================');
+  lines.push('  END OF REPORT');
+  lines.push('================================================================================');
+
+  var content = lines.join('\n');
+  var blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'api-lib-report-' + now + '.txt';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  setStatus('Report downloaded (' + apiLibData.length + ' endpoints)');
 }
 
 // ═══════════════════════════════════════════════════════════
