@@ -2599,7 +2599,7 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
 
   const endpoints = [];
 
-  for (const cf of ctrlFiles.slice(0, 15)) {
+  for (const cf of ctrlFiles.slice(0, 50)) {
     if (signal.aborted) throw new Error('Cancelled');
     try {
       const content = await getFileContent(baseUrl, token, proj.id, cf, branch, signal);
@@ -2769,15 +2769,15 @@ function parseUrlProperties(content, filePath) {
 
 async function findControllerFiles(baseUrl, token, projId, branch, signal) {
   const files = new Set();
+  // Paginated search for @RestController files (no limit on results)
   try {
-    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@RestController', per_page: 50 }, token, signal);
-    const d = await r.json();
-    if (Array.isArray(d)) d.forEach(x => { if (x.filename && x.filename.endsWith('.java')) files.add(x.filename); });
+    const results = await paginate(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@RestController' }, token, signal);
+    if (Array.isArray(results)) results.forEach(x => { if (x.filename && x.filename.endsWith('.java')) files.add(x.filename); });
   } catch {}
+  // Paginated search for @Controller files (excluding tests)
   try {
-    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@Controller', per_page: 50 }, token, signal);
-    const d = await r.json();
-    if (Array.isArray(d)) d.forEach(x => { if (x.filename && x.filename.endsWith('.java') && !x.filename.endsWith('Test.java')) files.add(x.filename); });
+    const results = await paginate(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@Controller' }, token, signal);
+    if (Array.isArray(results)) results.forEach(x => { if (x.filename && x.filename.endsWith('.java') && !x.filename.endsWith('Test.java')) files.add(x.filename); });
   } catch {}
   return [...files];
 }
