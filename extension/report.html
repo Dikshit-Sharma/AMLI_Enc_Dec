@@ -263,11 +263,6 @@
           </div>
         </header>
 
-        <div class="sidebar-config-row" style="margin-bottom:1rem;display:flex;gap:0.5rem;align-items:center">
-          <input type="text" id="sApiLibFnUrl" placeholder="Firebase function URL" value="https://us-central1-apilib-5f40d.cloudfunctions.net/apiLib" style="flex:1;padding:0.4rem 0.65rem;border:1px solid var(--border);border-radius:0.4rem;font-size:0.72rem;background:var(--bg-input);color:var(--text);font-family:inherit">
-          <span style="font-size:0.65rem;color:var(--text-muted)">(cache endpoint)</span>
-        </div>
-
         <div id="apiLibProgress" style="display:none" class="loc-progress">
           <div class="progress-text" id="apiLibProgressText">Scanning...</div>
           <div class="progress-bar-bg"><div class="progress-bar-fill" id="apiLibProgressBar" style="width:0%"></div></div>
@@ -288,7 +283,7 @@
             and traces which backend URLs (from property files) each controller consumes.<br><br>
             <span style="font-size:0.75rem;color:var(--text-muted)">
               Supports <code>application.properties</code>, <code>application.yml</code>, <code>@Value</code>, autowired service tracing.<br>
-              Click <strong>Scan</strong> to begin — results cached in Firestore for fast reload.
+              Click <strong>Scan</strong> to begin — results cached for fast reload.
             </span>
           </div>
         </div>

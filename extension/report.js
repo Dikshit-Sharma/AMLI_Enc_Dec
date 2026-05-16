@@ -412,8 +412,7 @@ async function fetchDashboard(forceRefresh) {
   dashFilterContributors = [];
   if (dash3dActive) hideDashboard3D();
   lastDashData = null;
-  // Invalidate API LIB cache so it re-scans on next visit
-  try { localStorage.removeItem('rs_api_lib'); } catch {}
+
 
   abortController = new AbortController();
   const signal = abortController.signal;
@@ -2406,21 +2405,14 @@ $('apiLibSearch').addEventListener('input', () => {
 });
 $('apiLibExportBtn').addEventListener('click', exportApiLibCsv);
 
-// ─── Config persistence for Firebase function URL ────────
-try {
-  const saved = JSON.parse(localStorage.getItem('rs_config') || '{}');
-  if (saved.apiLibFnUrl) $('sApiLibFnUrl').value = saved.apiLibFnUrl;
-} catch {}
-$('sApiLibFnUrl').addEventListener('input', () => {
-  try {
-    const cfg = JSON.parse(localStorage.getItem('rs_config') || '{}');
-    cfg.apiLibFnUrl = $('sApiLibFnUrl').value;
-    localStorage.setItem('rs_config', JSON.stringify(cfg));
-  } catch {}
-});
-
 function getFnUrl() {
-  return $('sApiLibFnUrl').value.trim() || 'https://us-central1-apilib-5f40d.cloudfunctions.net/apiLib';
+  return 'https://amliai.netlify.app/api/api-lib-cache';
+}
+
+async function fetchApiLibProjects(baseUrl, token, signal) {
+  try {
+    return await paginate(baseUrl, '/projects', { membership: true, per_page: 100 }, token, signal);
+  } catch { return []; }
 }
 
 function hashToken(t) {
@@ -2470,14 +2462,16 @@ async function scanApiLib(forceRefresh) {
     } catch {}
   }
 
-  if (!cachedDash || !cachedDash.rawProjects) {
-    setStatus('Fetch dashboard first', true);
-    hide('apiLibProgress');
-    return;
+  let projects = cachedDash && cachedDash.rawProjects ? cachedDash.rawProjects : null;
+  if (!projects || projects.length === 0) {
+    $('apiLibProgressText').textContent = 'Fetching projects from GitLab...';
+    projects = await fetchApiLibProjects(baseUrl, token);
+    if (!projects || projects.length === 0) {
+      setStatus('No projects found. Enter GitLab URL and token in sidebar.', true);
+      hide('apiLibProgress');
+      return;
+    }
   }
-
-  const projects = cachedDash.rawProjects;
-  if (projects.length === 0) { setStatus('No projects', true); hide('apiLibProgress'); return; }
 
   if (apiLibAbortController) apiLibAbortController.abort();
   apiLibAbortController = new AbortController();
@@ -2547,6 +2541,32 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
   const ctrlFiles = await findControllerFiles(baseUrl, token, proj.id, branch, signal);
   if (ctrlFiles.length === 0) return { endpoints: [], controllerCount: 0 };
 
+  // Backward chain: for each URL property key, find which files in the project reference it
+  // Map: key → { url, propFile, key,	usageFiles: [filename, ...] }
+  const urlKeyUsage = {};
+  for (const up of urlProps) {
+    urlKeyUsage[up.key] = { url: up.url, key: up.key, propFile: up.propFile, usageFiles: [] };
+  }
+
+  // Search project for each URL property key usage (limit to first 30 keys)
+  const keysToTrace = Object.keys(urlKeyUsage).slice(0, 30);
+  for (const k of keysToTrace) {
+    if (signal.aborted) throw new Error('Cancelled');
+    try {
+      const r = await apiFetch(baseUrl, '/projects/' + proj.id + '/search', { scope: 'blobs', search: k, ref: branch, per_page: 20 }, token, signal);
+      const d = await r.json();
+      if (Array.isArray(d)) {
+        d.forEach(function(x) {
+          if (x.filename && x.data) {
+            const lines = (x.data || '').split('\n');
+            const hasRef = lines.some(function(l) { return l.includes('${' + k + '}') || l.includes("${" + k + "}"); });
+            if (hasRef) urlKeyUsage[k].usageFiles.push(x.filename);
+          }
+        });
+      }
+    } catch {}
+  }
+
   const endpoints = [];
 
   for (const cf of ctrlFiles.slice(0, 15)) {
@@ -2556,48 +2576,58 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
       const parsed = parseControllerFile(content, cf);
       if (parsed.endpoints.length === 0 && !parsed.className) continue;
 
-      const directKeys = new Set(parsed.valueProps.map(v => v.key));
-      const svcKeys = new Set();
-
-      for (const autoType of parsed.autowiredTypes.slice(0, 5)) {
-        if (signal.aborted) throw new Error('Cancelled');
-        try {
-          const impls = await findServiceImplFiles(baseUrl, token, proj.id, autoType, branch, signal);
-          for (const ip of impls.slice(0, 2)) {
-            try {
-              const ic = await getFileContent(baseUrl, token, proj.id, ip, branch, signal);
-              extractValueProps(ic).forEach(v => svcKeys.add(v.key));
-            } catch {}
+      // Backward chain: match URLs whose key is used IN this controller file
+      const ctrlBackendUrls = [];
+      const matchedRefs = [];
+      for (const k of keysToTrace) {
+        const u = urlKeyUsage[k];
+        if (!u || u.usageFiles.length === 0) continue;
+        const usedInThisCtrl = u.usageFiles.some(function(f) { return f === cf; });
+        if (usedInThisCtrl) {
+          ctrlBackendUrls.push({ url: u.url, key: u.key, propFile: u.propFile });
+          // Update refs to include the controller file reference
+          const ln = content.split('\n').findIndex(function(l) { return l.includes('${' + k + '}'); });
+          if (ln >= 0) {
+            var snippet = content.split('\n').slice(Math.max(0, ln - 1), ln + 2).join('\n').trim();
+            matchedRefs.push({ file: cf, line: ln + 1, snippet: snippet || k });
           }
-        } catch {}
-      }
-
-      const allKeys = new Set([...directKeys, ...svcKeys]);
-      let matchedBu = urlProps.filter(p => allKeys.has(p.key));
-
-      // Fallback: project-level @Value search for URL props
-      if (matchedBu.length === 0) {
-        for (const up of urlProps) {
-          try {
-            const refs = await tracePropertyUsage(baseUrl, token, proj.id, up.key, branch, signal);
-            if (refs.length > 0) {
-              matchedBu.push(up);
-              for (const r of refs) {
-                if (!parsed.valueRefs.some(x => x.file === r.file && x.line === r.line)) parsed.valueRefs.push(r);
-              }
-            }
-          } catch {}
         }
       }
 
+      // If no direct match, check autowired service files
+      if (ctrlBackendUrls.length === 0 && parsed.autowiredTypes.length > 0) {
+        const svcFiles = [];
+        for (const autoType of parsed.autowiredTypes.slice(0, 3)) {
+          if (signal.aborted) throw new Error('Cancelled');
+          try {
+            const impls = await findServiceImplFiles(baseUrl, token, proj.id, autoType, branch, signal);
+            impls.slice(0, 2).forEach(function(f) { svcFiles.push(f); });
+          } catch {}
+        }
+        for (const k of keysToTrace) {
+          const u = urlKeyUsage[k];
+          if (!u || u.usageFiles.length === 0) continue;
+          const usedInSvc = u.usageFiles.some(function(f) { return svcFiles.indexOf(f) >= 0; });
+          if (usedInSvc) {
+            ctrlBackendUrls.push({ url: u.url, key: u.key, propFile: u.propFile });
+          }
+        }
+      }
+
+      // Collect unique propFile paths for the file column
+      const propFilesSet = {};
+      ctrlBackendUrls.forEach(function(b) { if (b.propFile) propFilesSet[b.propFile] = true; });
+      const propFiles = Object.keys(propFilesSet);
+      const fileDisplay = propFiles.length > 0 ? propFiles.sort().join(', ') : cf;
+
       for (const ep of parsed.endpoints) {
         endpoints.push({
-          endpoint: `${ep.method} ${parsed.basePath}${ep.path}`,
+          endpoint: ep.method + ' ' + parsed.basePath + ep.path,
           httpMethod: ep.method,
           controllerClass: parsed.className,
-          backendUrls: matchedBu.map(b => ({ url: b.url, key: b.key })),
-          file: cf,
-          refs: parsed.valueRefs,
+          backendUrls: ctrlBackendUrls.map(function(b) { return { url: b.url, key: b.key, propFile: b.propFile || '' }; }),
+          file: fileDisplay,
+          refs: matchedRefs.length > 0 ? matchedRefs : parsed.valueRefs,
         });
       }
     } catch {}
@@ -2652,7 +2682,7 @@ function parseUrlProperties(content, filePath) {
       const t = line.trim();
       if (!t || t.startsWith('#') || t.startsWith('!')) continue;
       const m = t.match(/^([\w.-]+)\s*[=:]\s*(https?:\/\/\S+)/);
-      if (m) out.push({ key: m[1], url: m[2].replace(/["']/g, '') });
+      if (m) out.push({ key: m[1], url: m[2].replace(/["']/g, ''), propFile: filePath });
     }
   } else if (ext === 'yml' || ext === 'yaml') {
     const lines = content.split('\n'); const path = []; let pd = -1;
@@ -2668,7 +2698,7 @@ function parseUrlProperties(content, filePath) {
       } else if (v.startsWith('http://') || v.startsWith('https://')) {
         if (d < pd) for (let j = pd - d; j > 0 && path.length; j--) path.pop();
         if (d === pd && path.length) path[path.length - 1] = k;
-        out.push({ key: [...path, k].join('.'), url: v.replace(/["']/g, '') });
+        out.push({ key: [...path, k].join('.'), url: v.replace(/["']/g, ''), propFile: filePath });
       }
       pd = d;
     }
@@ -2755,7 +2785,7 @@ function renderApiLib(data) {
     return e.endpoint.toLowerCase().includes(q) || e.repoName.toLowerCase().includes(q) ||
       e.repoUrl.toLowerCase().includes(q) || e.file.toLowerCase().includes(q) ||
       (e.controllerClass || '').toLowerCase().includes(q) ||
-      (e.backendUrls || []).some(function(b) { return b.url.toLowerCase().includes(q) || b.key.toLowerCase().includes(q); });
+      (e.backendUrls || []).some(function(b) { return (b.propFile || '').toLowerCase().includes(q) || b.url.toLowerCase().includes(q) || b.key.toLowerCase().includes(q); });
   }) : data;
   const wrap = $('apiLibTableWrap');
   hide('apiLibEmpty'); show('apiLibResults');
@@ -2782,20 +2812,33 @@ function renderApiLib(data) {
     var repoDisplay = (e.repoUrl || '').replace(/^https?:\/\//, '');
     if (repoDisplay.length > 35) repoDisplay = repoDisplay.slice(0, 35);
 
+    // Show property file path(s) in File column
+    var fileParts = (e.file || '').split(', ');
+    var fileDisplay = '';
+    if (fileParts.length === 1) {
+      fileDisplay = escHtml(fileParts[0].split('/').pop() || fileParts[0]);
+    } else if (fileParts.length > 1) {
+      fileDisplay = escHtml(fileParts[0].split('/').pop() || fileParts[0]) + ' +' + (fileParts.length - 1);
+    } else {
+      fileDisplay = escHtml((e.file || '').split('/').pop());
+    }
+
     html += '<tr class="api-lib-row" data-idx="' + i + '" style="cursor:pointer">'
       + '<td>' + (i + 1) + '</td>'
       + '<td style="font-size:0.75rem"><code style="color:var(--primary)">' + escHtml(e.httpMethod || '') + '</code> <span>' + escHtml(e.endpoint) + '</span></td>'
       + '<td style="font-size:0.7rem"><a href="' + escHtml(e.repoUrl) + '" target="_blank" style="color:var(--secondary);text-decoration:none" onclick="event.stopPropagation()">' + escHtml(repoDisplay) + '\u2026</a></td>'
       + '<td style="font-size:0.75rem">' + escHtml(e.repoName) + '</td>'
       + '<td style="font-size:0.7rem;max-width:200px">' + buHtml + '</td>'
-      + '<td style="font-size:0.7rem;color:var(--text-muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(e.file) + '">' + escHtml((e.file || '').split('/').pop()) + '</td>'
+      + '<td style="font-size:0.7rem;color:var(--text-muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(e.file) + '">' + fileDisplay + '</td>'
       + '<td style="text-align:center">' + refBadge + '</td></tr>';
 
     var detailHtml = '';
     if ((e.backendUrls || []).length > 0) {
       detailHtml += '<div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.04em">Backend URLs consumed:</div>';
       for (var j = 0; j < e.backendUrls.length; j++) {
-        detailHtml += '<div class="api-lib-usage" style="margin-bottom:0.35rem;padding:0.4rem 0.6rem"><code style="font-size:0.72rem;color:var(--text)">' + escHtml(e.backendUrls[j].key) + '</code><br><span style="font-size:0.72rem;color:var(--secondary);word-break:break-all">' + escHtml(e.backendUrls[j].url) + '</span></div>';
+        var b = e.backendUrls[j];
+        var propInfo = b.propFile ? ' <span style="font-size:0.65rem;color:var(--text-muted)">(' + escHtml(b.propFile.split('/').pop()) + ')</span>' : '';
+        detailHtml += '<div class="api-lib-usage" style="margin-bottom:0.35rem;padding:0.4rem 0.6rem"><code style="font-size:0.72rem;color:var(--text)">' + escHtml(b.key) + '</code>' + propInfo + '<br><span style="font-size:0.72rem;color:var(--secondary);word-break:break-all">' + escHtml(b.url) + '</span></div>';
       }
     }
     if ((e.refs || []).length > 0) {
@@ -2826,11 +2869,12 @@ function renderApiLib(data) {
 // ─── CSV export ──────────────────────────────────────────
 function exportApiLibCsv() {
   if (!apiLibData || apiLibData.length === 0) { setStatus('No data to export', true); return; }
-  var rows = [['#', 'HTTP Method', 'Endpoint', 'Controller Class', 'Repo URL', 'Repo Name', 'Backend URL(s)', 'File', 'Ref Count']];
+  var rows = [['#', 'HTTP Method', 'Endpoint', 'Controller Class', 'Repo URL', 'Repo Name', 'Backend URL(s)', 'Property File(s)', 'Ref Count']];
   for (var i = 0; i < apiLibData.length; i++) {
     var e = apiLibData[i];
     var bu = (e.backendUrls || []).map(function(b) { return b.key + '=' + b.url; }).join('; ');
-    rows.push([i + 1, e.httpMethod || '', e.endpoint, e.controllerClass || '', e.repoUrl || '', e.repoName || '', bu, e.file || '', (e.refs || []).length]);
+    var pf = (e.backendUrls || []).map(function(b) { return b.propFile || ''; }).filter(function(x) { return x; }).join('; ');
+    rows.push([i + 1, e.httpMethod || '', e.endpoint, e.controllerClass || '', e.repoUrl || '', e.repoName || '', bu, pf || e.file || '', (e.refs || []).length]);
   }
   var csv = rows.map(function(r) { return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
   var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });

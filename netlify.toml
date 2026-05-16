@@ -15,6 +15,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/api-lib-cache"
+  to = "/.netlify/functions/api-lib-cache"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

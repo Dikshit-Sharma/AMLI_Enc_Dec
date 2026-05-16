@@ -20,6 +20,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   const [compareArtifacts, setCompareArtifacts] = useState(null);
   const [showInsights, setShowInsights] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [totalCount, setTotalCount] = useState(0);
 
   const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
