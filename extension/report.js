@@ -2430,7 +2430,7 @@ async function runComparison(currentData, reportType) {
 let apiLibData = [];
 let apiLibAbortController = null;
 
-$('apiLibScanBtn').addEventListener('click', () => scanApiLib());
+$('apiLibScanBtn').addEventListener('click', () => scanApiLib(true));
 $('apiLibSearch').addEventListener('input', () => {
   if (apiLibData.length > 0) renderApiLib(apiLibData);
 });
