@@ -2648,6 +2648,25 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
     } catch {}
   }
 
+  // Build global @Value key→fieldName map from project-wide Java files
+  // (catches PropertyUtil/config beans where @Value lives, not the controller)
+  const globalValueProps = {};
+  try {
+    const valResults = await paginate(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@Value', per_page: 100 }, token, signal);
+    if (Array.isArray(valResults)) {
+      for (var vi2 = 0; vi2 < valResults.length; vi2++) {
+        var vr = valResults[vi2];
+        if (!vr.filename || !vr.filename.endsWith('.java') || !vr.data) continue;
+        if (vr.data.indexOf('${') < 0) continue;
+        var gvRe = /@Value\s*\(\s*["']\$\{([^}]+)\}["']\s*\)([^;=]*?)(\w+)\s*(?:;|=)/g;
+        var gvm;
+        while ((gvm = gvRe.exec(vr.data)) !== null) {
+          if (!globalValueProps[gvm[1]]) globalValueProps[gvm[1]] = gvm[3];
+        }
+      }
+    }
+  } catch {}
+
   const endpoints = [];
   const usedUrlKeys = {};
   const unusedUrlKeys = {};
@@ -2681,13 +2700,24 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
 
         // Getter-based matching: check for .getXxx() calls in endpoint region
         // that correspond to @Value field names (e.g., config.getSomeUrl() -> someUrl)
-        if (directUrls.length === 0 && ep.regionText && parsed.valueProps) {
+        // Uses both the controller's own @Value (parsed.valueProps) and project-wide
+        // @Value map (globalValueProps) to handle PropertyUtil/config beans
+        if (directUrls.length === 0 && ep.regionText) {
+          var getterSrc = (parsed.valueProps || []).map(function(p) { return p; });
+          // Merge in global valueProps entries not already in parsed.valueProps
+          if (Object.keys(globalValueProps).length > 0) {
+            var seenKeys = {};
+            getterSrc.forEach(function(p) { seenKeys[p.key] = true; });
+            for (var gkName in globalValueProps) {
+              if (!seenKeys[gkName]) getterSrc.push({ key: gkName, fieldName: globalValueProps[gkName] });
+            }
+          }
           for (var gi = 0; gi < keysToTrace.length; gi++) {
             var gk = keysToTrace[gi];
             var gu = urlKeyUsage[gk];
             if (!gu) continue;
-            for (var gvi = 0; gvi < parsed.valueProps.length; gvi++) {
-              var gvp = parsed.valueProps[gvi];
+            for (var gvi = 0; gvi < getterSrc.length; gvi++) {
+              var gvp = getterSrc[gvi];
               if (gvp.key === gk && gvp.fieldName) {
                 var getterPatt = '.get' + gvp.fieldName.charAt(0).toUpperCase() + gvp.fieldName.slice(1) + '(';
                 if (ep.regionText.indexOf(getterPatt) >= 0) {
@@ -2765,6 +2795,22 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
                   var dDeepType = dam[2] || dam[1];
                   if (!dDeepType || dDeepType === 'Autowired' || dDeepType.startsWith('@')) continue;
                   var configImpls = await findServiceImplFiles(baseUrl, token, proj.id, dDeepType, branch, signal);
+
+                  // Parse config bean implementations for their own @Value annotations
+                  // to get correct key→fieldName mapping for getter matching
+                  var configValueProps = [];
+                  for (var cvi = 0; cvi < configImpls.length; cvi++) {
+                    try {
+                      var cvContent = await getFileContent(baseUrl, token, proj.id, configImpls[cvi], branch, signal);
+                      var cvClean = cvContent.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+                      var cvfRe = /@Value\s*\(\s*["']\$\{([^}]+)\}["']\s*\)([^;=]*?)(\w+)\s*(?:;|=)/g;
+                      var cvf;
+                      while ((cvf = cvfRe.exec(cvClean)) !== null) {
+                        configValueProps.push({ key: cvf[1], fieldName: cvf[3] });
+                      }
+                    } catch {}
+                  }
+
                   for (var ki2 = 0; ki2 < keysToTrace.length; ki2++) {
                     var k3 = keysToTrace[ki2];
                     var u3 = urlKeyUsage[k3];
@@ -2774,17 +2820,24 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
                       indirectUrls.push({ url: u3.url, key: u3.key, propFile: u3.propFile || '' });
                     }
                   }
-                  // Also check for getter method calls matching URL key field names
+
+                  // Check for getter method calls in the service file matching URL key field names.
+                  // Use configValueProps (from the config bean's own @Value annotations) instead of
+                  // controller's valueProps — the config bean is where @Value lives, not the controller.
+                  var getterValueProps = configValueProps.length > 0 ? configValueProps : [];
+                  if (getterValueProps.length === 0 && parsed.valueProps && parsed.valueProps.length > 0) getterValueProps = parsed.valueProps;
+                  if (getterValueProps.length === 0) {
+                    var gkNames = Object.keys(globalValueProps);
+                    if (gkNames.length > 0) getterValueProps = gkNames.map(function(gk) { return { key: gk, fieldName: globalValueProps[gk] }; });
+                  }
                   for (var ki3 = 0; ki3 < keysToTrace.length; ki3++) {
                     var k4 = keysToTrace[ki3];
                     var u4 = urlKeyUsage[k4];
                     if (!u4) continue;
-                    // Check if service file calls any config bean method named like getXxx()
-                    // that corresponds to a URL key (fieldName -> getFieldName pattern)
-                    for (var vpi = 0; vpi < parsed.valueProps.length; vpi++) {
-                      var vp = parsed.valueProps[vpi];
-                      if (vp.key === k4 && vp.fieldName) {
-                        var getterPattern = '.get' + vp.fieldName.charAt(0).toUpperCase() + vp.fieldName.slice(1) + '(';
+                    for (var gvi = 0; gvi < getterValueProps.length; gvi++) {
+                      var gvp = getterValueProps[gvi];
+                      if (gvp.key === k4 && gvp.fieldName) {
+                        var getterPattern = '.get' + gvp.fieldName.charAt(0).toUpperCase() + gvp.fieldName.slice(1) + '(';
                         if (svcContent.indexOf(getterPattern) >= 0) {
                           indirectUrls.push({ url: u4.url, key: u4.key, propFile: u4.propFile || '' });
                         }
