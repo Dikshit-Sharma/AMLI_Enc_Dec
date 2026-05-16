@@ -2534,7 +2534,7 @@ async function scanApiLib(forceRefresh) {
     } catch {}
   }
 
-  let projects = cachedDash && cachedDash.rawProjects ? cachedDash.rawProjects : null;
+  let projects = (!forceRefresh && cachedDash && cachedDash.rawProjects) ? cachedDash.rawProjects : null;
   if (!projects || projects.length === 0) {
     $('apiLibProgressText').textContent = 'Fetching projects from GitLab...';
     projects = await fetchApiLibProjects(baseUrl, token);
@@ -2679,6 +2679,31 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
           }
         });
 
+        // Getter-based matching: check for .getXxx() calls in endpoint region
+        // that correspond to @Value field names (e.g., config.getSomeUrl() -> someUrl)
+        if (directUrls.length === 0 && ep.regionText && parsed.valueProps) {
+          for (var gi = 0; gi < keysToTrace.length; gi++) {
+            var gk = keysToTrace[gi];
+            var gu = urlKeyUsage[gk];
+            if (!gu) continue;
+            for (var gvi = 0; gvi < parsed.valueProps.length; gvi++) {
+              var gvp = parsed.valueProps[gvi];
+              if (gvp.key === gk && gvp.fieldName) {
+                var getterPatt = '.get' + gvp.fieldName.charAt(0).toUpperCase() + gvp.fieldName.slice(1) + '(';
+                if (ep.regionText.indexOf(getterPatt) >= 0) {
+                  directUrls.push({ url: gu.url, key: gu.key, propFile: gu.propFile || '' });
+                  var glines = content.split('\n');
+                  var gli = glines.findIndex(function(l) { return l.includes(getterPatt); });
+                  if (gli >= 0) {
+                    var gs = glines.slice(Math.max(0, gli - 1), gli + 2).join('\n').trim();
+                    matchedRefs.push({ file: cf, line: gli + 1, snippet: gs || getterPatt });
+                  }
+                }
+              }
+            }
+          }
+        }
+
         // Indirect matches: check autowired services called by this endpoint
         // If an autowired fieldName appears in the endpoint region,
         // find URL keys used in that service's implementation files
@@ -2708,6 +2733,64 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
                 var usedInSvc = svcFiles.some(function(sf) { return u2.usageFiles.indexOf(sf) >= 0; });
                 if (usedInSvc) {
                   indirectUrls.push({ url: u2.url, key: u2.key, propFile: u2.propFile || '' });
+                }
+              }
+            } catch {}
+          }
+        }
+
+        // Deep indirect tracing: check if autowired services themselves autowire
+        // config beans that have @Value URL references (2-level chaining)
+        if (indirectUrls.length === 0 && ep.matchedAutowiredFieldNames && ep.matchedAutowiredFieldNames.length > 0) {
+          for (var dai = 0; dai < ep.matchedAutowiredFieldNames.length; dai++) {
+            var dfld = ep.matchedAutowiredFieldNames[dai];
+            var dAutoType = null;
+            for (var dati = 0; dati < parsed.autowiredTypes.length; dati++) {
+              if (parsed.autowiredTypes[dati].fieldName === dfld) {
+                dAutoType = parsed.autowiredTypes[dati].type;
+                break;
+              }
+            }
+            if (!dAutoType) continue;
+            if (signal.aborted) throw new Error('Cancelled');
+            try {
+              var dimpls = await findServiceImplFiles(baseUrl, token, proj.id, dAutoType, branch, signal);
+              for (var di = 0; di < dimpls.length; di++) {
+                var svcContent = await getFileContent(baseUrl, token, proj.id, dimpls[di], branch, signal);
+                var svcClean = svcContent.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+                // Find @Autowired fields in this service file (config beans)
+                var deepAutoRe = /@Autowired[^;]*?(?:private\s+)?(\w+)(?:<([^>]+)>)?\s+(\w+)\s*;/g;
+                var dam;
+                while ((dam = deepAutoRe.exec(svcClean)) !== null) {
+                  var dDeepType = dam[2] || dam[1];
+                  if (!dDeepType || dDeepType === 'Autowired' || dDeepType.startsWith('@')) continue;
+                  var configImpls = await findServiceImplFiles(baseUrl, token, proj.id, dDeepType, branch, signal);
+                  for (var ki2 = 0; ki2 < keysToTrace.length; ki2++) {
+                    var k3 = keysToTrace[ki2];
+                    var u3 = urlKeyUsage[k3];
+                    if (!u3 || u3.usageFiles.length === 0) continue;
+                    var usedInConfig = configImpls.some(function(cfi) { return u3.usageFiles.indexOf(cfi) >= 0; });
+                    if (usedInConfig) {
+                      indirectUrls.push({ url: u3.url, key: u3.key, propFile: u3.propFile || '' });
+                    }
+                  }
+                  // Also check for getter method calls matching URL key field names
+                  for (var ki3 = 0; ki3 < keysToTrace.length; ki3++) {
+                    var k4 = keysToTrace[ki3];
+                    var u4 = urlKeyUsage[k4];
+                    if (!u4) continue;
+                    // Check if service file calls any config bean method named like getXxx()
+                    // that corresponds to a URL key (fieldName -> getFieldName pattern)
+                    for (var vpi = 0; vpi < parsed.valueProps.length; vpi++) {
+                      var vp = parsed.valueProps[vpi];
+                      if (vp.key === k4 && vp.fieldName) {
+                        var getterPattern = '.get' + vp.fieldName.charAt(0).toUpperCase() + vp.fieldName.slice(1) + '(';
+                        if (svcContent.indexOf(getterPattern) >= 0) {
+                          indirectUrls.push({ url: u4.url, key: u4.key, propFile: u4.propFile || '' });
+                        }
+                      }
+                    }
+                  }
                 }
               }
             } catch {}
@@ -2833,7 +2916,7 @@ function parseUrlProperties(content, filePath) {
 
 async function findControllerFiles(baseUrl, token, projId, branch, signal) {
   const files = new Set();
-  // Paginated search for @RestController files (no limit on results)
+  // Paginated search for @RestController files
   try {
     const results = await paginate(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@RestController' }, token, signal);
     if (Array.isArray(results)) results.forEach(x => { if (x.filename && x.filename.endsWith('.java')) files.add(x.filename); });
@@ -2842,6 +2925,20 @@ async function findControllerFiles(baseUrl, token, projId, branch, signal) {
   try {
     const results = await paginate(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@Controller' }, token, signal);
     if (Array.isArray(results)) results.forEach(x => { if (x.filename && x.filename.endsWith('.java') && !x.filename.endsWith('Test.java')) files.add(x.filename); });
+  } catch {}
+  // Fallback: use repository tree to find ALL Java files with "Controller" in path
+  // (catches files the search API may have missed due to indexing limits)
+  try {
+    const tree = await paginate(baseUrl, `/projects/${projId}/repository/tree`, { recursive: true, per_page: 100, ref: branch }, token, signal);
+    if (Array.isArray(tree)) {
+      tree.forEach(function(item) {
+        if (item.type === 'blob' && item.path.endsWith('.java') &&
+            (item.path.includes('Controller') || item.path.includes('controller')) &&
+            !item.path.endsWith('Test.java')) {
+          files.add(item.path);
+        }
+      });
+    }
   } catch {}
   return [...files];
 }
