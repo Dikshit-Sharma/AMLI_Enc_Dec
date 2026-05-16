@@ -2555,20 +2555,36 @@ async function scanApiLib(forceRefresh) {
   let ctrlCount = 0;
   var allUnlinkedUrls = [];
 
-  for (let i = 0; i < projects.length; i++) {
+  // Scan projects concurrently (up to CONCURRENT_PROJECTS at a time)
+  const CONCURRENT_PROJECTS = 3;
+  let completedProjects = 0;
+  for (let pi = 0; pi < projects.length; pi += CONCURRENT_PROJECTS) {
     if (signal.aborted) { setStatus('Cancelled'); hide('apiLibProgress'); return; }
-    const proj = projects[i];
-    const pn = proj.name || proj.path_with_namespace || `Project ${proj.id}`;
-    $('apiLibProgressText').textContent = `[${i + 1}/${projects.length}] ${pn}...`;
-    $('apiLibProgressBar').style.width = Math.round((i / projects.length) * 100) + '%';
-    await new Promise(r => setTimeout(r, 0));
-
-    try {
-      const r = await scanProjectControllers(baseUrl, token, proj, signal);
+    const batch = projects.slice(pi, pi + CONCURRENT_PROJECTS);
+    var batchResults = await Promise.all(batch.map(async function(proj) {
+      if (signal.aborted) return null;
+      try {
+        return { proj, result: await scanProjectControllers(baseUrl, token, proj, signal) };
+      } catch (err) {
+        if (err.message === 'Cancelled') throw err;
+        return null;
+      }
+    }));
+    for (var bri = 0; bri < batchResults.length; bri++) {
+      if (signal.aborted) { setStatus('Cancelled'); hide('apiLibProgress'); return; }
+      var br = batchResults[bri];
+      if (!br) continue;
+      var proj = br.proj;
+      var r = br.result;
+      var pn = proj.name || proj.path_with_namespace || 'Project ' + proj.id;
+      completedProjects++;
+      $('apiLibProgressText').textContent = '[' + completedProjects + '/' + projects.length + '] ' + pn + '...';
+      $('apiLibProgressBar').style.width = Math.round((completedProjects / projects.length) * 100) + '%';
+      await new Promise(function(res) { return setTimeout(res, 0); });
       if (r.endpoints.length > 0) {
         for (const ep of r.endpoints) {
           ep.repoName = pn;
-          ep.repoUrl = proj.web_url || `${baseUrl.replace(/\/api\/v4\/?$/, '')}/${proj.path_with_namespace || pn}`;
+          ep.repoUrl = proj.web_url || (baseUrl.replace(/\/api\/v4\/?$/, '') + '/' + (proj.path_with_namespace || pn));
           allEndpoints.push(ep);
         }
         fsProjects.push({ id: proj.id, name: pn, webUrl: proj.web_url || '', endpoints: r.endpoints });
@@ -2578,8 +2594,6 @@ async function scanApiLib(forceRefresh) {
         r.unlinkedUrls.forEach(function(u) { u.repoName = pn; u.repoUrl = proj.web_url || ''; });
         allUnlinkedUrls = allUnlinkedUrls.concat(r.unlinkedUrls);
       }
-    } catch (err) {
-      if (err.message === 'Cancelled') { setStatus('Cancelled'); hide('apiLibProgress'); return; }
     }
   }
 
@@ -2631,21 +2645,28 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
   }
 
   const keysToTrace = Object.keys(urlKeyUsage);
-  for (const k of keysToTrace) {
+  // Batch URL key searches concurrently (single-page each, no paginate needed)
+  var searchKeyUsage = async function(sk) {
     if (signal.aborted) throw new Error('Cancelled');
     try {
-      const r = await apiFetch(baseUrl, '/projects/' + proj.id + '/search', { scope: 'blobs', search: '${' + k + '}', ref: branch, per_page: 100 }, token, signal);
-      const d = await r.json();
-      if (Array.isArray(d)) {
-        d.forEach(function(x) {
+      const r2 = await apiFetch(baseUrl, '/projects/' + proj.id + '/search', { scope: 'blobs', search: '${' + sk + '}', ref: branch, per_page: 100 }, token, signal);
+      const d2 = await r2.json();
+      if (Array.isArray(d2)) {
+        d2.forEach(function(x) {
           if (x.filename && x.data) {
-            const lines = (x.data || '').split('\n');
-            const hasRef = lines.some(function(l) { return l.includes('${' + k + '}') || l.includes("${" + k + "}"); });
-            if (hasRef) urlKeyUsage[k].usageFiles.push(x.filename);
+            var lines2 = (x.data || '').split('\n');
+            if (lines2.some(function(l) { return l.includes('${' + sk + '}') || l.includes("${" + sk + "}"); })) {
+              urlKeyUsage[sk].usageFiles.push(x.filename);
+            }
           }
         });
       }
     } catch {}
+  };
+  const CONCURRENT_SEARCHES = 8;
+  for (var ski = 0; ski < keysToTrace.length; ski += CONCURRENT_SEARCHES) {
+    if (signal.aborted) throw new Error('Cancelled');
+    await Promise.all(keysToTrace.slice(ski, ski + CONCURRENT_SEARCHES).map(searchKeyUsage));
   }
 
   // Build global @Value key→fieldName map from project-wide Java files
@@ -2667,6 +2688,18 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
     }
   } catch {}
 
+  // Per-project caches to avoid duplicate API calls
+  const fileCache = {};
+  async function cachedGetFileContent(fp) {
+    if (!fileCache[fp]) fileCache[fp] = getFileContent(baseUrl, token, proj.id, fp, branch, signal);
+    return fileCache[fp];
+  }
+  const svcImplCache = {};
+  async function cachedFindServiceImplFiles(typeName) {
+    if (!svcImplCache[typeName]) svcImplCache[typeName] = findServiceImplFiles(baseUrl, token, proj.id, typeName, branch, signal);
+    return svcImplCache[typeName];
+  }
+
   const endpoints = [];
   const usedUrlKeys = {};
   const unusedUrlKeys = {};
@@ -2674,7 +2707,7 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
   for (const cf of ctrlFiles) {
     if (signal.aborted) throw new Error('Cancelled');
     try {
-      const content = await getFileContent(baseUrl, token, proj.id, cf, branch, signal);
+      const content = await cachedGetFileContent(cf);
       const parsed = parseControllerFile(content, cf);
       if (parsed.endpoints.length === 0 && !parsed.className) continue;
 
@@ -2753,7 +2786,7 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
             if (!autoType) continue;
             if (signal.aborted) throw new Error('Cancelled');
             try {
-              var impls = await findServiceImplFiles(baseUrl, token, proj.id, autoType, branch, signal);
+              var impls = await cachedFindServiceImplFiles(autoType);
               var svcFiles = impls;
               // Check each URL key for usage in these service files
               for (var ki = 0; ki < keysToTrace.length; ki++) {
@@ -2784,9 +2817,9 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
             if (!dAutoType) continue;
             if (signal.aborted) throw new Error('Cancelled');
             try {
-              var dimpls = await findServiceImplFiles(baseUrl, token, proj.id, dAutoType, branch, signal);
+              var dimpls = await cachedFindServiceImplFiles(dAutoType);
               for (var di = 0; di < dimpls.length; di++) {
-                var svcContent = await getFileContent(baseUrl, token, proj.id, dimpls[di], branch, signal);
+                var svcContent = await cachedGetFileContent(dimpls[di]);
                 var svcClean = svcContent.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
                 // Find @Autowired fields in this service file (config beans)
                 var deepAutoRe = /@Autowired[^;]*?(?:private\s+)?(\w+)(?:<([^>]+)>)?\s+(\w+)\s*;/g;
@@ -2794,14 +2827,14 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
                 while ((dam = deepAutoRe.exec(svcClean)) !== null) {
                   var dDeepType = dam[2] || dam[1];
                   if (!dDeepType || dDeepType === 'Autowired' || dDeepType.startsWith('@')) continue;
-                  var configImpls = await findServiceImplFiles(baseUrl, token, proj.id, dDeepType, branch, signal);
+                  var configImpls = await cachedFindServiceImplFiles(dDeepType);
 
                   // Parse config bean implementations for their own @Value annotations
                   // to get correct key→fieldName mapping for getter matching
                   var configValueProps = [];
                   for (var cvi = 0; cvi < configImpls.length; cvi++) {
                     try {
-                      var cvContent = await getFileContent(baseUrl, token, proj.id, configImpls[cvi], branch, signal);
+                      var cvContent = await cachedGetFileContent(configImpls[cvi]);
                       var cvClean = cvContent.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
                       var cvfRe = /@Value\s*\(\s*["']\$\{([^}]+)\}["']\s*\)([^;=]*?)(\w+)\s*(?:;|=)/g;
                       var cvf;
