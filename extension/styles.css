@@ -882,7 +882,7 @@ tr:hover { background: var(--bg-hover); }
   box-shadow: 0 0 0 3px var(--primary-glow);
 }
 #viewApiLib .table-wrap {
-  max-height: 600px;
+  max-height: none;
 }
 #viewApiLib .table-wrap table { min-width: 900px; }
 #viewApiLib .table-wrap td, #viewApiLib .table-wrap th { white-space: normal; vertical-align: top; }

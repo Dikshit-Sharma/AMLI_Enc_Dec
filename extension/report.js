@@ -2634,7 +2634,7 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
   for (const k of keysToTrace) {
     if (signal.aborted) throw new Error('Cancelled');
     try {
-      const r = await apiFetch(baseUrl, '/projects/' + proj.id + '/search', { scope: 'blobs', search: '${' + k + '}', ref: branch, per_page: 30 }, token, signal);
+      const r = await apiFetch(baseUrl, '/projects/' + proj.id + '/search', { scope: 'blobs', search: '${' + k + '}', ref: branch, per_page: 100 }, token, signal);
       const d = await r.json();
       if (Array.isArray(d)) {
         d.forEach(function(x) {
@@ -2699,7 +2699,7 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
             if (signal.aborted) throw new Error('Cancelled');
             try {
               var impls = await findServiceImplFiles(baseUrl, token, proj.id, autoType, branch, signal);
-              var svcFiles = impls.slice(0, 2);
+              var svcFiles = impls;
               // Check each URL key for usage in these service files
               for (var ki = 0; ki < keysToTrace.length; ki++) {
                 var k2 = keysToTrace[ki];
@@ -2716,15 +2716,14 @@ async function scanProjectControllers(baseUrl, token, proj, signal) {
 
         var allUrls = directUrls.length > 0 ? directUrls : indirectUrls;
 
-        // File-level fallback: if per-method matching found nothing,
-        // check all URL keys used ANYWHERE in this controller file
-        if (allUrls.length === 0) {
+        // Method-level fallback: check if ${key} appears directly in this endpoint's region text
+        // (more precise than file-level matching)
+        if (allUrls.length === 0 && ep.regionText) {
           for (var fi = 0; fi < keysToTrace.length; fi++) {
             var fk = keysToTrace[fi];
             var fu = urlKeyUsage[fk];
-            if (fu && fu.usageFiles.indexOf(cf) >= 0) {
-              var exists = allUrls.some(function(x) { return x.key === fk; });
-              if (!exists) allUrls.push({ url: fu.url, key: fu.key, propFile: fu.propFile || '' });
+            if (fu && ep.regionText.indexOf('${' + fk + '}') >= 0) {
+              allUrls.push({ url: fu.url, key: fu.key, propFile: fu.propFile || '' });
             }
           }
         }
@@ -2946,7 +2945,7 @@ function parseControllerFile(content, filePath) {
   // Build endpoints with per-method matched keys
   for (var i = 0; i < annotations.length; i++) {
     var a = annotations[i];
-    var ep = { method: a.method, path: a.path, matchedKeys: [] };
+    var ep = { method: a.method, path: a.path, matchedKeys: [], regionText: regionText };
 
     // Determine region text for this endpoint: from this annotation to next one or EOF
     var regionStart = a.pos;
@@ -3015,13 +3014,13 @@ function extractValueProps(content) {
 async function findServiceImplFiles(baseUrl, token, projId, typeName, branch, signal) {
   const results = new Set();
   try {
-    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: typeName, per_page: 20 }, token, signal);
+    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: typeName, per_page: 100 }, token, signal);
     const d = await r.json();
     if (Array.isArray(d)) d.forEach(x => {
       if (x.filename && x.filename.endsWith('.java') && x.data && (x.data.includes('class ') || x.data.includes('@Service') || x.data.includes('implements'))) results.add(x.filename);
     });
   } catch {}
-  return [...results].slice(0, 3);
+  return [...results];
 }
 
 // ─── Render table (no nested backticks) ──────────────────
@@ -3290,6 +3289,21 @@ function buildApiLibDepmap(container) {
   var endpointColor = '#6366f1';
   var backendUrlColor = '#10b981';
   var usedEndpoints = apiLibData.filter(function(e) { return e.backendUrls && e.backendUrls.length > 0; });
+
+  // Cap 3D nodes for performance (the table shows ALL data, the 3D view is a visualization)
+  var MAX_3D_NODES = 300;
+  var totalPotentialNodes = 0;
+  usedEndpoints.forEach(function(ep) {
+    totalPotentialNodes += 1 + (ep.backendUrls || []).length;
+  });
+  if (totalPotentialNodes > MAX_3D_NODES) {
+    var notice = document.createElement('div');
+    notice.style.cssText = 'position:absolute;top:10px;left:50%;transform:translateX(-50%);font-size:10px;background:rgba(245,158,11,0.9);color:#fff;padding:4px 12px;border-radius:4px;z-index:10;pointer-events:none';
+    notice.textContent = totalPotentialNodes + ' total nodes — showing first ' + MAX_3D_NODES + ' for performance. All data available in the table.';
+    container.appendChild(notice);
+    // Limit endpoints for 3D rendering
+    usedEndpoints = usedEndpoints.slice(0, 100);
+  }
 
   usedEndpoints.forEach(function(ep) {
     var epKey = 'ep:' + ep.endpoint + '|' + ep.repoName;
