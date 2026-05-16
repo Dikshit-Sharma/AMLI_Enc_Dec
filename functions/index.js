@@ -16,21 +16,55 @@ exports.artifacts = functions.region('us-central1').https.onRequest(async (req, 
 
   try {
     if (req.method === 'GET') {
-      const snapshot = await db
+      const search = (req.query.search || '').trim().toLowerCase();
+
+      // If searching, fetch ALL and filter server-side (Firestore has no CONTAINS)
+      if (search) {
+        const snapshot = await db
+          .collection('artifacts')
+          .orderBy('timestamp', 'desc')
+          .get();
+
+        let artifacts = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return { id: doc.id, ...data, timestamp: data.timestamp?.toDate?.().toISOString() ?? null };
+        });
+
+        artifacts = artifacts.filter(a =>
+          (a.apiName && a.apiName.toLowerCase().includes(search)) ||
+          (a.jiraTicket && a.jiraTicket.toLowerCase().includes(search)) ||
+          (a.env && a.env.toLowerCase().includes(search)) ||
+          (a.curl && a.curl.toLowerCase().includes(search))
+        );
+
+        res.json({ artifacts, total: artifacts.length });
+        return;
+      }
+
+      // Paginated: limit + cursor
+      const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+      const cursor = req.query.cursor || null;
+
+      let query = db
         .collection('artifacts')
         .orderBy('timestamp', 'desc')
-        .get();
+        .limit(limit + 1);
 
-      const artifacts = snapshot.docs.map((doc) => {
+      if (cursor) {
+        const cursorDoc = await db.collection('artifacts').doc(cursor).get();
+        if (cursorDoc.exists) query = query.startAfter(cursorDoc);
+      }
+
+      const snapshot = await query.get();
+      const docs = snapshot.docs.slice(0, limit);
+      const nextCursor = snapshot.docs.length > limit ? snapshot.docs[limit].id : null;
+
+      const artifacts = docs.map((doc) => {
         const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          timestamp: data.timestamp?.toDate?.().toISOString() ?? null,
-        };
+        return { id: doc.id, ...data, timestamp: data.timestamp?.toDate?.().toISOString() ?? null };
       });
 
-      res.json({ artifacts });
+      res.json({ artifacts, nextCursor, total: null });
       return;
     }
 

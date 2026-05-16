@@ -337,6 +337,10 @@ qsa('.nav-btn').forEach(btn => {
       if (viewId === 'viewLocReport') {
         setTimeout(() => $('locFormSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
       }
+      if (viewId === 'viewApiLib' && apiLibData.length > 0 && apiLibCacheKey === $('sBaseUrl').value.trim()) {
+        hide('apiLibWelcome');
+        renderApiLib(apiLibData);
+      }
     } else {
       show('screenWelcome');
     }
@@ -408,6 +412,8 @@ async function fetchDashboard(forceRefresh) {
   dashFilterContributors = [];
   if (dash3dActive) hideDashboard3D();
   lastDashData = null;
+  // Invalidate API LIB cache so it re-scans on next visit
+  try { localStorage.removeItem('rs_api_lib'); } catch {}
 
   abortController = new AbortController();
   const signal = abortController.signal;
@@ -2393,16 +2399,43 @@ async function runComparison(currentData, reportType) {
 // ═══════════════════════════════════════════════════════════
 let apiLibData = [];
 let apiLibAbortController = null;
+let apiLibCacheKey = null;
 
 $('apiLibScanBtn').addEventListener('click', () => scanApiLib());
 $('apiLibSearch').addEventListener('input', () => {
   if (apiLibData.length > 0) renderApiLib(apiLibData);
 });
 
-async function scanApiLib() {
+// Try loading cached API LIB data on page load
+try {
+  const cached = JSON.parse(localStorage.getItem('rs_api_lib') || 'null');
+  if (cached && cached.endpoints && cached.endpoints.length > 0) {
+    apiLibData = cached.endpoints;
+    apiLibCacheKey = cached.baseUrl;
+  }
+} catch {}
+
+function saveApiLibCache(endpoints) {
+  try {
+    const baseUrl = $('sBaseUrl').value.trim();
+    localStorage.setItem('rs_api_lib', JSON.stringify({
+      endpoints, baseUrl, ts: Date.now()
+    }));
+    apiLibCacheKey = baseUrl;
+  } catch {}
+}
+
+async function scanApiLib(forceRefresh) {
   const baseUrl = $('sBaseUrl').value.trim();
   const token = $('sToken').value.trim();
   if (!baseUrl || !token) { setStatus('Enter URL and token', true); return; }
+
+  // Try cache first (unless forced)
+  if (!forceRefresh && apiLibData.length > 0 && apiLibCacheKey === baseUrl) {
+    hide('apiLibWelcome');
+    renderApiLib(apiLibData);
+    return;
+  }
 
   if (!cachedDash || !cachedDash.rawProjects) {
     setStatus('Fetch dashboard first', true);
@@ -2435,7 +2468,6 @@ async function scanApiLib() {
     const pct = Math.round((i / projects.length) * 100);
     $('apiLibProgressText').textContent = `[${i + 1}/${projects.length}] ${projName}...`;
     $('apiLibProgressBar').style.width = pct + '%';
-    // Allow UI to breathe
     await new Promise(r => setTimeout(r, 0));
 
     try {
@@ -2461,6 +2493,7 @@ async function scanApiLib() {
   }
 
   apiLibData = allEndpoints;
+  saveApiLibCache(allEndpoints);
   renderApiLib(allEndpoints);
 
   const repoList = Object.keys(repoCounts);
@@ -2478,14 +2511,18 @@ async function scanApiLib() {
 async function scanProjectEndpoints(baseUrl, token, proj, signal) {
   if (signal.aborted) throw new Error('Cancelled');
 
-  const propFiles = await findPropertyFiles(baseUrl, token, proj.id, signal);
+  // Find the branch with the latest commit
+  const branch = await findLatestBranch(baseUrl, token, proj.id, signal);
+  if (!branch) return [];
+
+  const propFiles = await findPropertyFiles(baseUrl, token, proj.id, branch, signal);
   if (propFiles.length === 0) return [];
 
   const endpoints = [];
   for (const filePath of propFiles) {
     if (signal.aborted) throw new Error('Cancelled');
     try {
-      const content = await getFileContent(baseUrl, token, proj.id, filePath, signal);
+      const content = await getFileContent(baseUrl, token, proj.id, filePath, branch, signal);
       const props = parseUrlProperties(content, filePath);
       endpoints.push(...props);
     } catch {}
@@ -2496,7 +2533,7 @@ async function scanProjectEndpoints(baseUrl, token, proj, signal) {
   for (const ep of endpoints) {
     if (signal.aborted) throw new Error('Cancelled');
     try {
-      ep.usages = await tracePropertyUsage(baseUrl, token, proj.id, ep.key, signal);
+      ep.usages = await tracePropertyUsage(baseUrl, token, proj.id, ep.key, branch, signal);
     } catch {
       ep.usages = [];
     }
@@ -2505,9 +2542,27 @@ async function scanProjectEndpoints(baseUrl, token, proj, signal) {
   return endpoints;
 }
 
-async function findPropertyFiles(baseUrl, token, projId, signal) {
+async function findLatestBranch(baseUrl, token, projId, signal) {
+  try {
+    const branches = await paginate(baseUrl, `/projects/${projId}/repository/branches`, {
+      per_page: 100
+    }, token, signal);
+    if (branches.length === 0) return null;
+    branches.sort((a, b) => new Date(b.commit.committed_date) - new Date(a.commit.committed_date));
+    return branches[0].name;
+  } catch {
+    // Fall back to default branch
+    try {
+      const projRes = await apiFetch(baseUrl, `/projects/${projId}`, {}, token, signal);
+      const projData = await projRes.json();
+      return projData.default_branch || 'main';
+    } catch { return null; }
+  }
+}
+
+async function findPropertyFiles(baseUrl, token, projId, ref, signal) {
   const items = await paginate(baseUrl, `/projects/${projId}/repository/tree`, {
-    recursive: true, per_page: 100
+    recursive: true, per_page: 100, ref
   }, token, signal);
   const exts = ['.properties', '.yml', '.yaml'];
   return items
@@ -2515,9 +2570,9 @@ async function findPropertyFiles(baseUrl, token, projId, signal) {
     .map(i => i.path);
 }
 
-async function getFileContent(baseUrl, token, projId, filePath, signal) {
+async function getFileContent(baseUrl, token, projId, filePath, ref, signal) {
   const enc = encodeURIComponent(filePath);
-  const res = await apiFetch(baseUrl, `/projects/${projId}/repository/files/${enc}/raw`, {}, token, signal);
+  const res = await apiFetch(baseUrl, `/projects/${projId}/repository/files/${enc}/raw`, { ref }, token, signal);
   return await res.text();
 }
 
@@ -2572,17 +2627,16 @@ function parseUrlProperties(content, filePath) {
   return results;
 }
 
-async function tracePropertyUsage(baseUrl, token, projId, propKey, signal) {
+async function tracePropertyUsage(baseUrl, token, projId, propKey, ref, signal) {
   const usages = [];
   try {
     const res = await apiFetch(baseUrl, `/projects/${projId}/search`, {
-      scope: 'blobs', search: propKey
+      scope: 'blobs', search: propKey, ref
     }, token, signal);
     const data = await res.json();
     if (Array.isArray(data)) {
       for (const r of data.slice(0, 10)) {
         const snippet = r.data || '';
-        // Find the relevant line around the match
         const lines = snippet.split('\n');
         const matchIdx = lines.findIndex(l => l.includes(propKey));
         const ctxStart = Math.max(0, matchIdx - 1);
@@ -2658,13 +2712,11 @@ function renderApiLib(data) {
     </table>
   `;
 
-  // Row click toggles detail
   wrap.querySelectorAll('.api-lib-row').forEach(row => {
     row.addEventListener('click', () => {
       const idx = row.dataset.idx;
       const detailRow = wrap.querySelector(`.api-lib-detail-row[data-parent="${idx}"]`);
       const isVisible = detailRow.style.display !== 'none';
-      // Close all others
       wrap.querySelectorAll('.api-lib-detail-row').forEach(r => r.style.display = 'none');
       wrap.querySelectorAll('.api-lib-row').forEach(r => r.classList.remove('api-lib-row--active'));
       if (!isVisible) {

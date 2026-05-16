@@ -28,6 +28,8 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   const [pageNum, setPageNum] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [searchAll, setSearchAll] = useState([]);
+  const [searchingAll, setSearchingAll] = useState(false);
 
   const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
@@ -46,12 +48,37 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     }
   };
 
+  const doSearch = async (term) => {
+    if (!term.trim()) {
+      setSearchAll([]);
+      setSearchingAll(false);
+      return;
+    }
+    setSearchingAll(true);
+    try {
+      const res = await fetchArtifacts({ search: term });
+      setSearchAll(res.artifacts || []);
+      if (res.total !== undefined) setTotalCount(res.total);
+    } catch (err) {
+      console.error('Search failed:', err);
+      setSearchAll([]);
+    } finally {
+      setSearchingAll(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) return;
     loadPage(null);
     setCursorStack([]);
     setPageNum(1);
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const timer = setTimeout(() => doSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm, isAuthenticated]);
 
   const handleNextPage = () => {
     if (!nextCursor) return;
@@ -80,16 +107,8 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     }
   };
 
-  const filteredArtifacts = artifacts.filter((art) => {
-    if (!searchTerm) return true;
-    const q = searchTerm.toLowerCase();
-    return (
-      art.apiName?.toLowerCase().includes(q) ||
-      art.jiraTicket?.toLowerCase().includes(q) ||
-      art.env?.toLowerCase().includes(q) ||
-      art.curl?.toLowerCase().includes(q)
-    );
-  });
+  // Use server-side search results when searching, otherwise paginated data
+  const displayArtifacts = searchTerm.trim() ? searchAll : artifacts;
 
   const [copyStatus, setCopyStatus] = useState({});
   const [downloadingStatus, setDownloadingStatus] = useState({});
@@ -298,7 +317,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
           />
           {searchTerm && (
             <div style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              {filteredArtifacts.length} of {artifacts.length} on this page match
+              Found {displayArtifacts.length} match{displayArtifacts.length !== 1 ? 'es' : ''} across all pages
             </div>
           )}
         </div>
@@ -338,8 +357,8 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredArtifacts.length > 0 ? (
-                    filteredArtifacts.map((art, index) => (
+                  {displayArtifacts.length > 0 ? (
+                    displayArtifacts.map((art, index) => (
                       <React.Fragment key={art.id}>
                         <tr
                           style={{ cursor: 'pointer' }}
@@ -360,7 +379,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                               }}
                             />
                           </td>
-                          <td>{(pageNum - 1) * PAGE_SIZE + index + 1}</td>
+                          <td>{searchTerm.trim() ? index + 1 : (pageNum - 1) * PAGE_SIZE + index + 1}</td>
                           <td style={{ fontWeight: 600 }}>
                             {expandedId === art.id ? '▼' : '▶'} {art.apiName}
                           </td>
@@ -445,10 +464,15 @@ const LibraryPage = ({ theme, toggleTheme }) => {
             </div>
           )}
 
+          {searchingAll && (
+            <div style={{ textAlign: 'center', padding: '1rem 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Searching all artifacts...
+            </div>
+          )}
           <div
             className="pagination-bar"
             style={{
-              display: 'flex',
+              display: searchTerm.trim() ? 'none' : 'flex',
               justifyContent: 'center',
               alignItems: 'center',
               gap: '1rem',
