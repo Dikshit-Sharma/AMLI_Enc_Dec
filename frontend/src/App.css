@@ -594,6 +594,11 @@ label {
   box-shadow: 0 0 0 4px var(--primary-glow);
 }
 
+.main-input.input-error, textarea.input-error {
+  border-color: var(--error, #dc2626);
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);
+}
+
 textarea {
   min-height: 100px;
   resize: none; /* Block manual resizing to prevent page breakage */

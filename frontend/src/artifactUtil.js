@@ -117,7 +117,9 @@ export function parseCurl(curlString) {
   }
 
   // Extract Body (--data / -d / --data-raw)
-  const bodyMatch = curlString.match(/-(?:d|-data(?:-raw)?)\s+["']({[\s\S]+?})["']/);
+  // Allow optional whitespace between closing } and closing quote to handle
+  // cases like -d '{"key":"value"} ' where trailing space is inside the quotes
+  const bodyMatch = curlString.match(/-(?:d|-data(?:-raw)?)\s+["']({[\s\S]+?})\s*["']/);
   if (bodyMatch) {
     try {
       result.body = JSON.parse(bodyMatch[1]);
