@@ -18,6 +18,7 @@
       <nav class="sidebar-nav">
         <button class="nav-btn active" data-view="dashboard">📊 Dashboard</button>
         <button class="nav-btn" data-view="loc-report">📋 LOC Report</button>
+        <button class="nav-btn" data-view="api-lib">🔌 API LIB</button>
       </nav>
 
       <div class="sidebar-config">
@@ -246,6 +247,97 @@
             </div>
           </div>
         </section>
+      </section>
+
+      <!-- ─── API LIB VIEW ─── -->
+      <section id="viewApiLib" style="display:none">
+        <header class="view-header">
+          <div>
+            <h2>🔌 API Library</h2>
+            <p class="view-subtitle">Controller API endpoints &amp; backend URLs consumed across all repos</p>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <input type="text" id="apiLibSearch" placeholder="Search endpoints..." style="padding:0.4rem 0.65rem;border:1px solid var(--border);border-radius:0.4rem;font-size:0.78rem;background:var(--bg-input);color:var(--text);font-family:inherit;width:160px">
+            <button class="btn-primary" id="apiLibScanBtn" style="font-size:0.72rem;padding:0.4rem 0.8rem">🔍 Scan</button>
+            <button class="btn-secondary" id="apiLibExportBtn" style="font-size:0.72rem;padding:0.4rem 0.8rem">📥 CSV</button>
+            <button class="btn-secondary" id="apiLibReportBtn" style="font-size:0.72rem;padding:0.4rem 0.8rem">📄 Report</button>
+            <label style="font-size:0.7rem;display:flex;align-items:center;gap:0.3rem;cursor:pointer">
+              <input type="checkbox" id="apiLibHasUrlToggle" checked> Has URL
+            </label>
+          </div>
+        </header>
+
+        <nav class="tab-bar" id="apiLibTabBar" style="margin-bottom:0.75rem;display:none">
+          <button class="tab-btn active" data-api-lib-tab="endpoints">📋 Endpoints</button>
+          <button class="tab-btn" data-api-lib-tab="overview">📊 Overview</button>
+          <button class="tab-btn" data-api-lib-tab="unlinked">🚫 Unlinked URLs</button>
+          <button class="tab-btn" data-api-lib-tab="depmap">🔗 Dependency Map</button>
+          <button class="tab-btn" data-api-lib-tab="crossrepo">🔄 Cross-Repo</button>
+        </nav>
+
+        <div id="apiLibProgress" style="display:none" class="loc-progress">
+          <div class="progress-text" id="apiLibProgressText">Scanning...</div>
+          <div class="progress-bar-bg"><div class="progress-bar-fill" id="apiLibProgressBar" style="width:0%"></div></div>
+        </div>
+
+        <div id="apiLibSummary" style="display:none" class="summary-grid"></div>
+
+        <!-- Endpoints tab -->
+        <div class="api-lib-tab-panel active" id="apiLibTabEndpoints">
+          <div id="apiLibResults" style="display:none">
+            <div id="apiLibTableWrap" class="table-wrap"></div>
+          </div>
+        </div>
+
+        <!-- Overview tab -->
+        <div class="api-lib-tab-panel" id="apiLibTabOverview" style="display:none">
+          <div class="chart-card">
+            <div class="chart-card-header"><h3>Endpoints per Repo</h3><span class="chart-hint">Count of API endpoints by repository</span></div>
+            <div class="chart-body" id="apiLibRepoChart"><div class="chart-empty">Scan repos to see chart</div></div>
+          </div>
+          <div class="chart-card" style="margin-top:1rem">
+            <div class="chart-card-header"><h3>HTTP Method Distribution</h3><span class="chart-hint">Breakdown by GET/POST/PUT/DELETE/PATCH</span></div>
+            <div class="chart-body" id="apiLibMethodChart"><div class="chart-empty">Scan repos to see chart</div></div>
+          </div>
+        </div>
+
+        <!-- Unlinked URLs tab -->
+        <div class="api-lib-tab-panel" id="apiLibTabUnlinked" style="display:none">
+          <div class="chart-card">
+            <div class="chart-card-header"><h3>🚫 Unlinked Backend URLs</h3><span class="chart-hint">URLs defined in property files not consumed by any controller</span></div>
+            <div class="chart-body" id="apiLibUnlinkedWrap"><div class="chart-empty">Scan repos to find unlinked URLs</div></div>
+          </div>
+        </div>
+
+        <!-- Dependency Map tab -->
+        <div class="api-lib-tab-panel" id="apiLibTabDepmap" style="display:none">
+          <div class="chart-card" style="min-height:520px;padding:0;position:relative;overflow:hidden">
+            <div class="chart-empty" id="depmapEmpty">Select an endpoint from the table to view its dependency chain in 3D</div>
+            <div id="depmapContainer" style="width:100%;height:520px;display:none"></div>
+          </div>
+        </div>
+
+        <!-- Cross-Repo tab -->
+        <div class="api-lib-tab-panel" id="apiLibTabCrossrepo" style="display:none">
+          <div class="chart-card" style="min-height:520px;padding:0;position:relative;overflow:hidden">
+            <div class="chart-empty" id="crossrepoEmpty">Cross-repo backend URL consumption graph. Scan repos to see.</div>
+            <div id="crossrepoContainer" style="width:100%;height:520px;display:none"></div>
+          </div>
+        </div>
+
+        <div id="apiLibEmpty" style="display:none" class="chart-card"><div class="chart-empty">No controller endpoints found in scanned repos.</div></div>
+
+        <div id="apiLibWelcome" class="chart-card">
+          <div class="chart-empty">
+            <strong>🔌 API Library</strong><br><br>
+            Scans all GitLab repos for Spring <code>@RestController</code> endpoints<br>
+            and traces which backend URLs (from property files) each controller consumes.<br><br>
+            <span style="font-size:0.75rem;color:var(--text-muted)">
+              Supports <code>application.properties</code>, <code>application.yml</code>, <code>@Value</code>, autowired service tracing.<br>
+              Click <strong>Scan</strong> to begin — results cached for fast reload.
+            </span>
+          </div>
+        </div>
       </section>
 
     </main>

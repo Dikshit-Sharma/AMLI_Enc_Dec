@@ -328,13 +328,58 @@ qsa('.nav-btn').forEach(btn => {
     hide('loadingBar');
     hide('viewDashboard');
     hide('viewLocReport');
-    const viewId = `view${btn.dataset.view === 'dashboard' ? 'Dashboard' : 'LocReport'}`;
-    const el = $(viewId);
+    hide('viewApiLib');
+    const viewMap = { dashboard: 'viewDashboard', 'loc-report': 'viewLocReport', 'api-lib': 'viewApiLib' };
+    const viewId = viewMap[btn.dataset.view] || '';
+    const el = viewId ? $(viewId) : null;
     if (el) {
       el.style.display = '';
-      // If loc report and no results yet, scroll form into view
       if (viewId === 'viewLocReport') {
         setTimeout(() => $('locFormSection')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+      }
+      if (viewId === 'viewApiLib') {
+        if (apiLibData.length > 0) {
+          hide('apiLibWelcome');
+          renderApiLib(apiLibData);
+        } else {
+          // Auto-load from cache on view switch
+          var baseUrl = $('sBaseUrl').value.trim();
+          var token = $('sToken').value.trim();
+          if (baseUrl && token) {
+            try {
+              var fnUrl = getFnUrl();
+              var tokHash = hashToken(token);
+              fetch(fnUrl + '?tokenHash=' + encodeURIComponent(tokHash) + '&baseUrl=' + encodeURIComponent(baseUrl))
+                .then(function(resp) { return resp.json(); })
+                .then(function(data) {
+                  if (data && data.projects && data.projects.length > 0) {
+                    var all = [];
+                    for (var pi = 0; pi < data.projects.length; pi++) {
+                      var p = data.projects[pi];
+                      for (var ei = 0; ei < (p.endpoints || []).length; ei++) {
+                        all.push(Object.assign({}, p.endpoints[ei], { repoName: p.projectName, repoUrl: p.projectUrl }));
+                      }
+                    }
+                    if (all.length > 0) {
+                      apiLibData = all;
+                      hide('apiLibWelcome');
+                      renderApiLib(all);
+                      var rs3 = new Set(all.map(function(e) { return e.repoName; }));
+                      var bs3 = new Set();
+                      all.forEach(function(e) { (e.backendUrls || []).forEach(function(b) { bs3.add(b.url); }); });
+                      var cs3 = new Set(all.map(function(e) { return e.controllerClass; }));
+                      $('apiLibSummary').style.display = '';
+                      $('apiLibSummary').innerHTML = '<div class="summary-card sc-items"><div class="sc-value">' + all.length + '</div><div class="sc-label">Endpoints</div></div><div class="summary-card sc-projects"><div class="sc-value">' + rs3.size + '</div><div class="sc-label">Repos</div></div><div class="summary-card sc-added"><div class="sc-value">' + bs3.size + '</div><div class="sc-label">Backend URLs</div></div><div class="summary-card sc-net"><div class="sc-value">' + cs3.size + '</div><div class="sc-label">Controllers</div></div>';
+                      $('apiLibTabBar').style.display = '';
+                      var ft3 = document.querySelector('#apiLibTabBar .tab-btn');
+                      if (ft3) ft3.click();
+                    }
+                  }
+                })
+                .catch(function() {});
+            } catch {}
+          }
+        }
       }
     } else {
       show('screenWelcome');
@@ -407,6 +452,7 @@ async function fetchDashboard(forceRefresh) {
   dashFilterContributors = [];
   if (dash3dActive) hideDashboard3D();
   lastDashData = null;
+
 
   abortController = new AbortController();
   const signal = abortController.signal;
@@ -2385,6 +2431,1578 @@ async function runComparison(currentData, reportType) {
     $('locCompareProgress').style.display = 'none';
     $('locCompareBtn').disabled = false;
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  API LIB
+// ═══════════════════════════════════════════════════════════
+let apiLibData = [];
+let apiLibUnlinkedUrls = [];
+let apiLibAbortController = null;
+
+$('apiLibScanBtn').addEventListener('click', () => scanApiLib(true));
+$('apiLibSearch').addEventListener('input', () => {
+  if (apiLibData.length > 0) renderApiLib(apiLibData);
+});
+$('apiLibExportBtn').addEventListener('click', exportApiLibCsv);
+$('apiLibReportBtn').addEventListener('click', downloadApiLibReport);
+$('apiLibHasUrlToggle').addEventListener('change', function() {
+  if (apiLibData.length > 0) renderApiLib(apiLibData);
+});
+
+// API LIB tab navigation
+document.querySelectorAll('#apiLibTabBar .tab-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('#apiLibTabBar .tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    document.querySelectorAll('.api-lib-tab-panel').forEach(function(p) { p.classList.remove('active'); p.style.display = 'none'; });
+    var tabId = 'apiLibTab' + btn.dataset.apiLibTab.charAt(0).toUpperCase() + btn.dataset.apiLibTab.slice(1);
+    var panel = $(tabId);
+    if (panel) { panel.classList.add('active'); panel.style.display = ''; }
+    // Activate tab-specific render
+    if (btn.dataset.apiLibTab === 'overview' && apiLibData.length > 0) renderApiLibOverview(apiLibData);
+    if (btn.dataset.apiLibTab === 'unlinked' && apiLibData.length > 0) renderApiLibUnlinked(apiLibData);
+    if (btn.dataset.apiLibTab === 'depmap') showApiLibDepmap();
+    if (btn.dataset.apiLibTab === 'crossrepo') showApiLibCrossrepo();
+  });
+});
+
+function getFnUrl() {
+  return 'https://amliai.netlify.app/api/api-lib-cache';
+}
+
+async function fetchApiLibProjects(baseUrl, token, signal) {
+  try {
+    return await paginate(baseUrl, '/projects', { membership: true, per_page: 100 }, token, signal);
+  } catch { return []; }
+}
+
+function hashToken(t) {
+  let h = 0;
+  for (let i = 0; i < t.length; i++) { h = ((h << 5) - h) + t.charCodeAt(i); h |= 0; }
+  return 'h' + Math.abs(h).toString(36);
+}
+
+// ─── Main scan ───────────────────────────────────────────
+async function scanApiLib(forceRefresh) {
+  const baseUrl = $('sBaseUrl').value.trim();
+  const token = $('sToken').value.trim();
+  if (!baseUrl || !token) { setStatus('Enter URL and token', true); return; }
+
+  hide('apiLibWelcome');
+  hide('apiLibEmpty');
+  hide('apiLibResults');
+  show('apiLibProgress');
+  $('apiLibProgressText').textContent = 'Loading...';
+  $('apiLibProgressBar').style.width = '0%';
+  $('apiLibSearch').value = '';
+
+  // Try Firestore cache first
+  if (!forceRefresh) {
+    try {
+      const fnUrl = getFnUrl();
+      const tokHash = hashToken(token);
+      const resp = await fetch(`${fnUrl}?tokenHash=${encodeURIComponent(tokHash)}&baseUrl=${encodeURIComponent(baseUrl)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.projects && data.projects.length > 0) {
+          const all = [];
+          for (const p of data.projects) {
+            for (const ep of (p.endpoints || [])) {
+              all.push({ ...ep, repoName: p.projectName, repoUrl: p.projectUrl });
+            }
+          }
+          if (all.length > 0) {
+            apiLibData = all;
+            hide('apiLibProgress');
+            renderApiLib(all);
+            // Show summary and tab bar for cached data
+            var repoSet2 = new Set(all.map(function(e) { return e.repoName; }));
+            var buSet2 = new Set();
+            all.forEach(function(e) { (e.backendUrls || []).forEach(function(b) { buSet2.add(b.url); }); });
+            var ctrlSet2 = new Set(all.map(function(e) { return e.controllerClass; }));
+            $('apiLibSummary').style.display = '';
+            $('apiLibSummary').innerHTML = '<div class="summary-card sc-items"><div class="sc-value">' + all.length + '</div><div class="sc-label">Endpoints</div></div><div class="summary-card sc-projects"><div class="sc-value">' + repoSet2.size + '</div><div class="sc-label">Repos</div></div><div class="summary-card sc-added"><div class="sc-value">' + buSet2.size + '</div><div class="sc-label">Backend URLs</div></div><div class="summary-card sc-net"><div class="sc-value">' + ctrlSet2.size + '</div><div class="sc-label">Controllers</div></div>';
+            $('apiLibTabBar').style.display = '';
+            var firstTab = document.querySelector('#apiLibTabBar .tab-btn');
+            if (firstTab) firstTab.click();
+            setStatus(all.length + ' endpoints (cached)');
+            return;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  let projects = (!forceRefresh && cachedDash && cachedDash.rawProjects) ? cachedDash.rawProjects : null;
+  if (!projects || projects.length === 0) {
+    $('apiLibProgressText').textContent = 'Fetching projects from GitLab...';
+    projects = await fetchApiLibProjects(baseUrl, token);
+    if (!projects || projects.length === 0) {
+      setStatus('No projects found. Enter GitLab URL and token in sidebar.', true);
+      hide('apiLibProgress');
+      return;
+    }
+  }
+
+  if (apiLibAbortController) apiLibAbortController.abort();
+  apiLibAbortController = new AbortController();
+  const signal = apiLibAbortController.signal;
+
+  setStatus('Scanning...');
+  const allEndpoints = [];
+  const fsProjects = [];
+  let ctrlCount = 0;
+  var allUnlinkedUrls = [];
+
+  // Scan projects concurrently (up to CONCURRENT_PROJECTS at a time)
+  const CONCURRENT_PROJECTS = 3;
+  let completedProjects = 0;
+  for (let pi = 0; pi < projects.length; pi += CONCURRENT_PROJECTS) {
+    if (signal.aborted) { setStatus('Cancelled'); hide('apiLibProgress'); return; }
+    const batch = projects.slice(pi, pi + CONCURRENT_PROJECTS);
+    var batchResults = await Promise.all(batch.map(async function(proj) {
+      if (signal.aborted) return null;
+      try {
+        return { proj, result: await scanProjectControllers(baseUrl, token, proj, signal) };
+      } catch (err) {
+        if (err.message === 'Cancelled') throw err;
+        return null;
+      }
+    }));
+    for (var bri = 0; bri < batchResults.length; bri++) {
+      if (signal.aborted) { setStatus('Cancelled'); hide('apiLibProgress'); return; }
+      var br = batchResults[bri];
+      if (!br) continue;
+      var proj = br.proj;
+      var r = br.result;
+      var pn = proj.name || proj.path_with_namespace || 'Project ' + proj.id;
+      completedProjects++;
+      $('apiLibProgressText').textContent = '[' + completedProjects + '/' + projects.length + '] ' + pn + '...';
+      $('apiLibProgressBar').style.width = Math.round((completedProjects / projects.length) * 100) + '%';
+      await new Promise(function(res) { return setTimeout(res, 0); });
+      if (r.endpoints.length > 0) {
+        for (const ep of r.endpoints) {
+          ep.repoName = pn;
+          ep.repoUrl = proj.web_url || (baseUrl.replace(/\/api\/v4\/?$/, '') + '/' + (proj.path_with_namespace || pn));
+          allEndpoints.push(ep);
+        }
+        fsProjects.push({ id: proj.id, name: pn, webUrl: proj.web_url || '', endpoints: r.endpoints });
+        ctrlCount += r.controllerCount;
+      }
+      if (r.unlinkedUrls && r.unlinkedUrls.length > 0) {
+        r.unlinkedUrls.forEach(function(u) { u.repoName = pn; u.repoUrl = proj.web_url || ''; });
+        allUnlinkedUrls = allUnlinkedUrls.concat(r.unlinkedUrls);
+      }
+    }
+  }
+
+  hide('apiLibProgress');
+  if (allEndpoints.length === 0) { show('apiLibEmpty'); setStatus('No controller endpoints found'); return; }
+
+  apiLibData = allEndpoints;
+  apiLibUnlinkedUrls = allUnlinkedUrls;
+  renderApiLib(allEndpoints);
+
+  // Save to Firestore cache
+  if (fsProjects.length > 0) {
+    try {
+      const fnUrl = getFnUrl();
+      await fetch(fnUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tokenHash: hashToken(token), baseUrl, projects: fsProjects }) });
+    } catch {}
+  }
+
+  const repoSet = new Set(allEndpoints.map(e => e.repoName));
+  const buSet = new Set();
+  allEndpoints.forEach(e => (e.backendUrls || []).forEach(b => buSet.add(b.url)));
+  $('apiLibSummary').style.display = '';
+  $('apiLibSummary').innerHTML = `
+    <div class="summary-card sc-items"><div class="sc-value">${allEndpoints.length}</div><div class="sc-label">Endpoints</div></div>
+    <div class="summary-card sc-projects"><div class="sc-value">${repoSet.size}</div><div class="sc-label">Repos</div></div>
+    <div class="summary-card sc-added"><div class="sc-value">${buSet.size}</div><div class="sc-label">Backend URLs</div></div>
+    <div class="summary-card sc-net"><div class="sc-value">${ctrlCount}</div><div class="sc-label">Controllers</div></div>`;
+  $('apiLibTabBar').style.display = '';
+  // Activate first tab
+  var firstTab = document.querySelector('#apiLibTabBar .tab-btn');
+  if (firstTab) firstTab.click();
+  setStatus(`${allEndpoints.length} endpoints, ${repoSet.size} repos`);
+}
+
+// ─── Per-project controller scan ─────────────────────────
+async function scanProjectControllers(baseUrl, token, proj, signal) {
+  const branch = await findLatestBranch(baseUrl, token, proj.id, signal);
+  if (!branch) return { endpoints: [], controllerCount: 0 };
+
+  const urlProps = await findUrlProperties(baseUrl, token, proj.id, branch, signal);
+  const ctrlFiles = await findControllerFiles(baseUrl, token, proj.id, branch, signal);
+  if (ctrlFiles.length === 0) return { endpoints: [], controllerCount: 0 };
+
+  // Backward chain: search ALL Java files (not just controllers) for each URL key usage
+  // Map: key → { url, propFile, key, usageFiles: [filename, ...] }
+  const urlKeyUsage = {};
+  for (const up of urlProps) {
+    urlKeyUsage[up.key] = { url: up.url, key: up.key, propFile: up.propFile, usageFiles: [] };
+  }
+
+  const keysToTrace = Object.keys(urlKeyUsage);
+  // Batch URL key searches concurrently (single-page each, no paginate needed)
+  var searchKeyUsage = async function(sk) {
+    if (signal.aborted) throw new Error('Cancelled');
+    try {
+      const r2 = await apiFetch(baseUrl, '/projects/' + proj.id + '/search', { scope: 'blobs', search: '${' + sk + '}', ref: branch, per_page: 100 }, token, signal);
+      const d2 = await r2.json();
+      if (Array.isArray(d2)) {
+        d2.forEach(function(x) {
+          if (x.filename && x.data) {
+            var lines2 = (x.data || '').split('\n');
+            if (lines2.some(function(l) { return l.includes('${' + sk + '}') || l.includes("${" + sk + "}"); })) {
+              urlKeyUsage[sk].usageFiles.push(x.filename);
+            }
+          }
+        });
+      }
+    } catch {}
+  };
+  const CONCURRENT_SEARCHES = 8;
+  for (var ski = 0; ski < keysToTrace.length; ski += CONCURRENT_SEARCHES) {
+    if (signal.aborted) throw new Error('Cancelled');
+    await Promise.all(keysToTrace.slice(ski, ski + CONCURRENT_SEARCHES).map(searchKeyUsage));
+  }
+
+  // Build global @Value key→fieldName map from project-wide Java files
+  // (catches PropertyUtil/config beans where @Value lives, not the controller)
+  const globalValueProps = {};
+  try {
+    const valResults = await paginate(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@Value', per_page: 100 }, token, signal);
+    if (Array.isArray(valResults)) {
+      for (var vi2 = 0; vi2 < valResults.length; vi2++) {
+        var vr = valResults[vi2];
+        if (!vr.filename || !vr.filename.endsWith('.java') || !vr.data) continue;
+        if (vr.data.indexOf('${') < 0) continue;
+        var gvRe = /@Value\s*\(\s*["']\$\{([^}]+)\}["']\s*\)([^;=]*?)(\w+)\s*(?:;|=)/g;
+        var gvm;
+        while ((gvm = gvRe.exec(vr.data)) !== null) {
+          if (!globalValueProps[gvm[1]]) globalValueProps[gvm[1]] = gvm[3];
+        }
+      }
+    }
+  } catch {}
+
+  // Per-project caches to avoid duplicate API calls
+  const fileCache = {};
+  async function cachedGetFileContent(fp) {
+    if (!fileCache[fp]) fileCache[fp] = getFileContent(baseUrl, token, proj.id, fp, branch, signal);
+    return fileCache[fp];
+  }
+  const svcImplCache = {};
+  async function cachedFindServiceImplFiles(typeName) {
+    if (!svcImplCache[typeName]) svcImplCache[typeName] = findServiceImplFiles(baseUrl, token, proj.id, typeName, branch, signal);
+    return svcImplCache[typeName];
+  }
+
+  const endpoints = [];
+  const usedUrlKeys = {};
+  const unusedUrlKeys = {};
+
+  for (const cf of ctrlFiles) {
+    if (signal.aborted) throw new Error('Cancelled');
+    try {
+      const content = await cachedGetFileContent(cf);
+      const parsed = parseControllerFile(content, cf);
+      if (parsed.endpoints.length === 0 && !parsed.className) continue;
+
+      // For each endpoint, find which backend URLs it directly or indirectly consumes
+      for (const ep of parsed.endpoints) {
+        // Direct matches: @Value field names found in this endpoint's method body
+        const directUrls = [];
+        const matchedRefs = [];
+        const directKeys = ep.matchedKeys || [];
+        directKeys.forEach(function(k) {
+          const u = urlKeyUsage[k];
+          if (u && u.usageFiles.indexOf(cf) >= 0) {
+            directUrls.push({ url: u.url, key: u.key, propFile: u.propFile || '' });
+            // Reference tracking
+            var lines = content.split('\n');
+            var li = lines.findIndex(function(l) { return l.includes('${' + k + '}'); });
+            if (li >= 0) {
+              var s = lines.slice(Math.max(0, li - 1), li + 2).join('\n').trim();
+              matchedRefs.push({ file: cf, line: li + 1, snippet: s || k });
+            }
+          }
+        });
+
+        // Getter-based matching: check for .getXxx() calls in endpoint region
+        // that correspond to @Value field names (e.g., config.getSomeUrl() -> someUrl)
+        // Uses both the controller's own @Value (parsed.valueProps) and project-wide
+        // @Value map (globalValueProps) to handle PropertyUtil/config beans
+        if (directUrls.length === 0 && ep.regionText) {
+          var getterSrc = (parsed.valueProps || []).map(function(p) { return p; });
+          // Merge in global valueProps entries not already in parsed.valueProps
+          if (Object.keys(globalValueProps).length > 0) {
+            var seenKeys = {};
+            getterSrc.forEach(function(p) { seenKeys[p.key] = true; });
+            for (var gkName in globalValueProps) {
+              if (!seenKeys[gkName]) getterSrc.push({ key: gkName, fieldName: globalValueProps[gkName] });
+            }
+          }
+          for (var gi = 0; gi < keysToTrace.length; gi++) {
+            var gk = keysToTrace[gi];
+            var gu = urlKeyUsage[gk];
+            if (!gu) continue;
+            for (var gvi = 0; gvi < getterSrc.length; gvi++) {
+              var gvp = getterSrc[gvi];
+              if (gvp.key === gk && gvp.fieldName) {
+                var getterPatt = '.get' + gvp.fieldName.charAt(0).toUpperCase() + gvp.fieldName.slice(1) + '(';
+                if (ep.regionText.indexOf(getterPatt) >= 0) {
+                  directUrls.push({ url: gu.url, key: gu.key, propFile: gu.propFile || '' });
+                  var glines = content.split('\n');
+                  var gli = glines.findIndex(function(l) { return l.includes(getterPatt); });
+                  if (gli >= 0) {
+                    var gs = glines.slice(Math.max(0, gli - 1), gli + 2).join('\n').trim();
+                    matchedRefs.push({ file: cf, line: gli + 1, snippet: gs || getterPatt });
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // Indirect matches: check autowired services called by this endpoint
+        // If an autowired fieldName appears in the endpoint region,
+        // find URL keys used in that service's implementation files
+        var indirectUrls = [];
+        if (ep.matchedAutowiredFieldNames && ep.matchedAutowiredFieldNames.length > 0) {
+          var autoFieldsInUse = ep.matchedAutowiredFieldNames;
+          for (var ai = 0; ai < autoFieldsInUse.length; ai++) {
+            var fld = autoFieldsInUse[ai];
+            // Find the type for this fieldName
+            var autoType = null;
+            for (var ati = 0; ati < parsed.autowiredTypes.length; ati++) {
+              if (parsed.autowiredTypes[ati].fieldName === fld) {
+                autoType = parsed.autowiredTypes[ati].type;
+                break;
+              }
+            }
+            if (!autoType) continue;
+            if (signal.aborted) throw new Error('Cancelled');
+            try {
+              var impls = await cachedFindServiceImplFiles(autoType);
+              var svcFiles = impls;
+              // Check each URL key for usage in these service files
+              for (var ki = 0; ki < keysToTrace.length; ki++) {
+                var k2 = keysToTrace[ki];
+                var u2 = urlKeyUsage[k2];
+                if (!u2 || u2.usageFiles.length === 0) continue;
+                var usedInSvc = svcFiles.some(function(sf) { return u2.usageFiles.indexOf(sf) >= 0; });
+                if (usedInSvc) {
+                  indirectUrls.push({ url: u2.url, key: u2.key, propFile: u2.propFile || '' });
+                }
+              }
+            } catch {}
+          }
+        }
+
+        // Deep indirect tracing: check if autowired services themselves autowire
+        // config beans that have @Value URL references (2-level chaining)
+        if (indirectUrls.length === 0 && ep.matchedAutowiredFieldNames && ep.matchedAutowiredFieldNames.length > 0) {
+          for (var dai = 0; dai < ep.matchedAutowiredFieldNames.length; dai++) {
+            var dfld = ep.matchedAutowiredFieldNames[dai];
+            var dAutoType = null;
+            for (var dati = 0; dati < parsed.autowiredTypes.length; dati++) {
+              if (parsed.autowiredTypes[dati].fieldName === dfld) {
+                dAutoType = parsed.autowiredTypes[dati].type;
+                break;
+              }
+            }
+            if (!dAutoType) continue;
+            if (signal.aborted) throw new Error('Cancelled');
+            try {
+              var dimpls = await cachedFindServiceImplFiles(dAutoType);
+              for (var di = 0; di < dimpls.length; di++) {
+                var svcContent = await cachedGetFileContent(dimpls[di]);
+                var svcClean = svcContent.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+                // Find @Autowired fields in this service file (config beans)
+                var deepAutoRe = /@Autowired[^;]*?(?:private\s+)?(\w+)(?:<([^>]+)>)?\s+(\w+)\s*;/g;
+                var dam;
+                while ((dam = deepAutoRe.exec(svcClean)) !== null) {
+                  var dDeepType = dam[2] || dam[1];
+                  if (!dDeepType || dDeepType === 'Autowired' || dDeepType.startsWith('@')) continue;
+                  var configImpls = await cachedFindServiceImplFiles(dDeepType);
+
+                  // Parse config bean implementations for their own @Value annotations
+                  // to get correct key→fieldName mapping for getter matching
+                  var configValueProps = [];
+                  for (var cvi = 0; cvi < configImpls.length; cvi++) {
+                    try {
+                      var cvContent = await cachedGetFileContent(configImpls[cvi]);
+                      var cvClean = cvContent.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+                      var cvfRe = /@Value\s*\(\s*["']\$\{([^}]+)\}["']\s*\)([^;=]*?)(\w+)\s*(?:;|=)/g;
+                      var cvf;
+                      while ((cvf = cvfRe.exec(cvClean)) !== null) {
+                        configValueProps.push({ key: cvf[1], fieldName: cvf[3] });
+                      }
+                    } catch {}
+                  }
+
+                  for (var ki2 = 0; ki2 < keysToTrace.length; ki2++) {
+                    var k3 = keysToTrace[ki2];
+                    var u3 = urlKeyUsage[k3];
+                    if (!u3 || u3.usageFiles.length === 0) continue;
+                    var usedInConfig = configImpls.some(function(cfi) { return u3.usageFiles.indexOf(cfi) >= 0; });
+                    if (usedInConfig) {
+                      indirectUrls.push({ url: u3.url, key: u3.key, propFile: u3.propFile || '' });
+                    }
+                  }
+
+                  // Check for getter method calls in the service file matching URL key field names.
+                  // Use configValueProps (from the config bean's own @Value annotations) instead of
+                  // controller's valueProps — the config bean is where @Value lives, not the controller.
+                  var getterValueProps = configValueProps.length > 0 ? configValueProps : [];
+                  if (getterValueProps.length === 0 && parsed.valueProps && parsed.valueProps.length > 0) getterValueProps = parsed.valueProps;
+                  if (getterValueProps.length === 0) {
+                    var gkNames = Object.keys(globalValueProps);
+                    if (gkNames.length > 0) getterValueProps = gkNames.map(function(gk) { return { key: gk, fieldName: globalValueProps[gk] }; });
+                  }
+                  for (var ki3 = 0; ki3 < keysToTrace.length; ki3++) {
+                    var k4 = keysToTrace[ki3];
+                    var u4 = urlKeyUsage[k4];
+                    if (!u4) continue;
+                    for (var gvi = 0; gvi < getterValueProps.length; gvi++) {
+                      var gvp = getterValueProps[gvi];
+                      if (gvp.key === k4 && gvp.fieldName) {
+                        var getterPattern = '.get' + gvp.fieldName.charAt(0).toUpperCase() + gvp.fieldName.slice(1) + '(';
+                        if (svcContent.indexOf(getterPattern) >= 0) {
+                          indirectUrls.push({ url: u4.url, key: u4.key, propFile: u4.propFile || '' });
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            } catch {}
+          }
+        }
+
+        var allUrls = directUrls.length > 0 ? directUrls : indirectUrls;
+
+        // Method-level fallback: check if ${key} appears directly in this endpoint's region text
+        // (more precise than file-level matching)
+        if (allUrls.length === 0 && ep.regionText) {
+          for (var fi = 0; fi < keysToTrace.length; fi++) {
+            var fk = keysToTrace[fi];
+            var fu = urlKeyUsage[fk];
+            if (fu && ep.regionText.indexOf('${' + fk + '}') >= 0) {
+              allUrls.push({ url: fu.url, key: fu.key, propFile: fu.propFile || '' });
+            }
+          }
+        }
+
+        // Collect unique propFile paths for file column
+        var propFilesSet = {};
+        allUrls.forEach(function(b) { if (b.propFile) propFilesSet[b.propFile] = true; });
+        var propFiles = Object.keys(propFilesSet);
+        var fileDisplay = propFiles.length > 0 ? propFiles.sort().join(', ') : cf;
+
+        allUrls.forEach(function(bu) { usedUrlKeys[bu.key] = true; });
+
+        endpoints.push({
+          endpoint: ep.method + ' ' + parsed.basePath + ep.path,
+          httpMethod: ep.method,
+          controllerClass: parsed.className,
+          backendUrls: allUrls,
+          file: fileDisplay,
+          refs: matchedRefs.length > 0 ? matchedRefs : parsed.valueRefs,
+        });
+      }
+    } catch {}
+  }
+
+  for (var uk in urlKeyUsage) {
+    if (!usedUrlKeys[uk]) {
+      unusedUrlKeys[uk] = urlKeyUsage[uk];
+    }
+  }
+  var unlinkedList = [];
+  for (var uk in unusedUrlKeys) {
+    unlinkedList.push({ key: unusedUrlKeys[uk].key, url: unusedUrlKeys[uk].url, propFile: unusedUrlKeys[uk].propFile || '', usageCount: unusedUrlKeys[uk].usageFiles.length });
+  }
+
+  return { endpoints, controllerCount: ctrlFiles.length, unlinkedUrls: unlinkedList };
+}
+
+// ─── Reused helpers ──────────────────────────────────────
+async function findLatestBranch(baseUrl, token, projId, signal) {
+  try {
+    const branches = await paginate(baseUrl, `/projects/${projId}/repository/branches`, { per_page: 100 }, token, signal);
+    if (branches.length === 0) return null;
+    branches.sort((a, b) => new Date(b.commit.committed_date) - new Date(a.commit.committed_date));
+    return branches[0].name;
+  } catch {
+    try {
+      const r = await apiFetch(baseUrl, `/projects/${projId}`, {}, token, signal);
+      const d = await r.json();
+      return d.default_branch || 'main';
+    } catch { return null; }
+  }
+}
+
+async function findPropertyFiles(baseUrl, token, projId, ref, signal) {
+  const items = await paginate(baseUrl, `/projects/${projId}/repository/tree`, { recursive: true, per_page: 100, ref }, token, signal);
+  const exts = ['.properties', '.yml', '.yaml'];
+  return items.filter(i => i.type === 'blob' && exts.some(e => i.name.endsWith(e))).map(i => i.path);
+}
+
+async function getFileContent(baseUrl, token, projId, fp, ref, signal) {
+  const enc = encodeURIComponent(fp);
+  const r = await apiFetch(baseUrl, `/projects/${projId}/repository/files/${enc}/raw`, { ref }, token, signal);
+  return await r.text();
+}
+
+async function findUrlProperties(baseUrl, token, projId, branch, signal) {
+  const files = await findPropertyFiles(baseUrl, token, projId, branch, signal);
+  const out = [];
+  for (const f of files) {
+    if (signal.aborted) throw new Error('Cancelled');
+    try { out.push(...parseUrlProperties(await getFileContent(baseUrl, token, projId, f, branch, signal), f)); } catch {}
+  }
+  return out;
+}
+
+function parseUrlProperties(content, filePath) {
+  const out = [];
+  const ext = filePath.split('.').pop().toLowerCase();
+  if (ext === 'properties') {
+    for (const line of content.split('\n')) {
+      const t = line.trim();
+      if (!t || t.startsWith('#') || t.startsWith('!')) continue;
+      const m = t.match(/^([\w.-]+)\s*[=:]\s*(https?:\/\/\S+)/);
+      if (m) out.push({ key: m[1], url: m[2].replace(/["']/g, ''), propFile: filePath });
+    }
+  } else if (ext === 'yml' || ext === 'yaml') {
+    const lines = content.split('\n'); const path = []; let pd = -1;
+    for (const line of lines) {
+      const t = line.trimEnd(); if (!t || t.trim().startsWith('#')) continue;
+      const d = Math.round((t.length - t.trimStart().length) / 2);
+      const s = t.trim(); const ci = s.indexOf(':'); if (ci < 0) continue;
+      const k = s.slice(0, ci).trim(); const v = s.slice(ci + 1).trim();
+      if (v === '' || v === '|' || v === '>') {
+        if (d > pd) path.push(k);
+        else if (d === pd) { if (path.length) path[path.length - 1] = k; }
+        else { for (let j = pd - d; j > 0 && path.length; j--) path.pop(); path.push(k); }
+      } else if (v.startsWith('http://') || v.startsWith('https://')) {
+        if (d < pd) for (let j = pd - d; j > 0 && path.length; j--) path.pop();
+        if (d === pd && path.length) path[path.length - 1] = k;
+        out.push({ key: [...path, k].join('.'), url: v.replace(/["']/g, ''), propFile: filePath });
+      }
+      pd = d;
+    }
+  }
+  return out;
+}
+
+async function findControllerFiles(baseUrl, token, projId, branch, signal) {
+  const files = new Set();
+  // Paginated search for @RestController files
+  try {
+    const results = await paginate(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@RestController' }, token, signal);
+    if (Array.isArray(results)) results.forEach(x => { if (x.filename && x.filename.endsWith('.java')) files.add(x.filename); });
+  } catch {}
+  // Paginated search for @Controller files (excluding tests)
+  try {
+    const results = await paginate(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: '@Controller' }, token, signal);
+    if (Array.isArray(results)) results.forEach(x => { if (x.filename && x.filename.endsWith('.java') && !x.filename.endsWith('Test.java')) files.add(x.filename); });
+  } catch {}
+  // Fallback: use repository tree to find ALL Java files with "Controller" in path
+  // (catches files the search API may have missed due to indexing limits)
+  try {
+    const tree = await paginate(baseUrl, `/projects/${projId}/repository/tree`, { recursive: true, per_page: 100, ref: branch }, token, signal);
+    if (Array.isArray(tree)) {
+      tree.forEach(function(item) {
+        if (item.type === 'blob' && item.path.endsWith('.java') &&
+            (item.path.includes('Controller') || item.path.includes('controller')) &&
+            !item.path.endsWith('Test.java')) {
+          files.add(item.path);
+        }
+      });
+    }
+  } catch {}
+  return [...files];
+}
+
+function parseControllerFile(content, filePath) {
+  var r = { className: '', basePath: '', endpoints: [], autowiredTypes: [], valueProps: [], valueRefs: [] };
+
+  // Safer comment stripping: block comments first, then line comments at line start only
+  var clean = content.replace(/\/\*[\s\S]*?\*\//g, '');
+  clean = clean.replace(/^[ \t]*\/\/.*$/gm, '');
+
+  // Class name
+  var cm = clean.match(/(?:public\s+)?class\s+(\w+)/);
+  if (cm) r.className = cm[1];
+
+  // Class-level @RequestMapping base path
+  var rm = clean.match(/@RequestMapping\s*\([^)]*\)/);
+  if (rm) {
+    var bm = rm[0].match(/(?:value|path)\s*=\s*["']([^"']+)["']/);
+    if (bm) r.basePath = bm[1];
+  }
+
+  // Parse @Value("${key}") ... fieldName → key + fieldName (handles generic types)
+  // Match the last word before ; or = as the field name — works for all type patterns
+  var valueFieldRe = /@Value\s*\(\s*["']\$\{([^}]+)\}["']\s*\)([^;=]*?)(\w+)\s*(?:;|=)/g;
+  var vf;
+  while ((vf = valueFieldRe.exec(clean)) !== null) {
+    r.valueProps.push({ key: vf[1], fieldName: vf[3] });
+    var ln2 = content.slice(0, vf.index).split('\n').length;
+    var ls2 = content.lastIndexOf('\n', vf.index) + 1;
+    var le2 = content.indexOf('\n', vf.index);
+    r.valueRefs.push({ file: filePath, line: ln2, snippet: content.slice(ls2, le2 > 0 ? le2 : content.length).trim() });
+  }
+
+  // Plain ${key} extraction (no field name) — used as fallback for per-endpoint matching
+  var vp = /\$\{([^}:]+)(?::[^}]*)?\}/g;
+  var vm;
+  while ((vm = vp.exec(clean)) !== null) {
+    // Only add if not already captured by field-name regex
+    var already = r.valueProps.some(function(p) { return p.key === vm[1]; });
+    if (!already) {
+      r.valueProps.push({ key: vm[1], fieldName: '' });
+      var ln3 = content.slice(0, vm.index).split('\n').length;
+      var ls3 = content.lastIndexOf('\n', vm.index) + 1;
+      var le3 = content.indexOf('\n', vm.index);
+      r.valueRefs.push({ file: filePath, line: ln3, snippet: content.slice(ls3, le3 > 0 ? le3 : content.length).trim() });
+    }
+  }
+
+  // Build key→fieldName map
+  var keyToField = {};
+  r.valueProps.forEach(function(v) { if (v.fieldName) keyToField[v.key] = v.fieldName; });
+
+  // Parse @Autowired private Type fieldName — handles generics like List<UserService>
+  var autoRe = /@Autowired[^;]*?(?:private\s+)?(\w+)(?:<([^>]+)>)?\s+(\w+)\s*;/g;
+  var am;
+  while ((am = autoRe.exec(clean)) !== null) {
+    var typeName = am[2] || am[1];
+    if (typeName && typeName !== 'Autowired' && !typeName.startsWith('@')) {
+      r.autowiredTypes.push({ type: typeName, fieldName: am[3] });
+    }
+  }
+
+  // Collect all endpoint annotations with their positions in `clean`
+  var annotations = [];
+
+  // Pattern 1: @GetMapping, @PostMapping, @PutMapping, @DeleteMapping, @PatchMapping
+  var shortRe = /@(Get|Post|Put|Delete|Patch)Mapping\s*(?:\(([^)]*)\))?/g;
+  var sm;
+  while ((sm = shortRe.exec(clean)) !== null) {
+    var method1 = sm[1].toUpperCase();
+    var args1 = (sm[2] || '').trim();
+    var path1 = '';
+    if (args1) {
+      var pv1 = args1.match(/(?:path|value)\s*=\s*\{?\s*["']([^"']+)["']/);
+      if (pv1) { path1 = pv1[1]; } else {
+        var q1 = args1.match(/^["']([^"']*)["']/);
+        if (q1) path1 = q1[1];
+      }
+    }
+    annotations.push({ method: method1, path: path1, pos: sm.index });
+  }
+
+  // Pattern 2: @RequestMapping(method = RequestMethod.GET|POST|...) at method level
+  var reqMapRe = /@RequestMapping\s*\(([^)]*)\)/g;
+  var rmm;
+  while ((rmm = reqMapRe.exec(clean)) !== null) {
+    var args2 = rmm[1];
+    var methodM = args2.match(/method\s*=\s*(?:RequestMethod\.)?(\w+)/);
+    if (methodM) {
+      var method2 = methodM[1].toUpperCase();
+      var valM2 = args2.match(/(?:value|path)\s*=\s*["']([^"']+)["']/);
+      var path2 = valM2 ? valM2[1] : '';
+      annotations.push({ method: method2, path: path2, pos: rmm.index });
+    }
+  }
+
+  // Sort by position in file
+  annotations.sort(function(a, b) { return a.pos - b.pos; });
+
+  // Build endpoints with per-method matched keys
+  for (var i = 0; i < annotations.length; i++) {
+    var a = annotations[i];
+    var ep = { method: a.method, path: a.path, matchedKeys: [], regionText: regionText };
+
+    // Determine region text for this endpoint: from this annotation to next one or EOF
+    var regionStart = a.pos;
+    var regionEnd = i + 1 < annotations.length ? annotations[i + 1].pos : clean.length;
+    var regionText = clean.slice(regionStart, regionEnd);
+
+    // Check which @Value field names appear in this method region
+    if (Object.keys(keyToField).length > 0) {
+      r.valueProps.forEach(function(v) {
+        if (!v.fieldName) return;
+        var declLineEnd = regionText.indexOf(';') + 1;
+        var bodyText = declLineEnd > 0 ? regionText.slice(declLineEnd) : regionText;
+        var idx = bodyText.indexOf(v.fieldName);
+        if (idx >= 0) {
+          var chBefore = idx > 0 ? bodyText[idx - 1] : ' ';
+          var chAfter = idx + v.fieldName.length < bodyText.length ? bodyText[idx + v.fieldName.length] : ' ';
+          if (/[\W_]/.test(chBefore) && /[\W_]/.test(chAfter)) {
+            ep.matchedKeys.push(v.key);
+          }
+        }
+      });
+    }
+
+    // Fallback: match plain ${key} in region text (for keys without extracted field names)
+    if (r.valueProps.length > 0) {
+      r.valueProps.forEach(function(v) {
+        if (v.fieldName) return; // already handled above
+        var dEnd = regionText.indexOf(';') + 1;
+        var bText = dEnd > 0 ? regionText.slice(dEnd) : regionText;
+        if (bText.indexOf('${' + v.key + '}') >= 0) {
+          ep.matchedKeys.push(v.key);
+        }
+      });
+    }
+
+    // Check which autowired field names appear in this method region
+    ep.matchedAutowiredFieldNames = [];
+    if (r.autowiredTypes.length > 0) {
+      var declEnd = regionText.indexOf(';') + 1;
+      var bodyOnly = declEnd > 0 ? regionText.slice(declEnd) : regionText;
+      r.autowiredTypes.forEach(function(at) {
+        if (!at.fieldName) return;
+        var ai = bodyOnly.indexOf(at.fieldName);
+        if (ai >= 0) {
+          var cb = ai > 0 ? bodyOnly[ai - 1] : ' ';
+          var ca = ai + at.fieldName.length < bodyOnly.length ? bodyOnly[ai + at.fieldName.length] : ' ';
+          if (/[\W_]/.test(cb) && /[\W_]/.test(ca)) {
+            ep.matchedAutowiredFieldNames.push(at.fieldName);
+          }
+        }
+      });
+    }
+
+    r.endpoints.push(ep);
+  }
+
+  return r;
+}
+
+function extractValueProps(content) {
+  const out = []; const vp = /\$\{([^}:]+)(?::[^}]*)?\}/g; let m;
+  while ((m = vp.exec(content)) !== null) out.push({ key: m[1] });
+  return out;
+}
+
+async function findServiceImplFiles(baseUrl, token, projId, typeName, branch, signal) {
+  const results = new Set();
+  try {
+    const r = await apiFetch(baseUrl, `/projects/${projId}/search`, { scope: 'blobs', search: typeName, per_page: 100 }, token, signal);
+    const d = await r.json();
+    if (Array.isArray(d)) d.forEach(x => {
+      if (x.filename && x.filename.endsWith('.java') && x.data && (x.data.includes('class ') || x.data.includes('@Service') || x.data.includes('implements'))) results.add(x.filename);
+    });
+  } catch {}
+  return [...results];
+}
+
+// ─── Render table (no nested backticks) ──────────────────
+function renderApiLib(data) {
+  const q = $('apiLibSearch').value.trim().toLowerCase();
+  const hasUrlFilter = $('apiLibHasUrlToggle').checked;
+  let filtered = data;
+  if (hasUrlFilter) {
+    filtered = filtered.filter(function(e) { return e.backendUrls && e.backendUrls.length > 0; });
+  }
+  const f = q ? filtered.filter(function(e) {
+    return e.endpoint.toLowerCase().includes(q) || e.repoName.toLowerCase().includes(q) ||
+      e.repoUrl.toLowerCase().includes(q) || e.file.toLowerCase().includes(q) ||
+      (e.controllerClass || '').toLowerCase().includes(q) ||
+      (e.backendUrls || []).some(function(b) { return (b.propFile || '').toLowerCase().includes(q) || b.url.toLowerCase().includes(q) || b.key.toLowerCase().includes(q); });
+  }) : filtered;
+  const wrap = $('apiLibTableWrap');
+  hide('apiLibEmpty'); show('apiLibResults');
+  if (f.length === 0) { wrap.innerHTML = '<div class="chart-empty">No results matching "' + escHtml(q) + '"</div>'; return; }
+
+  var html = '<table><thead><tr><th style="width:2rem">#</th><th>API</th><th>Repo URL</th><th>Repo</th><th>Backend URL(s)</th><th>File</th><th style="width:4rem">Refs</th></tr></thead><tbody>';
+
+  for (var i = 0; i < f.length; i++) {
+    var e = f[i];
+    var buHtml = '';
+    if ((e.backendUrls || []).length > 0) {
+      for (var j = 0; j < e.backendUrls.length; j++) {
+        var b = e.backendUrls[j];
+        buHtml += '<div style="margin:0.15rem 0;word-break:break-all"><span style="color:var(--text-muted)">' + escHtml(b.key) + '</span>: <span style="color:var(--secondary)">' + escHtml(b.url.length > 40 ? b.url.slice(0, 38) + '\u2026' : b.url) + '</span></div>';
+      }
+    } else {
+      buHtml = '<span style="color:var(--text-muted)">\u2014</span>';
+    }
+
+    var refBadge = (e.refs || []).length > 0
+      ? '<span class="api-lib-ref-badge">' + e.refs.length + '</span>'
+      : '<span style="color:var(--text-muted);font-size:0.7rem">\u2014</span>';
+
+    var repoDisplay = (e.repoUrl || '').replace(/^https?:\/\//, '');
+    if (repoDisplay.length > 35) repoDisplay = repoDisplay.slice(0, 35);
+
+    // Show property file path(s) in File column
+    var fileParts = (e.file || '').split(', ');
+    var fileDisplay = '';
+    if (fileParts.length === 1) {
+      fileDisplay = escHtml(fileParts[0].split('/').pop() || fileParts[0]);
+    } else if (fileParts.length > 1) {
+      fileDisplay = escHtml(fileParts[0].split('/').pop() || fileParts[0]) + ' +' + (fileParts.length - 1);
+    } else {
+      fileDisplay = escHtml((e.file || '').split('/').pop());
+    }
+
+    html += '<tr class="api-lib-row" data-idx="' + i + '" style="cursor:pointer">'
+      + '<td>' + (i + 1) + '</td>'
+      + '<td style="font-size:0.75rem"><code style="color:var(--primary)">' + escHtml(e.httpMethod || '') + '</code> <span>' + escHtml(e.endpoint) + '</span></td>'
+      + '<td style="font-size:0.7rem"><a href="' + escHtml(e.repoUrl) + '" target="_blank" style="color:var(--secondary);text-decoration:none" onclick="event.stopPropagation()">' + escHtml(repoDisplay) + '\u2026</a></td>'
+      + '<td style="font-size:0.75rem">' + escHtml(e.repoName) + '</td>'
+      + '<td style="font-size:0.7rem;max-width:200px">' + buHtml + '</td>'
+      + '<td style="font-size:0.7rem;color:var(--text-muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escHtml(e.file) + '">' + fileDisplay + '</td>'
+      + '<td style="text-align:center">' + refBadge + '</td></tr>';
+
+    var detailHtml = '';
+    if ((e.backendUrls || []).length > 0) {
+      detailHtml += '<div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;letter-spacing:0.04em">Backend URLs consumed:</div>';
+      for (var j = 0; j < e.backendUrls.length; j++) {
+        var b = e.backendUrls[j];
+        var propInfo = b.propFile ? ' <span style="font-size:0.65rem;color:var(--text-muted)">(' + escHtml(b.propFile.split('/').pop()) + ')</span>' : '';
+        detailHtml += '<div class="api-lib-usage" style="margin-bottom:0.35rem;padding:0.4rem 0.6rem"><code style="font-size:0.72rem;color:var(--text)">' + escHtml(b.key) + '</code>' + propInfo + '<br><span style="font-size:0.72rem;color:var(--secondary);word-break:break-all">' + escHtml(b.url) + '</span></div>';
+      }
+      // Backend URL source tree
+      var sourceTreeHtml = buildBackendUrlSourceTree(e.backendUrls);
+      if (sourceTreeHtml) {
+        detailHtml += '<div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin:0.75rem 0 0.5rem;text-transform:uppercase;letter-spacing:0.04em">Backend URL Source Tree:</div>'
+          + '<div class="api-lib-source-tree">' + sourceTreeHtml + '</div>';
+      }
+    }
+    if ((e.refs || []).length > 0) {
+      detailHtml += '<div style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin:0.75rem 0 0.5rem;text-transform:uppercase;letter-spacing:0.04em">References (' + e.refs.length + '):</div>';
+      for (var j = 0; j < e.refs.length; j++) {
+        var u = e.refs[j];
+        detailHtml += '<div class="api-lib-usage"><code style="font-size:0.72rem;color:var(--text)">' + escHtml(u.file) + ':' + u.line + '</code><pre style="font-size:0.7rem;background:var(--bg-input);padding:0.4rem 0.6rem;border-radius:0.35rem;overflow-x:auto;color:var(--text-muted);margin:0.25rem 0 0;border:1px solid var(--border);max-height:80px;overflow-y:auto"><code>' + escHtml(u.snippet) + '</code></pre></div>';
+      }
+    }
+    html += '<tr class="api-lib-detail-row" data-parent="' + i + '" style="display:none"><td colspan="7" style="padding:0"><div class="api-lib-detail">' + detailHtml + '</div></td></tr>';
+  }
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll('.api-lib-row').forEach(function(row) {
+    row.addEventListener('click', function() {
+      var idx = row.getAttribute('data-idx');
+      var det = wrap.querySelector('.api-lib-detail-row[data-parent="' + idx + '"]');
+      var vis = det && det.style.display !== 'none';
+      wrap.querySelectorAll('.api-lib-detail-row').forEach(function(r) { r.style.display = 'none'; });
+      wrap.querySelectorAll('.api-lib-row').forEach(function(r) { r.classList.remove('api-lib-row--active'); });
+      if (det && !vis) { det.style.display = ''; row.classList.add('api-lib-row--active'); }
+    });
+  });
+}
+
+// ─── CSV export ──────────────────────────────────────────
+function exportApiLibCsv() {
+  if (!apiLibData || apiLibData.length === 0) { setStatus('No data to export', true); return; }
+  var rows = [['#', 'HTTP Method', 'Endpoint', 'Controller Class', 'Repo URL', 'Repo Name', 'Backend URL(s)', 'Property File(s)', 'Ref Count']];
+  for (var i = 0; i < apiLibData.length; i++) {
+    var e = apiLibData[i];
+    var bu = (e.backendUrls || []).map(function(b) { return b.key + '=' + b.url; }).join('; ');
+    var pf = (e.backendUrls || []).map(function(b) { return b.propFile || ''; }).filter(function(x) { return x; }).join('; ');
+    rows.push([i + 1, e.httpMethod || '', e.endpoint, e.controllerClass || '', e.repoUrl || '', e.repoName || '', bu, pf || e.file || '', (e.refs || []).length]);
+  }
+  var csv = rows.map(function(r) { return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+  var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'api-lib-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  setStatus('Exported ' + apiLibData.length + ' rows');
+}
+
+// ─── Render API LIB Overview (endpoints per repo + method distribution) ──
+function renderApiLibOverview(data) {
+  var repoMap = {};
+  var methodMap = {};
+  for (var i = 0; i < data.length; i++) {
+    var e = data[i];
+    var rn = e.repoName || 'unknown';
+    if (!repoMap[rn]) repoMap[rn] = 0;
+    repoMap[rn]++;
+    var m = e.httpMethod || 'UNKNOWN';
+    if (!methodMap[m]) methodMap[m] = 0;
+    methodMap[m]++;
+  }
+
+  // Endpoints per repo
+  var repoEntries = Object.entries(repoMap).sort(function(a, b) { return b[1] - a[1]; });
+  var repoChart = $('apiLibRepoChart');
+  if (repoEntries.length === 0) {
+    repoChart.innerHTML = '<div class="chart-empty">No data</div>';
+  } else {
+    var maxRepo = repoEntries[0][1];
+    var rh = '';
+    for (var ri = 0; ri < repoEntries.length; ri++) {
+      var pct = Math.round((repoEntries[ri][1] / maxRepo) * 100);
+      rh += '<div class="api-lib-bar-row">'
+        + '<span class="api-lib-bar-label" title="' + escHtml(repoEntries[ri][0]) + '">' + escHtml(repoEntries[ri][0]) + '</span>'
+        + '<div class="api-lib-bar-track"><div class="api-lib-bar-fill" style="width:' + pct + '%"></div></div>'
+        + '<span class="api-lib-bar-count">' + repoEntries[ri][1] + '</span></div>';
+    }
+    repoChart.innerHTML = '<div style="width:100%;padding:0.5rem 0">' + rh + '</div>';
+  }
+
+  // HTTP Method distribution
+  var methodEntries = Object.entries(methodMap).sort(function(a, b) { return b[1] - a[1]; });
+  var methodChart = $('apiLibMethodChart');
+  if (methodEntries.length === 0) {
+    methodChart.innerHTML = '<div class="chart-empty">No data</div>';
+  } else {
+    var maxMethod = methodEntries[0][1];
+    var mh = '';
+    var methodColors = { GET: '#60a5fa', POST: '#34d399', PUT: '#fbbf24', DELETE: '#f87171', PATCH: '#a78bfa' };
+    for (var mi = 0; mi < methodEntries.length; mi++) {
+      var me = methodEntries[mi];
+      var pct2 = Math.round((me[1] / maxMethod) * 100);
+      var color = methodColors[me[0]] || '#6366f1';
+      mh += '<div class="api-lib-method-row">'
+        + '<span class="api-lib-method-label" style="color:' + color + '">' + me[0] + '</span>'
+        + '<div class="api-lib-method-track"><div class="api-lib-method-fill" style="width:' + pct2 + '%;background:' + color + '"></div></div>'
+        + '<span class="api-lib-method-count">' + me[1] + '</span></div>';
+    }
+    methodChart.innerHTML = '<div style="width:100%;padding:0.5rem 0">' + mh + '</div>';
+  }
+}
+
+// ─── Render API LIB Unlinked URLs ─────────────────────────
+function renderApiLibUnlinked(data) {
+  var wrap = $('apiLibUnlinkedWrap');
+  if (!apiLibUnlinkedUrls || apiLibUnlinkedUrls.length === 0) {
+    wrap.innerHTML = '<div class="chart-empty">No unlinked URLs found. All property file URLs are consumed by controllers.</div>';
+    return;
+  }
+  var html = '<div style="width:100%"><div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.75rem">'
+    + 'Found <strong>' + apiLibUnlinkedUrls.length + '</strong> URL(s) defined in property files but not consumed by any controller endpoint.</div>'
+    + '<div class="table-wrap" style="max-height:500px"><table class="api-lib-unlinked-table"><thead><tr>'
+    + '<th>#</th><th>Property Key</th><th>URL</th><th>Property File</th><th>Repo</th></tr></thead><tbody>';
+  for (var ui = 0; ui < apiLibUnlinkedUrls.length; ui++) {
+    var u = apiLibUnlinkedUrls[ui];
+    html += '<tr><td>' + (ui + 1) + '</td>'
+      + '<td><code style="color:var(--primary);font-size:0.72rem">' + escHtml(u.key) + '</code></td>'
+      + '<td style="word-break:break-all;color:var(--secondary)">' + escHtml(u.url) + '</td>'
+      + '<td style="font-size:0.68rem;color:var(--text-muted)">' + escHtml(u.propFile) + '</td>'
+      + '<td style="font-size:0.72rem">' + escHtml(u.repoName || '') + '</td></tr>';
+  }
+  html += '</tbody></table></div></div>';
+  wrap.innerHTML = html;
+}
+
+// ─── 3D Dependency Map ────────────────────────────────────
+var depmapActive = false;
+
+function showApiLibDepmap() {
+  var container = $('depmapContainer');
+  var empty = $('depmapEmpty');
+  if (!apiLibData || apiLibData.length === 0) {
+    empty.style.display = '';
+    container.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  container.style.display = '';
+  container.innerHTML = '<div class="chart-empty">Loading 3D dependency map...</div>';
+  loadThreeJS().then(function() {
+    buildApiLibDepmap(container);
+  }).catch(function(err) {
+    container.innerHTML = '<div class="chart-empty">3D failed: ' + escHtml(err.message || err) + '</div>';
+  });
+}
+
+function buildApiLibDepmap(container) {
+  dispose3D();
+  var W = container.clientWidth || 800;
+  var H = container.clientHeight || 600;
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf5f7fa);
+  var camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
+  camera.position.set(0, 8, 18);
+  camera.lookAt(0, 0, 0);
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+  var labelRenderer = new window.CSS2DRenderer();
+  labelRenderer.setSize(W, H);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  container.appendChild(labelRenderer.domElement);
+  var controls = new window.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxDistance = 40;
+  controls.minDistance = 3;
+  var ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambient);
+  var hemi = new THREE.HemisphereLight(0xffffff, 0xddeeff, 0.5);
+  scene.add(hemi);
+  var dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(5, 10, 7);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+  var shadowGeo = new THREE.CircleGeometry(12, 32);
+  var shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.025, depthWrite: false });
+  var shadowDisc = new THREE.Mesh(shadowGeo, shadowMat);
+  shadowDisc.rotation.x = -Math.PI / 2;
+  shadowDisc.position.y = -0.1;
+  scene.add(shadowDisc);
+
+  // Collect endpoints with backend URLs for the graph
+  var nodes = [];
+  var edgeData = [];
+  var nodeMap = {};
+  var endpointColor = '#6366f1';
+  var backendUrlColor = '#10b981';
+  var usedEndpoints = apiLibData.filter(function(e) { return e.backendUrls && e.backendUrls.length > 0; });
+
+  // Cap 3D nodes for performance (the table shows ALL data, the 3D view is a visualization)
+  var MAX_3D_NODES = 300;
+  var totalPotentialNodes = 0;
+  usedEndpoints.forEach(function(ep) {
+    totalPotentialNodes += 1 + (ep.backendUrls || []).length;
+  });
+  if (totalPotentialNodes > MAX_3D_NODES) {
+    var notice = document.createElement('div');
+    notice.style.cssText = 'position:absolute;top:10px;left:50%;transform:translateX(-50%);font-size:10px;background:rgba(245,158,11,0.9);color:#fff;padding:4px 12px;border-radius:4px;z-index:10;pointer-events:none';
+    notice.textContent = totalPotentialNodes + ' total nodes — showing first ' + MAX_3D_NODES + ' for performance. All data available in the table.';
+    container.appendChild(notice);
+    // Limit endpoints for 3D rendering
+    usedEndpoints = usedEndpoints.slice(0, 100);
+  }
+
+  usedEndpoints.forEach(function(ep) {
+    var epKey = 'ep:' + ep.endpoint + '|' + ep.repoName;
+    if (!nodeMap[epKey]) {
+      nodeMap[epKey] = { id: epKey, label: ep.endpoint, type: 'endpoint', repo: ep.repoName, group: ep.repoName };
+      nodes.push(nodeMap[epKey]);
+    }
+    (ep.backendUrls || []).forEach(function(bu) {
+      var buKey = 'bu:' + bu.url;
+      if (!nodeMap[buKey]) {
+        nodeMap[buKey] = { id: buKey, label: bu.key, type: 'backend', url: bu.url, propFile: bu.propFile };
+        nodes.push(nodeMap[buKey]);
+      }
+      edgeData.push({ from: epKey, to: buKey });
+    });
+  });
+
+  if (nodes.length === 0) {
+    container.innerHTML = '<div class="chart-empty">No endpoints with backend URLs to visualize.</div>';
+    return;
+  }
+
+  // Layout: endpoints left, backend urls right
+  var epNodes = nodes.filter(function(n) { return n.type === 'endpoint'; });
+  var buNodes = nodes.filter(function(n) { return n.type === 'backend'; });
+  var radius = Math.max(6, Math.max(epNodes.length, buNodes.length) * 1.2);
+
+  epNodes.forEach(function(n, i) {
+    var angle = (i / epNodes.length) * Math.PI * 2 - Math.PI / 2;
+    n.x = -radius * 0.6;
+    n.y = Math.sin(angle) * radius * 0.5;
+    n.z = Math.cos(angle) * radius * 0.5;
+  });
+  buNodes.forEach(function(n, i) {
+    var angle = (i / buNodes.length) * Math.PI * 2 - Math.PI / 2;
+    n.x = radius * 0.6;
+    n.y = Math.sin(angle) * radius * 0.5;
+    n.z = Math.cos(angle) * radius * 0.5;
+  });
+
+  var nodeMeshes = [];
+  var colorMap = {};
+  var repoColors = ['#6366f1', '#22d3ee', '#f59e0b', '#ef4444', '#10b981', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4'];
+  var colorIdx = 0;
+  epNodes.forEach(function(n) {
+    if (!colorMap[n.repo]) { colorMap[n.repo] = repoColors[colorIdx % repoColors.length]; colorIdx++; }
+  });
+
+  epNodes.forEach(function(n) {
+    var r = 0.35;
+    var geo = new THREE.SphereGeometry(r, 20, 20);
+    var mat = new THREE.MeshPhysicalMaterial({ color: colorMap[n.repo] || endpointColor, roughness: 0.25, metalness: 0.05, emissive: colorMap[n.repo] || endpointColor, emissiveIntensity: 0.08 });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(n.x, n.y, n.z);
+    mesh.castShadow = true;
+    mesh.userData = { type: 'endpoint', label: n.label, repo: n.repo };
+    scene.add(mesh);
+    nodeMeshes.push(mesh);
+
+    // Label
+    var div = document.createElement('div');
+    div.textContent = n.label.length > 20 ? n.label.slice(0, 18) + '...' : n.label;
+    div.style.cssText = 'color:#0f172a;font-size:10px;font-weight:600;background:rgba(255,255,255,0.9);padding:2px 6px;border-radius:4px;border:1px solid rgba(0,0,0,0.08);pointer-events:none;white-space:nowrap';
+    var label = new window.CSS2DObject(div);
+    label.position.set(n.x, n.y - r - 0.5, n.z);
+    scene.add(label);
+  });
+
+  buNodes.forEach(function(n) {
+    var r = 0.3;
+    var geo = new THREE.SphereGeometry(r, 20, 20);
+    var mat = new THREE.MeshPhysicalMaterial({ color: backendUrlColor, roughness: 0.3, metalness: 0.05, emissive: backendUrlColor, emissiveIntensity: 0.06 });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(n.x, n.y, n.z);
+    mesh.castShadow = true;
+    mesh.userData = { type: 'backend', label: n.label, url: n.url };
+    scene.add(mesh);
+    nodeMeshes.push(mesh);
+
+    var div = document.createElement('div');
+    div.textContent = n.label.length > 20 ? n.label.slice(0, 18) + '...' : n.label;
+    div.style.cssText = 'color:#059669;font-size:10px;font-weight:600;background:rgba(255,255,255,0.9);padding:2px 6px;border-radius:4px;border:1px solid rgba(0,0,0,0.08);pointer-events:none;white-space:nowrap';
+    var label = new window.CSS2DObject(div);
+    label.position.set(n.x, n.y - r - 0.5, n.z);
+    scene.add(label);
+  });
+
+  edgeData.forEach(function(ed) {
+    var fromN = nodeMap[ed.from];
+    var toN = nodeMap[ed.to];
+    if (!fromN || !toN) return;
+    var fromPos = new THREE.Vector3(fromN.x, fromN.y, fromN.z);
+    var toPos = new THREE.Vector3(toN.x, toN.y, toN.z);
+    var mid = new THREE.Vector3().addVectors(fromPos, toPos).multiplyScalar(0.5);
+    mid.y += 0.5;
+    var curve = new THREE.CatmullRomCurve3([fromPos, mid, toPos]);
+    var tubeGeo = new THREE.TubeGeometry(curve, 12, 0.025, 5, false);
+    var tubeMat = new THREE.MeshPhysicalMaterial({ color: '#94a3b8', transparent: true, opacity: 0.35, roughness: 0.5 });
+    var tube = new THREE.Mesh(tubeGeo, tubeMat);
+    scene.add(tube);
+  });
+
+  // Legend
+  var legendDiv = document.createElement('div');
+  legendDiv.style.cssText = 'position:absolute;bottom:10px;left:10px;font-size:10px;background:rgba(255,255,255,0.9);padding:6px 10px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);pointer-events:none';
+  var legendHtml = '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + backendUrlColor + ';margin-right:4px"></span> Backend URL &nbsp;&nbsp;';
+  var seenColors = {};
+  for (var ri2 = 0; ri2 < epNodes.length; ri2++) {
+    var n2 = epNodes[ri2];
+    if (!seenColors[n2.repo]) {
+      seenColors[n2.repo] = true;
+      legendHtml += '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + (colorMap[n2.repo]) + ';margin-right:4px;margin-left:8px"></span> ' + n2.repo.slice(0, 12) + ' ';
+    }
+  }
+  legendDiv.innerHTML = legendHtml;
+  container.appendChild(legendDiv);
+
+  // Interaction
+  var raycaster = new THREE.Raycaster();
+  var pointer = new THREE.Vector2();
+  var tooltipEl2 = document.getElementById('tooltip3d') || (function() {
+    var el = document.createElement('div'); el.id = 'tooltip3d'; el.className = 'chart-tooltip';
+    el.style.cssText = 'display:none;pointer-events:auto;position:fixed;z-index:9999';
+    document.body.appendChild(el); return el;
+  })();
+
+  renderer.domElement.addEventListener('mousemove', function(ev) {
+    var rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    var intersects = raycaster.intersectObjects(nodeMeshes);
+    if (intersects.length > 0) {
+      var hit = intersects[0].object;
+      var ud = hit.userData;
+      var tipHtml = '<div class="tt-header">' + escHtml(ud.label) + '</div>';
+      if (ud.type === 'endpoint') tipHtml += '<div class="tt-row"><span>Repo</span><strong>' + escHtml(ud.repo) + '</strong></div>';
+      if (ud.type === 'backend') tipHtml += '<div class="tt-row"><span>URL</span><strong style="word-break:break-all;font-size:0.65rem">' + escHtml(ud.url) + '</strong></div>';
+      tooltipEl2.innerHTML = tipHtml;
+      tooltipEl2.style.display = 'block';
+      var tx = ev.clientX + 12, ty = ev.clientY - 30;
+      if (tx + 200 > window.innerWidth) tx = ev.clientX - 220;
+      if (ty < 10) ty = ev.clientY + 12;
+      tooltipEl2.style.left = tx + 'px';
+      tooltipEl2.style.top = ty + 'px';
+    } else {
+      tooltipEl2.style.display = 'none';
+    }
+  });
+
+  renderer.domElement.addEventListener('mouseleave', function() {
+    tooltipEl2.style.display = 'none';
+  });
+
+  threeScene = scene;
+  threeCamera = camera;
+  threeRenderer = renderer;
+  threeLabelRenderer = labelRenderer;
+  threeControls = controls;
+
+  function animate() {
+    threeAnimId = requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+  }
+  animate();
+
+  var resizeHandler = function() {
+    var w2 = container.clientWidth || 800;
+    var h2 = container.clientHeight || 600;
+    camera.aspect = w2 / h2;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w2, h2);
+    labelRenderer.setSize(w2, h2);
+  };
+  window.addEventListener('resize', resizeHandler);
+  renderer.domElement._resizeHandler = resizeHandler;
+}
+
+// ─── Cross-Repo View ──────────────────────────────────────
+function showApiLibCrossrepo() {
+  var container = $('crossrepoContainer');
+  var empty = $('crossrepoEmpty');
+  if (!apiLibData || apiLibData.length === 0) {
+    empty.style.display = '';
+    container.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  container.style.display = '';
+  container.innerHTML = '<div class="chart-empty">Building cross-repo graph...</div>';
+  loadThreeJS().then(function() {
+    buildApiLibCrossrepo(container);
+  }).catch(function(err) {
+    container.innerHTML = '<div class="chart-empty">3D failed: ' + escHtml(err.message || err) + '</div>';
+  });
+}
+
+function buildApiLibCrossrepo(container) {
+  dispose3D();
+  var W = container.clientWidth || 800;
+  var H = container.clientHeight || 600;
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xf5f7fa);
+  var camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
+  camera.position.set(0, 6, 16);
+  camera.lookAt(0, 0, 0);
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  container.appendChild(renderer.domElement);
+  var labelRenderer = new window.CSS2DRenderer();
+  labelRenderer.setSize(W, H);
+  labelRenderer.domElement.style.position = 'absolute';
+  labelRenderer.domElement.style.top = '0';
+  labelRenderer.domElement.style.left = '0';
+  labelRenderer.domElement.style.pointerEvents = 'none';
+  container.appendChild(labelRenderer.domElement);
+  var controls = new window.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxDistance = 40;
+  controls.minDistance = 3;
+  var ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambient);
+  var hemi = new THREE.HemisphereLight(0xffffff, 0xddeeff, 0.5);
+  scene.add(hemi);
+  var dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(5, 10, 7);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+  var shadowGeo = new THREE.CircleGeometry(14, 32);
+  var shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.025, depthWrite: false });
+  var shadowDisc = new THREE.Mesh(shadowGeo, shadowMat);
+  shadowDisc.rotation.x = -Math.PI / 2;
+  shadowDisc.position.y = -0.1;
+  scene.add(shadowDisc);
+
+  // Build repo→backend URL mapping (cross-repo consumption)
+  var repoBackendMap = {};
+  var backendReposMap = {};
+  apiLibData.forEach(function(ep) {
+    var rn = ep.repoName || 'unknown';
+    if (!repoBackendMap[rn]) repoBackendMap[rn] = {};
+    (ep.backendUrls || []).forEach(function(bu) {
+      repoBackendMap[rn][bu.url] = true;
+      if (!backendReposMap[bu.url]) backendReposMap[bu.url] = {};
+      backendReposMap[bu.url][rn] = true;
+    });
+  });
+
+  // Find shared backend URLs (consumed by >1 repo)
+  var sharedUrls = [];
+  for (var bu in backendReposMap) {
+    var repos = Object.keys(backendReposMap[bu]);
+    if (repos.length > 1) {
+      sharedUrls.push({ url: bu, repos: repos, count: repos.length });
+    }
+  }
+  // Also find repos that share any backend
+  var repoRepos = {};
+  var repoList = Object.keys(repoBackendMap).sort();
+  repoList.forEach(function(r) {
+    repoRepos[r] = {};
+    repoList.forEach(function(r2) {
+      if (r === r2) return;
+      for (var bu2 in repoBackendMap[r]) {
+        if (repoBackendMap[r2][bu2]) {
+          repoRepos[r][r2] = (repoRepos[r][r2] || 0) + 1;
+        }
+      }
+    });
+  });
+
+  var maxShared = repoList.reduce(function(mx, r) {
+    return Math.max(mx, Object.keys(repoRepos[r] || {}).length);
+  }, 1);
+
+  var repoNodes = [];
+  var repoColors = ['#6366f1', '#22d3ee', '#f59e0b', '#ef4444', '#10b981', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4', '#84cc16', '#d946ef'];
+  repoList.forEach(function(r, i) {
+    var angle = (i / repoList.length) * Math.PI * 2 - Math.PI / 2;
+    var rad = Math.max(4, repoList.length * 0.8);
+    repoNodes.push({ name: r, x: Math.cos(angle) * rad, z: Math.sin(angle) * rad, color: repoColors[i % repoColors.length] });
+  });
+
+  var linkMeshes = [];
+  repoNodes.forEach(function(n, i) {
+    var r = 0.5;
+    var geo = new THREE.SphereGeometry(r, 24, 24);
+    var mat = new THREE.MeshPhysicalMaterial({ color: n.color, roughness: 0.25, metalness: 0.05, emissive: n.color, emissiveIntensity: 0.1 });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(n.x, 0, n.z);
+    mesh.castShadow = true;
+    mesh.userData = { type: 'repo', name: n.name };
+    scene.add(mesh);
+
+    var div = document.createElement('div');
+    div.textContent = n.name.length > 16 ? n.name.slice(0, 14) + '...' : n.name;
+    div.style.cssText = 'color:#0f172a;font-size:10px;font-weight:700;background:rgba(255,255,255,0.95);padding:3px 8px;border-radius:4px;border:1px solid ' + n.color + ';pointer-events:none;white-space:nowrap';
+    var label = new window.CSS2DObject(div);
+    label.position.set(n.x, -r - 0.6, n.z);
+    scene.add(label);
+
+    // Draw edges to connected repos
+    for (var j = i + 1; j < repoNodes.length; j++) {
+      var n2 = repoNodes[j];
+      var sharedCount = repoRepos[n.name] && repoRepos[n.name][n2.name] ? repoRepos[n.name][n2.name] : 0;
+      if (sharedCount > 0) {
+        var fromPos = new THREE.Vector3(n.x, 0, n.z);
+        var toPos = new THREE.Vector3(n2.x, 0, n2.z);
+        var mid2 = new THREE.Vector3().addVectors(fromPos, toPos).multiplyScalar(0.5);
+        mid2.y += 0.3 + sharedCount * 0.15;
+        var curve2 = new THREE.CatmullRomCurve3([fromPos, mid2, toPos]);
+        var thickness = 0.02 + sharedCount * 0.015;
+        var opacity = Math.min(0.1 + sharedCount * 0.08, 0.5);
+        var tubeMat2 = new THREE.MeshPhysicalMaterial({ color: '#6366f1', transparent: true, opacity: opacity, roughness: 0.5 });
+        var tube2 = new THREE.Mesh(new THREE.TubeGeometry(curve2, 16, thickness, 5, false), tubeMat2);
+        scene.add(tube2);
+        linkMeshes.push(tube2);
+      }
+    }
+  });
+
+  // Legend
+  var legendDiv = document.createElement('div');
+  legendDiv.style.cssText = 'position:absolute;bottom:10px;left:10px;font-size:10px;background:rgba(255,255,255,0.9);padding:6px 10px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);pointer-events:none';
+  legendDiv.innerHTML = '<div><strong>Cross-Repo Backend URL Sharing</strong><br><span style="color:#6366f1">●</span> Nodes = Repositories &nbsp; <span style="color:#6366f1">━</span> Edges = Shared backend URLs<br>'
+    + 'Shared URLs: ' + sharedUrls.length + ' &nbsp;|&nbsp; Repos: ' + repoList.length + ' &nbsp;|&nbsp; Endpoints: ' + apiLibData.length + '</div>';
+  container.appendChild(legendDiv);
+
+  // Shared URLs detail panel
+  if (sharedUrls.length > 0) {
+    var detailDiv = document.createElement('div');
+    detailDiv.style.cssText = 'position:absolute;top:10px;right:10px;font-size:10px;background:rgba(255,255,255,0.95);padding:8px 12px;border-radius:6px;border:1px solid rgba(0,0,0,0.08);max-height:200px;overflow-y:auto;max-width:280px';
+    var detailHtml = '<div style="font-weight:700;margin-bottom:4px;color:var(--text)">Shared Backend URLs</div>';
+    sharedUrls.slice(0, 15).forEach(function(su) {
+      detailHtml += '<div style="margin:2px 0;word-break:break-all;color:var(--text-muted)"><span style="color:#10b981">●</span> ' + escHtml(su.url.slice(0, 40)) + '... <span style="font-weight:600">(' + su.repos.join(', ') + ')</span></div>';
+    });
+    if (sharedUrls.length > 15) detailHtml += '<div style="color:var(--text-muted)">... and ' + (sharedUrls.length - 15) + ' more</div>';
+    detailDiv.innerHTML = detailHtml;
+    container.appendChild(detailDiv);
+  }
+
+  threeScene = scene;
+  threeCamera = camera;
+  threeRenderer = renderer;
+  threeLabelRenderer = labelRenderer;
+  threeControls = controls;
+  threeNodes.length = 0;
+  threeEdgeMeshes.length = 0;
+
+  function animate() {
+    threeAnimId = requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+  }
+  animate();
+
+  var resizeHandler = function() {
+    var w2 = container.clientWidth || 800;
+    var h2 = container.clientHeight || 600;
+    camera.aspect = w2 / h2;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w2, h2);
+    labelRenderer.setSize(w2, h2);
+  };
+  window.addEventListener('resize', resizeHandler);
+  renderer.domElement._resizeHandler = resizeHandler;
+}
+
+// ─── Backend URL Source Tree builder ──────────────────────
+function buildBackendUrlSourceTree(backendUrls) {
+  if (!backendUrls || backendUrls.length === 0) return '';
+  var tree = {};
+  backendUrls.forEach(function(bu) {
+    var pf = bu.propFile || 'unknown';
+    if (!tree[pf]) tree[pf] = [];
+    tree[pf].push(bu);
+  });
+  var html = '';
+  var sortedFiles = Object.keys(tree).sort();
+  sortedFiles.forEach(function(pf) {
+    var displayName = pf.split('/').pop() || pf;
+    html += '<div class="tree-node"><span class="tree-propfile">' + escHtml(displayName) + '</span></div>';
+    tree[pf].forEach(function(bu) {
+      html += '<div class="tree-node" style="padding-left:1rem"><span class="tree-arrow">└─</span><span class="tree-field">' + escHtml(bu.key) + '</span><span class="tree-arrow">→</span><span class="tree-url">' + escHtml(bu.url) + '</span></div>';
+    });
+  });
+  return html;
+}
+
+// ─── Download API LIB Report ──────────────────────────────
+function downloadApiLibReport() {
+  if (!apiLibData || apiLibData.length === 0) { setStatus('No data to export', true); return; }
+  var repoMap = {};
+  var methodMap = {};
+  var totalUrls = 0;
+  apiLibData.forEach(function(e) {
+    var rn = e.repoName || 'unknown';
+    if (!repoMap[rn]) repoMap[rn] = { endpoints: 0, controllers: new Set(), backendUrls: new Set(), urls: [] };
+    repoMap[rn].endpoints++;
+    if (e.controllerClass) repoMap[rn].controllers.add(e.controllerClass);
+    (e.backendUrls || []).forEach(function(bu) {
+      repoMap[rn].backendUrls.add(bu.url);
+      repoMap[rn].urls.push(bu);
+      totalUrls++;
+    });
+    var m = e.httpMethod || 'UNKNOWN';
+    if (!methodMap[m]) methodMap[m] = 0;
+    methodMap[m]++;
+  });
+
+  var now = new Date().toISOString().slice(0, 10);
+  var lines = [];
+  lines.push('================================================================================');
+  lines.push('  API LIBRARY REPORT');
+  lines.push('  Generated: ' + now);
+  lines.push('  Total Endpoints: ' + apiLibData.length);
+  lines.push('  Total Repos: ' + Object.keys(repoMap).length);
+  lines.push('  Total Backend URLs: ' + totalUrls);
+  lines.push('  Unlinked URLs: ' + (apiLibUnlinkedUrls ? apiLibUnlinkedUrls.length : 0));
+  lines.push('================================================================================');
+  lines.push('');
+
+  lines.push('--- ENDPOINTS PER REPO ---');
+  var repoEntries = Object.entries(repoMap).sort(function(a, b) { return b[1].endpoints - a[1].endpoints; });
+  repoEntries.forEach(function(re) {
+    lines.push('  ' + re[0] + ': ' + re[1].endpoints + ' endpoints, ' + re[1].controllers.size + ' controllers, ' + re[1].backendUrls.size + ' backend URLs');
+  });
+  lines.push('');
+
+  lines.push('--- HTTP METHOD DISTRIBUTION ---');
+  var methodEntries = Object.entries(methodMap).sort(function(a, b) { return b[1] - a[1]; });
+  methodEntries.forEach(function(me) {
+    lines.push('  ' + me[0] + ': ' + me[1]);
+  });
+  lines.push('');
+
+  lines.push('--- ALL ENDPOINTS ---');
+  lines.push('  #,HTTP Method,Endpoint,Controller Class,Repo,Backend URLs,Files');
+  apiLibData.forEach(function(e, i) {
+    var buStr = (e.backendUrls || []).map(function(b) { return b.key + '=' + b.url; }).join('; ');
+    lines.push('  ' + (i + 1) + ',"' + e.httpMethod + '","' + e.endpoint + '","' + (e.controllerClass || '') + '","' + e.repoName + '","' + buStr + '","' + (e.file || '') + '"');
+  });
+  lines.push('');
+
+  if (apiLibUnlinkedUrls && apiLibUnlinkedUrls.length > 0) {
+    lines.push('--- UNLINKED URLs ---');
+    lines.push('  #,Key,URL,Property File,Repo');
+    apiLibUnlinkedUrls.forEach(function(u, i) {
+      lines.push('  ' + (i + 1) + ',"' + u.key + '","' + u.url + '","' + (u.propFile || '') + '","' + (u.repoName || '') + '"');
+    });
+    lines.push('');
+  }
+
+  lines.push('--- CROSS-REPO BACKEND URL SHARING ---');
+  var backendReposMap2 = {};
+  apiLibData.forEach(function(ep) {
+    (ep.backendUrls || []).forEach(function(bu) {
+      if (!backendReposMap2[bu.url]) backendReposMap2[bu.url] = new Set();
+      backendReposMap2[bu.url].add(ep.repoName);
+    });
+  });
+  var sharedUrls2 = Object.entries(backendReposMap2).filter(function(e) { return e[1].size > 1; }).sort(function(a, b) { return b[1].size - a[1].size; });
+  sharedUrls2.forEach(function(su) {
+    lines.push('  ' + su[0] + ' → ' + [...su[1]].join(', '));
+  });
+  if (sharedUrls2.length === 0) lines.push('  No shared backend URLs found across repos.');
+  lines.push('');
+
+  lines.push('--- BACKEND URL SOURCE TREE ---');
+  var urlPropMap = {};
+  apiLibData.forEach(function(ep) {
+    (ep.backendUrls || []).forEach(function(bu) {
+      var pf = bu.propFile || 'unknown';
+      if (!urlPropMap[pf]) urlPropMap[pf] = [];
+      if (urlPropMap[pf].indexOf(bu.url) < 0) urlPropMap[pf].push(bu.url);
+    });
+  });
+  for (var pf2 in urlPropMap) {
+    lines.push('  ' + pf2);
+    urlPropMap[pf2].forEach(function(u) { lines.push('    └─ ' + u); });
+  }
+  lines.push('');
+
+  lines.push('--- ENDPOINT DEPENDENCY MAP ---');
+  var depEdgeCount = 0;
+  apiLibData.forEach(function(ep) {
+    if (ep.backendUrls && ep.backendUrls.length > 0) {
+      lines.push('  ' + ep.endpoint + ' (via ' + ep.repoName + ')');
+      ep.backendUrls.forEach(function(bu) {
+        lines.push('    └─ ' + bu.key + ' → ' + bu.url + (bu.propFile ? ' [' + bu.propFile + ']' : ''));
+        depEdgeCount++;
+      });
+    }
+  });
+  if (depEdgeCount === 0) lines.push('  No endpoint-to-backend-URL dependencies found.');
+  lines.push('');
+
+  lines.push('================================================================================');
+  lines.push('  END OF REPORT');
+  lines.push('================================================================================');
+
+  var content = lines.join('\n');
+  var blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'api-lib-report-' + now + '.txt';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  setStatus('Report downloaded (' + apiLibData.length + ' endpoints)');
 }
 
 // ═══════════════════════════════════════════════════════════

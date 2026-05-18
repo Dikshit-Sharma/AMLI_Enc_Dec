@@ -846,6 +846,47 @@ tr:hover { background: var(--bg-hover); }
   color: var(--text);
 }
 
+/* ─── API LIB ──────────────────────────────────────────── */
+.api-lib-row--active td {
+  background: var(--primary-glow);
+}
+.api-lib-detail {
+  padding: 1rem 1.25rem;
+  background: var(--bg-input);
+  border-top: 1px solid var(--border);
+}
+.api-lib-usage {
+  margin-bottom: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+.api-lib-usage:last-child { margin-bottom: 0; }
+.api-lib-ref-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: var(--primary-glow);
+  color: var(--primary);
+  border-radius: 999px;
+}
+#apiLibSearch:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+#viewApiLib .table-wrap {
+  max-height: none;
+}
+#viewApiLib .table-wrap table { min-width: 900px; }
+#viewApiLib .table-wrap td, #viewApiLib .table-wrap th { white-space: normal; vertical-align: top; }
+
 /* ─── Responsive ────────────────────────────────────────── */
 @media (max-width: 768px) {
   .app-layout { flex-direction: column; }
@@ -872,4 +913,168 @@ tr:hover { background: var(--bg-hover); }
   .compare-header, .compare-row { grid-template-columns: 1fr 60px 60px 60px 50px; font-size: 0.7rem; padding: 0.4rem 0.5rem; }
   .compare-form { flex-direction: column; align-items: stretch; }
   .compare-form .form-row { min-width: 0; }
+
+/* ─── API LIB tab panels ─── */
+.api-lib-tab-panel { display: none; }
+.api-lib-tab-panel.active { display: block; }
+
+/* ─── Method badge pills ─── */
+.api-lib-method-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.api-lib-method-badge.get { background: rgba(59,130,246,0.2); color: #60a5fa; }
+.api-lib-method-badge.post { background: rgba(16,185,129,0.2); color: #34d399; }
+.api-lib-method-badge.put { background: rgba(245,158,11,0.2); color: #fbbf24; }
+.api-lib-method-badge.delete { background: rgba(239,68,68,0.2); color: #f87171; }
+.api-lib-method-badge.patch { background: rgba(139,92,246,0.2); color: #a78bfa; }
+
+/* ─── Repo bar chart ─── */
+.api-lib-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+.api-lib-bar-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  width: 180px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.api-lib-bar-track {
+  flex: 1;
+  height: 1.2rem;
+  background: var(--bg-input);
+  border-radius: 0.3rem;
+  overflow: hidden;
+}
+.api-lib-bar-fill {
+  height: 100%;
+  border-radius: 0.3rem;
+  background: var(--primary);
+  transition: width 0.3s;
+  min-width: 2px;
+}
+.api-lib-bar-count {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  width: 30px;
+  text-align: left;
+  flex-shrink: 0;
+}
+
+/* ─── Unlinked URL table ─── */
+.api-lib-unlinked-table { width: 100%; border-collapse: collapse; }
+.api-lib-unlinked-table th {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.api-lib-unlinked-table td {
+  font-size: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+/* ─── Source tree in endpoint detail ─── */
+.api-lib-source-tree {
+  font-size: 0.68rem;
+  line-height: 1.6;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-input);
+  border-radius: 0.35rem;
+  border: 1px solid var(--border);
+  margin-top: 0.4rem;
+  max-height: 180px;
+  overflow-y: auto;
+  font-family: var(--mono);
+}
+.api-lib-source-tree .tree-node {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.05rem 0;
+}
+.api-lib-source-tree .tree-arrow {
+  color: var(--text-muted);
+  margin: 0 0.2rem;
+}
+.api-lib-source-tree .tree-endpoint { color: var(--primary); font-weight: 600; }
+.api-lib-source-tree .tree-field { color: var(--secondary); }
+.api-lib-source-tree .tree-service { color: #fbbf24; }
+.api-lib-source-tree .tree-propfile { color: var(--text-muted); font-style: italic; }
+.api-lib-source-tree .tree-url { color: #10b981; word-break: break-all; }
+
+/* ─── Unlinked URLs count badge ─── */
+.api-lib-unlinked-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: rgba(239,68,68,0.15);
+  color: var(--error);
+  border-radius: 999px;
+  margin-left: 0.35rem;
+}
+
+/* ─── Depmap and Crossrepo 3D container overrides ─── */
+#depmapContainer canvas,
+#crossrepoContainer canvas {
+  display: block;
+}
+#depmapContainer .css2d-label,
+#crossrepoContainer .css2d-label {
+  pointer-events: none;
+}
+
+/* ─── Method distribution chart ─── */
+.api-lib-method-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+.api-lib-method-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  width: 70px;
+  text-align: right;
+}
+.api-lib-method-track {
+  flex: 1;
+  height: 1.4rem;
+  background: var(--bg-input);
+  border-radius: 0.3rem;
+  overflow: hidden;
+}
+.api-lib-method-fill {
+  height: 100%;
+  border-radius: 0.3rem;
+  transition: width 0.3s;
+  min-width: 2px;
+}
+.api-lib-method-count {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  width: 30px;
+}
 }

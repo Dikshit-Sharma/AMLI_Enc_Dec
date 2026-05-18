@@ -1,10 +1,11 @@
 const ARTIFACTS_URL = import.meta.env.VITE_API_BASE_URL || '/api/artifacts';
 const CREDENTIALS_URL = '/api/credentials';
 
-export async function fetchArtifacts({ limit, cursor } = {}) {
+export async function fetchArtifacts({ limit, cursor, search } = {}) {
   const params = new URLSearchParams();
   if (limit) params.set('limit', limit);
   if (cursor) params.set('cursor', cursor);
+  if (search) params.set('search', search);
   const qs = params.toString();
   const res = await fetch(qs ? `${ARTIFACTS_URL}?${qs}` : ARTIFACTS_URL);
   if (!res.ok) {

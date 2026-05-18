@@ -7,10 +7,8 @@ import ArtifactComparator from './ArtifactComparator';
 import LibraryInsights from './LibraryInsights';
 import { SkeletonTableRows } from './Skeleton';
 
-const PAGE_SIZE = 20;
-
 const LibraryPage = ({ theme, toggleTheme }) => {
-  const [artifacts, setArtifacts] = useState([]);
+  const [allArtifacts, setAllArtifacts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(
@@ -22,52 +20,21 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   const [compareArtifacts, setCompareArtifacts] = useState(null);
   const [showInsights, setShowInsights] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
-
-  const [cursorStack, setCursorStack] = useState([]);
-  const [nextCursor, setNextCursor] = useState(null);
-  const [pageNum, setPageNum] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
 
   const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
-  const loadPage = async (cursor) => {
-    setLoading(true);
-    try {
-      const res = await fetchArtifacts({ limit: PAGE_SIZE, cursor });
-      setArtifacts(res.artifacts || []);
-      setNextCursor(res.nextCursor);
-      setHasMore(!!res.nextCursor);
-      if (res.total !== undefined) setTotalCount(res.total);
-    } catch (err) {
-      console.error('Failed to load artifacts:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (!isAuthenticated) return;
-    loadPage(null);
-    setCursorStack([]);
-    setPageNum(1);
+    setLoading(true);
+    fetchArtifacts({})  // no limit/cursor → fetch ALL
+      .then(res => {
+        setAllArtifacts(res.artifacts || []);
+        if (res.total !== undefined) setTotalCount(res.total);
+      })
+      .catch(err => console.error('Failed to load artifacts:', err))
+      .finally(() => setLoading(false));
   }, [isAuthenticated]);
-
-  const handleNextPage = () => {
-    if (!nextCursor) return;
-    setCursorStack((prev) => [...prev, nextCursor]);
-    setPageNum((p) => p + 1);
-    loadPage(nextCursor);
-  };
-
-  const handlePrevPage = () => {
-    if (cursorStack.length === 0) return;
-    const prev = cursorStack.slice(0, -1);
-    const prevCursor = prev.length > 0 ? prev[prev.length - 1] : null;
-    setCursorStack(prev);
-    setPageNum((p) => p - 1);
-    loadPage(prevCursor);
-  };
 
   const handlePasswordSubmit = (e) => {
     e.preventDefault();
@@ -80,7 +47,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     }
   };
 
-  const filteredArtifacts = artifacts.filter((art) => {
+  const displayArtifacts = allArtifacts.filter(art => {
     if (!searchTerm) return true;
     const q = searchTerm.toLowerCase();
     return (
@@ -124,13 +91,13 @@ const LibraryPage = ({ theme, toggleTheme }) => {
 
   const handleCompare = () => {
     const [idA, idB] = selectedIds.slice(0, 2);
-    const a = artifacts.find((a) => a.id === idA);
-    const b = artifacts.find((b) => b.id === idB);
+    const a = allArtifacts.find((a) => a.id === idA);
+    const b = allArtifacts.find((b) => b.id === idB);
     if (a && b) setCompareArtifacts({ artifactA: a, artifactB: b });
   };
 
   const handleBulkDownload = () => {
-    const selected = artifacts.filter((a) => selectedIds.includes(a.id));
+    const selected = allArtifacts.filter((a) => selectedIds.includes(a.id));
     if (selected.length === 0) return;
     generateBulkZip(selected, decrypt, decryptCBC).catch((err) =>
       alert('Download failed: ' + err.message)
@@ -298,7 +265,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
           />
           {searchTerm && (
             <div style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              {filteredArtifacts.length} of {artifacts.length} on this page match
+              {displayArtifacts.length} of {allArtifacts.length} match
             </div>
           )}
         </div>
@@ -338,8 +305,8 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredArtifacts.length > 0 ? (
-                    filteredArtifacts.map((art, index) => (
+                  {displayArtifacts.length > 0 ? (
+                    displayArtifacts.map((art, index) => (
                       <React.Fragment key={art.id}>
                         <tr
                           style={{ cursor: 'pointer' }}
@@ -360,7 +327,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                               }}
                             />
                           </td>
-                          <td>{(pageNum - 1) * PAGE_SIZE + index + 1}</td>
+                          <td>{index + 1}</td>
                           <td style={{ fontWeight: 600 }}>
                             {expandedId === art.id ? '▼' : '▶'} {art.apiName}
                           </td>
@@ -445,61 +412,11 @@ const LibraryPage = ({ theme, toggleTheme }) => {
             </div>
           )}
 
-          <div
-            className="pagination-bar"
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              gap: '1rem',
-              marginTop: '1.5rem',
-              padding: '1rem 0',
-            }}
-          >
-            <button
-              className="btn-pagination"
-              disabled={cursorStack.length === 0}
-              onClick={handlePrevPage}
-              style={{
-                background: cursorStack.length === 0
-                  ? 'rgba(255,255,255,0.05)'
-                  : 'var(--input-bg)',
-                border: '1px solid var(--border)',
-                borderRadius: '0.75rem',
-                padding: '0.5rem 1.25rem',
-                cursor: cursorStack.length === 0 ? 'not-allowed' : 'pointer',
-                color: cursorStack.length === 0 ? 'var(--text-muted)' : 'var(--text)',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                opacity: cursorStack.length === 0 ? 0.5 : 1,
-              }}
-            >
-              ← Prev
-            </button>
-            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              Page {pageNum}
-            </span>
-            <button
-              className="btn-pagination"
-              disabled={!hasMore}
-              onClick={handleNextPage}
-              style={{
-                background: !hasMore
-                  ? 'rgba(255,255,255,0.05)'
-                  : 'var(--input-bg)',
-                border: '1px solid var(--border)',
-                borderRadius: '0.75rem',
-                padding: '0.5rem 1.25rem',
-                cursor: !hasMore ? 'not-allowed' : 'pointer',
-                color: !hasMore ? 'var(--text-muted)' : 'var(--text)',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                opacity: !hasMore ? 0.5 : 1,
-              }}
-            >
-              Next →
-            </button>
-          </div>
+          {loading && (
+            <div style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Loading all artifacts...
+            </div>
+          )}
         </div>
       </div>
 
