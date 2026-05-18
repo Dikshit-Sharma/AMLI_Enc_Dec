@@ -35,6 +35,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   const generatingRef = useRef(false);
   const [curlErrors, setCurlErrors] = useState({});
   const [curlFormatted, setCurlFormatted] = useState({});
+  const [curlValidMsg, setCurlValidMsg] = useState({});
 
   const pasteSuggestion = useSmartPaste(libraryForPaste);
 
@@ -129,9 +130,18 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   };
 
   const handleValidateCurl = useCallback((index) => {
-    const curl = artifacts[index]?.curl || '';
-    const errors = validateCurl(curl);
+    var curl = artifacts[index]?.curl || '';
+    var errors = validateCurl(curl);
     setCurlErrors(function(prev) { return { ...prev, [index]: errors }; });
+    setCurlValidMsg(function(prev) {
+      var next = { ...prev, [index]: errors.length === 0 ? 'No issues found' : null };
+      return next;
+    });
+    if (errors.length === 0) {
+      setTimeout(function() {
+        setCurlValidMsg(function(prev) { return { ...prev, [index]: null }; });
+      }, 2500);
+    }
   }, [artifacts]);
 
   const handleFormatCurl = useCallback((index) => {
@@ -239,11 +249,12 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
               </div>
 
               <div className="form-group">
-                <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                   Curl Command
-                  <button className="btn-sm-ghost" onClick={() => handleValidateCurl(index)} title="Validate curl syntax">✓ Validate</button>
-                  <button className="btn-sm-ghost" onClick={() => handleFormatCurl(index)} title="Format curl command">↯ Format</button>
+                  <button className="btn-sm-ghost" onClick={function() { handleValidateCurl(index); }} type="button">✓ Validate</button>
+                  <button className="btn-sm-ghost" onClick={function() { handleFormatCurl(index); }} type="button">↯ Format</button>
                   {curlFormatted[index] && <span style={{ color: 'var(--success)', fontSize: '0.72rem' }}>Formatted ✓</span>}
+                  {curlValidMsg[index] && <span style={{ color: 'var(--success, #059669)', fontSize: '0.72rem', fontWeight: 600 }}>{curlValidMsg[index]} ✓</span>}
                 </label>
                 <textarea className={'main-input small-area' + ((curlErrors[index] && curlErrors[index].length > 0) ? ' input-error' : '')} placeholder="Paste full curl here..." value={art.curl}
                   onChange={(e) => {

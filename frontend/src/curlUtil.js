@@ -1,102 +1,125 @@
-const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+// Flatten a curl command: join backslash-continued lines, collapse whitespace
+function normalizeCurl(str) {
+  return str.replace(/\\\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Extract all tokens from a normalized curl preserving quoted strings as units
+function tokenizeCurl(str) {
+  var tokens = [];
+  var i = 0;
+  while (i < str.length) {
+    if (/\s/.test(str[i])) { i++; continue; }
+    if (str[i] === "'" || str[i] === '"') {
+      var quote = str[i];
+      var j = i + 1;
+      while (j < str.length && str[j] !== quote) {
+        if (str[j] === '\\') j++;
+        j++;
+      }
+      tokens.push({ type: 'string', value: str.slice(i + 1, j), raw: str.slice(i, j + (str[j] === quote ? 1 : 0)) });
+      i = str[j] === quote ? j + 1 : j;
+    } else {
+      var j2 = i;
+      while (j2 < str.length && !/\s/.test(str[j2])) j2++;
+      tokens.push({ type: 'word', value: str.slice(i, j2) });
+      i = j2;
+    }
+  }
+  return tokens;
+}
+
+// Check if a token looks like a URL
+function isUrl(val) {
+  return /^https?:\/\//.test(val);
+}
 
 export function validateCurl(curlString) {
-  const errors = [];
+  var errors = [];
   if (!curlString || !curlString.trim()) {
     errors.push({ line: 0, message: 'Curl command is empty', type: 'error' });
     return errors;
   }
 
-  const trimmed = curlString.trim();
+  var flat = normalizeCurl(curlString);
 
-  // Check curl keyword
-  if (!/^curl\b/i.test(trimmed)) {
+  if (!/^curl\b/i.test(flat)) {
     errors.push({ line: 1, message: 'Command must start with "curl"', type: 'error' });
   }
 
-  // Check balanced quotes
-  let inSingle = false;
-  let inDouble = false;
-  let sqStart = -1;
-  let dqStart = -1;
-  for (let i = 0; i < trimmed.length; i++) {
-    const ch = trimmed[i];
-    const prev = i > 0 ? trimmed[i - 1] : '';
-    if (ch === "'" && !inDouble && prev !== '\\') {
-      if (!inSingle) { inSingle = true; sqStart = i; }
-      else { inSingle = false; sqStart = -1; }
-    } else if (ch === '"' && !inSingle && prev !== '\\') {
-      if (!inDouble) { inDouble = true; dqStart = i; }
-      else { inDouble = false; dqStart = -1; }
-    }
-  }
-  if (inSingle) {
-    const lineNo = trimmed.slice(0, sqStart).split('\n').length;
-    errors.push({ line: lineNo, message: 'Unclosed single quote', type: 'error' });
-  }
-  if (inDouble) {
-    const lineNo = trimmed.slice(0, dqStart).split('\n').length;
-    errors.push({ line: lineNo, message: 'Unclosed double quote', type: 'error' });
-  }
-
-  // Extract method
-  let method = 'GET';
-  const xMethod = trimmed.match(/(?:^|\s)-X\s+['"]?(\w+)['"]?/);
-  if (xMethod) method = xMethod[1].toUpperCase();
-
-  // Validate URL
-  const urlMatch = trimmed.match(/(?:'|")(https?:\/\/[^'"]+)(?:'|")/);
-  if (!urlMatch) {
-    errors.push({ line: 1, message: 'No URL found (expected quoted URL like "https://..." )', type: 'error' });
-  } else {
-    const url = urlMatch[1];
-    try { new URL(url); } catch {
-      const lineNo = trimmed.slice(0, urlMatch.index).split('\n').length + 1;
-      errors.push({ line: lineNo, message: 'Invalid URL format: ' + url, type: 'error' });
-    }
-  }
-
-  // Check -H headers
-  const headerRe = /(?:^|\s)-H\s+['"]([^'"]*)['"]/g;
-  let hm;
-  while ((hm = headerRe.exec(trimmed)) !== null) {
-    const hdr = hm[1];
-    const colonIdx = hdr.indexOf(':');
-    if (colonIdx <= 0) {
-      const lineNo = trimmed.slice(0, hm.index).split('\n').length + 1;
-      errors.push({ line: lineNo, message: 'Invalid header format: "' + hdr + '" (expected "Key: Value")', type: 'error' });
-    }
-  }
-
-  // Check -d / --data body
-  const bodyRe = /(?:^|\s)-d\s+/g;
-  let bm;
-  while ((bm = bodyRe.exec(trimmed)) !== null) {
-    const rest = trimmed.slice(bm.index + bm[0].length).trim();
-    const bodyContent = rest.match(/^['"]([\s\S]*?)['"]/);
-    if (!bodyContent) {
-      const lineNo = trimmed.slice(0, bm.index).split('\n').length + 1;
-      errors.push({ line: lineNo, message: 'Body after -d must be quoted', type: 'error' });
-    }
-  }
-
-  // Warn if POST/PUT/PATCH without -d
-  if (['POST', 'PUT', 'PATCH'].includes(method)) {
-    const hasBody = /(?:^|\s)-d\b/.test(trimmed) || /(?:^|\s)--data\b/.test(trimmed);
-    if (!hasBody) {
-      errors.push({ line: 1, message: method + ' request without -d/--data body', type: 'warning' });
-    }
-  }
-
-  // Check for unescaped braces in body (likely JSON)
-  const bodySection = trimmed.match(/-(?:d|-data(?:-raw)?)\s+['"]([\s\S]*)['"]/);
-  if (bodySection) {
-    const body = bodySection[1];
-    if (body.startsWith('{') || body.startsWith('[')) {
-      try { JSON.parse(body); } catch {
-        errors.push({ line: 1, message: 'Request body looks like JSON but is not valid', type: 'warning' });
+  // Check unbalanced quotes in original (multi-line aware)
+  var inSingle = false, inDouble = false, sqLine = 0, dqLine = 0;
+  var lines = curlString.split('\n');
+  for (var li = 0; li < lines.length; li++) {
+    var l = lines[li];
+    for (var ci = 0; ci < l.length; ci++) {
+      var ch = l[ci];
+      var prev = ci > 0 ? l[ci - 1] : '';
+      if (ch === "'" && !inDouble && prev !== '\\') {
+        if (!inSingle) { inSingle = true; sqLine = li + 1; } else { inSingle = false; }
+      } else if (ch === '"' && !inSingle && prev !== '\\') {
+        if (!inDouble) { inDouble = true; dqLine = li + 1; } else { inDouble = false; }
       }
     }
+  }
+  if (inSingle) errors.push({ line: sqLine, message: 'Unclosed single quote', type: 'error' });
+  if (inDouble) errors.push({ line: dqLine, message: 'Unclosed double quote', type: 'error' });
+  if (inSingle || inDouble) return errors; // stop early if quotes are broken
+
+  // Tokenize for deeper analysis
+  var toks = tokenizeCurl(flat);
+  if (toks.length === 0) return errors;
+
+  // Find the URL token
+  var foundUrl = false;
+  for (var ti = 1; ti < toks.length; ti++) {
+    if (isUrl(toks[ti].value) || isUrl(toks[ti].raw)) {
+      foundUrl = true;
+      try { new URL(toks[ti].value); } catch {
+        errors.push({ line: 1, message: 'Invalid URL: ' + toks[ti].value, type: 'error' });
+      }
+      break;
+    }
+  }
+  if (!foundUrl) {
+    errors.push({ line: 1, message: 'No URL found (expected https://...)', type: 'error' });
+  }
+
+  // Parse flags
+  var method = 'GET';
+  var hasBody = false;
+  for (ti = 0; ti < toks.length; ti++) {
+    var t = toks[ti];
+    if (t.type !== 'word') continue;
+    if ((t.value === '-X' || t.value === '--request') && ti + 1 < toks.length) {
+      method = toks[ti + 1].value.toUpperCase();
+    }
+    if (t.value === '-d' || t.value === '--data' || t.value === '--data-raw') {
+      hasBody = true;
+      var nextVal = ti + 1 < toks.length ? toks[ti + 1].value : '';
+      if (nextVal.startsWith('{') || nextVal.startsWith('[')) {
+        try { JSON.parse(nextVal); } catch {
+          errors.push({ line: 1, message: 'Request body looks like JSON but is not valid', type: 'warning' });
+        }
+      }
+    }
+    if (t.value === '-H' || t.value === '--header') {
+      if (ti + 1 < toks.length) {
+        var hdr = toks[ti + 1].value;
+        var colonIdx = hdr.indexOf(':');
+        if (colonIdx <= 0) {
+          errors.push({ line: 1, message: 'Invalid header: "' + hdr + '" (expected "Key: Value")', type: 'error' });
+        }
+      }
+    }
+  }
+
+  if (['POST', 'PUT', 'PATCH'].indexOf(method) >= 0 && !hasBody) {
+    errors.push({ line: 1, message: method + ' request without -d/--data body', type: 'warning' });
+  }
+
+  // Warn if no -X but body present (missing method flag for POST)
+  if (method === 'GET' && hasBody) {
+    errors.push({ line: 1, message: 'Request has body but method is GET (did you forget -X POST?)', type: 'warning' });
   }
 
   return errors;
@@ -105,55 +128,95 @@ export function validateCurl(curlString) {
 export function formatCurl(curlString) {
   if (!curlString || !curlString.trim()) return curlString;
 
-  let trimmed = curlString.trim();
+  var flat = normalizeCurl(curlString);
+  if (!/^curl\b/i.test(flat)) return curlString;
 
-  // Extract parts
-  let method = 'GET';
-  const xMatch = trimmed.match(/(?:^|\s)-X\s+['"]?(\w+)['"]?/);
-  if (xMatch) method = xMatch[1].toUpperCase();
+  var toks = tokenizeCurl(flat);
 
-  const urlMatch = trimmed.match(/['"](https?:\/\/[^'"]*)['"]/);
-  const url = urlMatch ? urlMatch[1] : '';
+  var url = '';
+  var method = 'GET';
+  var headers = [];
+  var body = '';
+  var hasSilent = false;
+  var hasInsecure = false;
+  var hasLocation = false;
+  var hasCompressed = false;
 
-  const headers = [];
-  const headerRe = /(?:^|\s)-H\s+['"]([^'"]*)['"]/g;
-  let hm;
-  while ((hm = headerRe.exec(trimmed)) !== null) {
-    headers.push(hm[1]);
+  for (var ti = 1; ti < toks.length; ti++) {
+    var t = toks[ti];
+    if (t.type !== 'word') {
+      if (isUrl(t.value) || isUrl(t.raw)) {
+        if (!url) url = t.value;
+      }
+      continue;
+    }
+    var val = t.value;
+    if (val === '-X' || val === '--request') {
+      if (ti + 1 < toks.length) { method = toks[ti + 1].value.toUpperCase(); ti++; }
+    } else if (val === '-H' || val === '--header') {
+      if (ti + 1 < toks.length) { headers.push(toks[ti + 1].value); ti++; }
+    } else if (val === '-d' || val === '--data' || val === '--data-raw') {
+      if (ti + 1 < toks.length) { body = toks[ti + 1].value; ti++; }
+    } else if (val === '-s' || val === '--silent') {
+      hasSilent = true;
+    } else if (val === '--insecure' || val === '-k') {
+      hasInsecure = true;
+    } else if (val === '-L' || val === '--location') {
+      hasLocation = true;
+    } else if (val === '--compressed') {
+      hasCompressed = true;
+    } else if (val.startsWith('-X')) {
+      method = val.slice(2).toUpperCase();
+    } else if (val.startsWith('-H')) {
+      headers.push(val.slice(2));
+    } else if (val.startsWith('-d')) {
+      body = val.slice(2);
+    } else if (isUrl(val)) {
+      if (!url) url = val;
+    }
   }
 
-  const bodyMatch = trimmed.match(/-(?:d|-data(?:-raw)?)\s+(['"][\s\S]*?['"])/);
-  const body = bodyMatch ? bodyMatch[1] : '';
+  // Also scan raw tokens for URL (might be a string token, not a word)
+  if (!url) {
+    for (var ri = 1; ri < toks.length; ri++) {
+      if (isUrl(toks[ri].value) || isUrl(toks[ri].raw)) {
+        url = toks[ri].value;
+        break;
+      }
+    }
+  }
 
-  const hasInsecure = /--insecure\b/.test(trimmed);
-  const hasSilent = /-s\b|--silent\b/.test(trimmed);
-  const hasLocation = /-L\b|--location\b/.test(trimmed);
-  const hasCompressed = /--compressed\b/.test(trimmed);
-
-  let result = 'curl';
-  const indent = '  ';
+  var result = 'curl';
+  var indent = '  ';
 
   if (hasSilent) result += ' -s';
   if (hasInsecure) result += ' --insecure';
   if (hasLocation) result += ' -L';
 
-  if (url) result += " \\\n" + indent + "'" + url + "'";
+  if (url) {
+    result += ' \\\n' + indent + "'" + url + "'";
+  }
 
   if (method !== 'GET') {
-    result += " \\\n" + indent + "-X " + method;
+    result += ' \\\n' + indent + '-X ' + method;
   }
 
   for (var hi = 0; hi < headers.length; hi++) {
-    result += " \\\n" + indent + "-H '" + headers[hi] + "'";
+    result += ' \\\n' + indent + '-H ' + squote(headers[hi]);
   }
 
   if (body) {
-    result += " \\\n" + indent + "-d '" + body.slice(1, -1) + "'";
+    result += ' \\\n' + indent + '-d ' + squote(body);
   }
 
   if (hasCompressed) {
-    result += " \\\n" + indent + "--compressed";
+    result += ' \\\n' + indent + '--compressed';
   }
 
   return result;
+}
+
+function squote(val) {
+  if (val.indexOf("'") < 0) return "'" + val + "'";
+  return '"' + val + '"';
 }
