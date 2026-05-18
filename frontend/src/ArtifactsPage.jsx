@@ -129,23 +129,22 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
     finally { setLoading(false); generatingRef.current = false; }
   };
 
-  const runCurlValidation = useCallback(function(index) {
-    var curl = artifacts[index]?.curl || '';
-    var errors = validateCurl(curl);
+  const runCurlValidation = useCallback(function(index, curlValue) {
+    var errors = validateCurl(curlValue);
     setCurlErrors(function(prev) { var n = { ...prev }; if (errors.length > 0) { n[index] = errors; } else { delete n[index]; } return n; });
-    if (errors.length === 0 && curl.trim()) {
+    if (errors.length === 0 && curlValue.trim()) {
       setCurlValidMsg(function(prev) { return { ...prev, [index]: 'No issues found' }; });
       setTimeout(function() { setCurlValidMsg(function(prev) { var n = { ...prev }; delete n[index]; return n; }); }, 2500);
     } else {
       setCurlValidMsg(function(prev) { var n = { ...prev }; delete n[index]; return n; });
     }
-  }, [artifacts]);
+  }, []);
 
   const handleCurlChange = useCallback(function(index, value, onChangeCb) {
     onChangeCb(value);
     // Debounced auto-validation
     if (curlValTimers.current[index]) clearTimeout(curlValTimers.current[index]);
-    curlValTimers.current[index] = setTimeout(function() { runCurlValidation(index); }, 600);
+    curlValTimers.current[index] = setTimeout(function() { runCurlValidation(index, value); }, 600);
   }, [runCurlValidation]);
 
   const handleMaskedPreview = async (index) => {
