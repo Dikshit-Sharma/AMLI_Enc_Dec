@@ -1,9 +1,7 @@
-// Flatten a curl command: join backslash-continued lines, collapse whitespace
 function normalizeCurl(str) {
   return str.replace(/\\\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// Extract all tokens from a normalized curl preserving quoted strings as units
 function tokenizeCurl(str) {
   var tokens = [];
   var i = 0;
@@ -28,7 +26,6 @@ function tokenizeCurl(str) {
   return tokens;
 }
 
-// Check if a token looks like a URL
 function isUrl(val) {
   return /^https?:\/\//.test(val);
 }
@@ -63,9 +60,8 @@ export function validateCurl(curlString) {
   }
   if (inSingle) errors.push({ line: sqLine, message: 'Unclosed single quote', type: 'error' });
   if (inDouble) errors.push({ line: dqLine, message: 'Unclosed double quote', type: 'error' });
-  if (inSingle || inDouble) return errors; // stop early if quotes are broken
+  if (inSingle || inDouble) return errors;
 
-  // Tokenize for deeper analysis
   var toks = tokenizeCurl(flat);
   if (toks.length === 0) return errors;
 
@@ -100,6 +96,22 @@ export function validateCurl(curlString) {
         try { JSON.parse(nextVal); } catch {
           errors.push({ line: 1, message: 'Request body looks like JSON but is not valid', type: 'warning' });
         }
+        // Check for content after closing brace before the quote end
+        // e.g., -d '{"key":"value"} ' — trailing content inside quotes
+        var rawVal = toks[ti + 1].raw || '';
+        if (rawVal.length > 0) {
+          var q = rawVal[0];
+          var inner = rawVal.slice(1, rawVal[rawVal.length - 1] === q ? -1 : rawVal.length);
+          var braceIdx = inner.lastIndexOf('}');
+          var bracketIdx = inner.lastIndexOf(']');
+          var endIdx = Math.max(braceIdx, bracketIdx);
+          if (endIdx >= 0) {
+            var afterContent = inner.slice(endIdx + 1);
+            if (afterContent.trim().length > 0) {
+              errors.push({ line: 1, message: 'Trailing content after JSON body: "' + afterContent + '" (check for space between } and closing quote)', type: 'error' });
+            }
+          }
+        }
       }
     }
     if (t.value === '-H' || t.value === '--header') {
@@ -117,106 +129,9 @@ export function validateCurl(curlString) {
     errors.push({ line: 1, message: method + ' request without -d/--data body', type: 'warning' });
   }
 
-  // Warn if no -X but body present (missing method flag for POST)
   if (method === 'GET' && hasBody) {
     errors.push({ line: 1, message: 'Request has body but method is GET (did you forget -X POST?)', type: 'warning' });
   }
 
   return errors;
-}
-
-export function formatCurl(curlString) {
-  if (!curlString || !curlString.trim()) return curlString;
-
-  var flat = normalizeCurl(curlString);
-  if (!/^curl\b/i.test(flat)) return curlString;
-
-  var toks = tokenizeCurl(flat);
-
-  var url = '';
-  var method = 'GET';
-  var headers = [];
-  var body = '';
-  var hasSilent = false;
-  var hasInsecure = false;
-  var hasLocation = false;
-  var hasCompressed = false;
-
-  for (var ti = 1; ti < toks.length; ti++) {
-    var t = toks[ti];
-    if (t.type !== 'word') {
-      if (isUrl(t.value) || isUrl(t.raw)) {
-        if (!url) url = t.value;
-      }
-      continue;
-    }
-    var val = t.value;
-    if (val === '-X' || val === '--request') {
-      if (ti + 1 < toks.length) { method = toks[ti + 1].value.toUpperCase(); ti++; }
-    } else if (val === '-H' || val === '--header') {
-      if (ti + 1 < toks.length) { headers.push(toks[ti + 1].value); ti++; }
-    } else if (val === '-d' || val === '--data' || val === '--data-raw') {
-      if (ti + 1 < toks.length) { body = toks[ti + 1].value; ti++; }
-    } else if (val === '-s' || val === '--silent') {
-      hasSilent = true;
-    } else if (val === '--insecure' || val === '-k') {
-      hasInsecure = true;
-    } else if (val === '-L' || val === '--location') {
-      hasLocation = true;
-    } else if (val === '--compressed') {
-      hasCompressed = true;
-    } else if (val.startsWith('-X')) {
-      method = val.slice(2).toUpperCase();
-    } else if (val.startsWith('-H')) {
-      headers.push(val.slice(2));
-    } else if (val.startsWith('-d')) {
-      body = val.slice(2);
-    } else if (isUrl(val)) {
-      if (!url) url = val;
-    }
-  }
-
-  // Also scan raw tokens for URL (might be a string token, not a word)
-  if (!url) {
-    for (var ri = 1; ri < toks.length; ri++) {
-      if (isUrl(toks[ri].value) || isUrl(toks[ri].raw)) {
-        url = toks[ri].value;
-        break;
-      }
-    }
-  }
-
-  var result = 'curl';
-  var indent = '  ';
-
-  if (hasSilent) result += ' -s';
-  if (hasInsecure) result += ' --insecure';
-  if (hasLocation) result += ' -L';
-
-  if (url) {
-    result += ' \\\n' + indent + "'" + url + "'";
-  }
-
-  if (method !== 'GET') {
-    result += ' \\\n' + indent + '-X ' + method;
-  }
-
-  for (var hi = 0; hi < headers.length; hi++) {
-    result += ' \\\n' + indent + '-H ' + squote(headers[hi]);
-  }
-
-  if (body) {
-    result += ' \\\n' + indent + '-d ' + squote(body);
-  }
-
-  if (hasCompressed) {
-    result += ' \\\n' + indent + '--compressed';
-  }
-
-  return result;
-}
-
-function squote(val) {
-  if (val.indexOf("'") < 0) return "'" + val + "'";
-  return '"' + val + '"';
 }

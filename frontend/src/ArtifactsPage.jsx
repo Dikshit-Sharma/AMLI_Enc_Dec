@@ -6,7 +6,7 @@ import { decrypt, decryptCBC } from './cryptoUtil';
 import { generateAndDownloadZip, generateArtifactText } from './artifactUtil';
 import ArtifactAuditor from './ArtifactAuditor';
 import useSmartPaste from './SmartPaste';
-import { validateCurl, formatCurl } from './curlUtil';
+import { validateCurl } from './curlUtil';
 
 function emptyArtifact() {
   return { jiraTicket: '', apiName: '', env: 'DEV', curl: '', response: '', encryption: 'Disabled', aesKey: '', algo: 'GCM', numRequests: 1, extraRequests: [] };
@@ -34,8 +34,8 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   const tabRefs = useRef({});
   const generatingRef = useRef(false);
   const [curlErrors, setCurlErrors] = useState({});
-  const [curlFormatted, setCurlFormatted] = useState({});
   const [curlValidMsg, setCurlValidMsg] = useState({});
+  const curlValTimers = useRef({});
 
   const pasteSuggestion = useSmartPaste(libraryForPaste);
 
@@ -129,29 +129,24 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
     finally { setLoading(false); generatingRef.current = false; }
   };
 
-  const handleValidateCurl = useCallback((index) => {
+  const runCurlValidation = useCallback(function(index) {
     var curl = artifacts[index]?.curl || '';
     var errors = validateCurl(curl);
-    setCurlErrors(function(prev) { return { ...prev, [index]: errors }; });
-    setCurlValidMsg(function(prev) {
-      var next = { ...prev, [index]: errors.length === 0 ? 'No issues found' : null };
-      return next;
-    });
-    if (errors.length === 0) {
-      setTimeout(function() {
-        setCurlValidMsg(function(prev) { return { ...prev, [index]: null }; });
-      }, 2500);
+    setCurlErrors(function(prev) { var n = { ...prev }; if (errors.length > 0) { n[index] = errors; } else { delete n[index]; } return n; });
+    if (errors.length === 0 && curl.trim()) {
+      setCurlValidMsg(function(prev) { return { ...prev, [index]: 'No issues found' }; });
+      setTimeout(function() { setCurlValidMsg(function(prev) { var n = { ...prev }; delete n[index]; return n; }); }, 2500);
+    } else {
+      setCurlValidMsg(function(prev) { var n = { ...prev }; delete n[index]; return n; });
     }
   }, [artifacts]);
 
-  const handleFormatCurl = useCallback((index) => {
-    const curl = artifacts[index]?.curl || '';
-    const formatted = formatCurl(curl);
-    var newArtifacts = artifacts.map(function(a, i) { return i === index ? { ...a, curl: formatted } : a; });
-    setArtifacts(newArtifacts);
-    setCurlFormatted(function(prev) { return { ...prev, [index]: true }; });
-    setTimeout(function() { setCurlFormatted(function(prev) { return { ...prev, [index]: false }; }); }, 2000);
-  }, [artifacts]);
+  const handleCurlChange = useCallback(function(index, value, onChangeCb) {
+    onChangeCb(value);
+    // Debounced auto-validation
+    if (curlValTimers.current[index]) clearTimeout(curlValTimers.current[index]);
+    curlValTimers.current[index] = setTimeout(function() { runCurlValidation(index); }, 600);
+  }, [runCurlValidation]);
 
   const handleMaskedPreview = async (index) => {
     if (maskedPreviews[index]) {
@@ -251,16 +246,14 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
               <div className="form-group">
                 <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                   Curl Command
-                  <button className="btn-sm-ghost" onClick={function() { handleValidateCurl(index); }} type="button">✓ Validate</button>
-                  <button className="btn-sm-ghost" onClick={function() { handleFormatCurl(index); }} type="button">↯ Format</button>
-                  {curlFormatted[index] && <span style={{ color: 'var(--success)', fontSize: '0.72rem' }}>Formatted ✓</span>}
                   {curlValidMsg[index] && <span style={{ color: 'var(--success, #059669)', fontSize: '0.72rem', fontWeight: 600 }}>{curlValidMsg[index]} ✓</span>}
                 </label>
                 <textarea className={'main-input small-area' + ((curlErrors[index] && curlErrors[index].length > 0) ? ' input-error' : '')} placeholder="Paste full curl here..." value={art.curl}
                   onChange={(e) => {
-                    updateArtifact(index, 'curl', e.target.value);
-                    if (curlErrors[index]) setCurlErrors(function(prev) { var n = { ...prev }; delete n[index]; return n; });
-                    pasteSuggestion.handleCurlChange(e.target.value);
+                    handleCurlChange(index, e.target.value, function(val) {
+                      updateArtifact(index, 'curl', val);
+                      pasteSuggestion.handleCurlChange(val);
+                    });
                   }} />
                 {curlErrors[index] && curlErrors[index].length > 0 && (
                   <div style={{ marginTop: '0.4rem', fontSize: '0.75rem' }}>
