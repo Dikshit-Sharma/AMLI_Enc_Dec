@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { logAnalyticsEvent } from './firebase';
 import { fetchArtifacts, addArtifacts } from './api';
@@ -6,6 +6,7 @@ import { decrypt, decryptCBC } from './cryptoUtil';
 import { generateAndDownloadZip, generateArtifactText } from './artifactUtil';
 import ArtifactAuditor from './ArtifactAuditor';
 import useSmartPaste from './SmartPaste';
+import { validateCurl, formatCurl } from './curlUtil';
 
 function emptyArtifact() {
   return { jiraTicket: '', apiName: '', env: 'DEV', curl: '', response: '', encryption: 'Disabled', aesKey: '', algo: 'GCM', numRequests: 1, extraRequests: [] };
@@ -31,6 +32,9 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   const [maskedPreviews, setMaskedPreviews] = useState({});
   const [dragIdx, setDragIdx] = useState(null);
   const tabRefs = useRef({});
+  const generatingRef = useRef(false);
+  const [curlErrors, setCurlErrors] = useState({});
+  const [curlFormatted, setCurlFormatted] = useState({});
 
   const pasteSuggestion = useSmartPaste(libraryForPaste);
 
@@ -103,12 +107,15 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   };
 
   const handleGenerateArtifacts = async () => {
+    if (generatingRef.current) return;
+    generatingRef.current = true;
     setError('');
     for (let i = 0; i < artifacts.length; i++) {
       const errs = validateArtifact(artifacts[i]);
       if (errs.length > 0) {
         setError(`Artifact ${i + 1}: Missing or invalid fields (${errs.join(', ')})`);
         setActiveTab(i);
+        generatingRef.current = false;
         return;
       }
     }
@@ -118,8 +125,23 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
       await pushToLibrary(artifacts);
       logAnalyticsEvent('generate_artifacts', { count: artifacts.length });
     } catch (err) { setError('Generation failed: ' + err.message); }
-    finally { setLoading(false); }
+    finally { setLoading(false); generatingRef.current = false; }
   };
+
+  const handleValidateCurl = useCallback((index) => {
+    const curl = artifacts[index]?.curl || '';
+    const errors = validateCurl(curl);
+    setCurlErrors(function(prev) { return { ...prev, [index]: errors }; });
+  }, [artifacts]);
+
+  const handleFormatCurl = useCallback((index) => {
+    const curl = artifacts[index]?.curl || '';
+    const formatted = formatCurl(curl);
+    var newArtifacts = artifacts.map(function(a, i) { return i === index ? { ...a, curl: formatted } : a; });
+    setArtifacts(newArtifacts);
+    setCurlFormatted(function(prev) { return { ...prev, [index]: true }; });
+    setTimeout(function() { setCurlFormatted(function(prev) { return { ...prev, [index]: false }; }); }, 2000);
+  }, [artifacts]);
 
   const handleMaskedPreview = async (index) => {
     if (maskedPreviews[index]) {
@@ -217,12 +239,28 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
               </div>
 
               <div className="form-group">
-                <label className="field-label">Curl Command</label>
-                <textarea className="main-input small-area" placeholder="Paste full curl here..." value={art.curl}
+                <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  Curl Command
+                  <button className="btn-sm-ghost" onClick={() => handleValidateCurl(index)} title="Validate curl syntax">✓ Validate</button>
+                  <button className="btn-sm-ghost" onClick={() => handleFormatCurl(index)} title="Format curl command">↯ Format</button>
+                  {curlFormatted[index] && <span style={{ color: 'var(--success)', fontSize: '0.72rem' }}>Formatted ✓</span>}
+                </label>
+                <textarea className={'main-input small-area' + ((curlErrors[index] && curlErrors[index].length > 0) ? ' input-error' : '')} placeholder="Paste full curl here..." value={art.curl}
                   onChange={(e) => {
                     updateArtifact(index, 'curl', e.target.value);
+                    if (curlErrors[index]) setCurlErrors(function(prev) { var n = { ...prev }; delete n[index]; return n; });
                     pasteSuggestion.handleCurlChange(e.target.value);
                   }} />
+                {curlErrors[index] && curlErrors[index].length > 0 && (
+                  <div style={{ marginTop: '0.4rem', fontSize: '0.75rem' }}>
+                    {curlErrors[index].filter(function(e) { return e.type === 'error'; }).map(function(e, ei) {
+                      return <div key={ei} style={{ color: 'var(--error, #dc2626)', padding: '0.1rem 0' }}>✗ L{e.line}: {e.message}</div>;
+                    })}
+                    {curlErrors[index].filter(function(e) { return e.type === 'warning'; }).map(function(e, ei) {
+                      return <div key={ei} style={{ color: 'var(--warning, #d97706)', padding: '0.1rem 0' }}>⚠ L{e.line}: {e.message}</div>;
+                    })}
+                  </div>
+                )}
                 {pasteSuggestion.suggestion && (
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
