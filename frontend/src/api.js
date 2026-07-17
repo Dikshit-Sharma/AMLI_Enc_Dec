@@ -1,10 +1,41 @@
-import { fetchArtifactsFs, fetchCredentialsFs } from './firestoreService';
-
 const ARTIFACTS_URL = import.meta.env.VITE_API_BASE_URL || '/api/artifacts';
 const CREDENTIALS_URL = '/api/credentials';
 
 export async function fetchArtifacts({ limit, cursor, search } = {}) {
-  return fetchArtifactsFs({ limit, cursor, search });
+  const params = new URLSearchParams();
+  if (limit) params.set('limit', limit);
+  if (cursor) params.set('cursor', cursor);
+  if (search) params.set('search', search);
+  const qs = params.toString();
+  const res = await fetch(qs ? `${ARTIFACTS_URL}?${qs}` : ARTIFACTS_URL);
+  if (!res.ok) {
+    throw new Error('Failed to fetch artifacts: ' + res.statusText);
+  }
+  return res.json();
+}
+
+export async function fetchArtifactStats() {
+  const res = await fetch(`${ARTIFACTS_URL}?stats=1`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch stats: ' + res.statusText);
+  }
+  return res.json();
+}
+
+export async function fetchArtifact(id) {
+  const res = await fetch(`${ARTIFACTS_URL}?id=${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch artifact: ' + res.statusText);
+  }
+  return res.json();
+}
+
+export async function fetchExtractedCredentials() {
+  const res = await fetch(`${ARTIFACTS_URL}?extract-credentials=1`);
+  if (!res.ok) {
+    throw new Error('Failed to extract credentials: ' + res.statusText);
+  }
+  return res.json();
 }
 
 export async function addArtifacts(artifacts) {
@@ -14,13 +45,19 @@ export async function addArtifacts(artifacts) {
     body: JSON.stringify({ artifacts }),
   });
   if (!res.ok) {
-    throw new Error(`Failed to add artifacts: ${res.statusText}`);
+    throw new Error('Failed to add artifacts: ' + res.statusText);
   }
   return res.json();
 }
 
 export async function fetchCredentials(env) {
-  return fetchCredentialsFs(env);
+  const params = new URLSearchParams();
+  if (env) params.set('env', env);
+  const res = await fetch(`${CREDENTIALS_URL}?${params}`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch credentials: ' + res.statusText);
+  }
+  return res.json();
 }
 
 export async function addCredential(data) {
@@ -30,7 +67,7 @@ export async function addCredential(data) {
     body: JSON.stringify(data),
   });
   if (!res.ok) {
-    throw new Error(`Failed to add credential: ${res.statusText}`);
+    throw new Error('Failed to add credential: ' + res.statusText);
   }
   return res.json();
 }
@@ -42,7 +79,7 @@ export async function deleteCredential(id) {
     body: JSON.stringify({ id }),
   });
   if (!res.ok) {
-    throw new Error(`Failed to delete credential: ${res.statusText}`);
+    throw new Error('Failed to delete credential: ' + res.statusText);
   }
   return res.json();
 }
