@@ -1,4 +1,4 @@
-import admin from 'firebase-admin';
+const admin = require('firebase-admin');
 
 const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
   process.env.FIREBASE_SERVICE_ACCOUNT || '{}'
@@ -152,11 +152,9 @@ function deduplicate(list) {
   });
 }
 
-export default async (event, context) => {
+const handler = async (event) => {
   const method = event.httpMethod;
   const params = event.queryStringParameters || {};
-
-  console.log('artifacts fn', { method, params: Object.keys(params) });
 
   if (method === 'OPTIONS') {
     return { statusCode: 204, headers: CORS, body: '' };
@@ -164,15 +162,14 @@ export default async (event, context) => {
 
   try {
     if (method === 'GET') {
-      const id = params.id;
-      if (id) {
-        const doc = await db.collection('artifacts').doc(id).get();
+      if (params.id) {
+        const doc = await db.collection('artifacts').doc(params.id).get();
         if (!doc.exists) return jsonRes({ error: 'Not found' }, 404);
         return jsonRes({ artifact: formatArtifact(doc, false) });
       }
 
       if (params['extract-credentials'] === '1') {
-        const snapshot = await db.collection('artifacts').orderBy('timestamp', 'desc').get();
+        const snapshot = await db.collection('artifacts').orderBy('timestamp', 'desc').limit(500).get();
         const grouped = { DEV: [], UAT: [], PROD: [] };
         for (const doc of snapshot.docs) {
           const entry = extractCredentialsFromArtifact(doc);
@@ -248,3 +245,5 @@ export default async (event, context) => {
     return jsonRes({ error: err.message }, 500);
   }
 };
+
+module.exports = { handler };
