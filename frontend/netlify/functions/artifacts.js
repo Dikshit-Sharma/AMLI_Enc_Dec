@@ -1,4 +1,4 @@
-const admin = require('firebase-admin');
+import admin from 'firebase-admin';
 
 const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
   process.env.FIREBASE_SERVICE_ACCOUNT || '{}'
@@ -164,99 +164,97 @@ function deduplicate(list) {
   });
 }
 
-module.exports = {
-  fetch: async (req) => {
-    if (req.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: CORS });
-    }
+export default async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: CORS });
+  }
 
-    try {
-      if (req.method === 'GET') {
-        const url = new URL(req.url);
-        const params = url.searchParams;
+  try {
+    if (req.method === 'GET') {
+      const url = new URL(req.url);
+      const params = url.searchParams;
 
-        const id = params.get('id');
-        if (id) {
-          const doc = await db.collection('artifacts').doc(id).get();
-          if (!doc.exists) return json({ error: 'Not found' }, 404);
-          return json({ artifact: formatArtifact(doc, false) });
-        }
-
-        if (params.get('extract-credentials') === '1') {
-          const snapshot = await db.collection('artifacts').orderBy('timestamp', 'desc').get();
-          const grouped = { DEV: [], UAT: [], PROD: [] };
-          for (const doc of snapshot.docs) {
-            const entry = extractCredentialsFromArtifact(doc);
-            if (entry && ['DEV', 'UAT', 'PROD'].includes(entry.env)) {
-              grouped[entry.env].push(entry);
-            }
-          }
-          for (const env of Object.keys(grouped)) {
-            grouped[env] = deduplicate(grouped[env]);
-          }
-          return json({ credentials: grouped, totalArtifacts: snapshot.docs.length });
-        }
-
-        const summary = params.get('summary') === '1';
-        const search = params.get('search')?.toLowerCase();
-        const limit = params.get('limit')
-          ? Math.min(parseInt(params.get('limit')), 100)
-          : 50;
-        const cursor = params.get('cursor') || null;
-
-        let total = 0;
-        try {
-          const countSnap = await db.collection('artifacts').count().get();
-          total = countSnap.data().count;
-        } catch (_) { /* count may not be available */ }
-
-        const fetchLimit = search ? 500 : limit;
-        let query = db.collection('artifacts').orderBy('timestamp', 'desc').limit(fetchLimit);
-        if (cursor) query = query.startAfter(new Date(cursor));
-
-        const snapshot = await query.get();
-        let artifacts = snapshot.docs.map((doc) => formatArtifact(doc, summary));
-
-        if (search) {
-          artifacts = artifacts.filter((art) =>
-            art.apiName?.toLowerCase().includes(search) ||
-            art.jiraTicket?.toLowerCase().includes(search) ||
-            art.env?.toLowerCase().includes(search) ||
-            (!summary && art.curl?.toLowerCase().includes(search))
-          );
-        }
-
-        const nextCursor =
-          snapshot.docs.length === fetchLimit
-            ? snapshot.docs[snapshot.docs.length - 1]
-                .data().timestamp?.toDate?.()?.toISOString() ?? null
-            : null;
-
-        return streamJson({ artifacts, nextCursor, total });
+      const id = params.get('id');
+      if (id) {
+        const doc = await db.collection('artifacts').doc(id).get();
+        if (!doc.exists) return json({ error: 'Not found' }, 404);
+        return json({ artifact: formatArtifact(doc, false) });
       }
 
-      if (req.method === 'POST') {
-        const { artifacts } = await req.json();
-        if (!Array.isArray(artifacts) || artifacts.length === 0) {
-          return json({ error: 'artifacts array is required' }, 400);
+      if (params.get('extract-credentials') === '1') {
+        const snapshot = await db.collection('artifacts').orderBy('timestamp', 'desc').get();
+        const grouped = { DEV: [], UAT: [], PROD: [] };
+        for (const doc of snapshot.docs) {
+          const entry = extractCredentialsFromArtifact(doc);
+          if (entry && ['DEV', 'UAT', 'PROD'].includes(entry.env)) {
+            grouped[entry.env].push(entry);
+          }
         }
-
-        const ids = [];
-        for (const art of artifacts) {
-          const ref = await db.collection('artifacts').add({
-            ...art,
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          ids.push(ref.id);
+        for (const env of Object.keys(grouped)) {
+          grouped[env] = deduplicate(grouped[env]);
         }
-
-        return json({ ids, count: ids.length });
+        return json({ credentials: grouped, totalArtifacts: snapshot.docs.length });
       }
 
-      return json({ error: 'Method not allowed' }, 405);
-    } catch (err) {
-      console.error('Function error:', err);
-      return json({ error: err.message }, 500);
+      const summary = params.get('summary') === '1';
+      const search = params.get('search')?.toLowerCase();
+      const limit = params.get('limit')
+        ? Math.min(parseInt(params.get('limit')), 100)
+        : 50;
+      const cursor = params.get('cursor') || null;
+
+      let total = 0;
+      try {
+        const countSnap = await db.collection('artifacts').count().get();
+        total = countSnap.data().count;
+      } catch (_) { /* count may not be available */ }
+
+      const fetchLimit = search ? 500 : limit;
+      let query = db.collection('artifacts').orderBy('timestamp', 'desc').limit(fetchLimit);
+      if (cursor) query = query.startAfter(new Date(cursor));
+
+      const snapshot = await query.get();
+      let artifacts = snapshot.docs.map((doc) => formatArtifact(doc, summary));
+
+      if (search) {
+        artifacts = artifacts.filter((art) =>
+          art.apiName?.toLowerCase().includes(search) ||
+          art.jiraTicket?.toLowerCase().includes(search) ||
+          art.env?.toLowerCase().includes(search) ||
+          (!summary && art.curl?.toLowerCase().includes(search))
+        );
+      }
+
+      const nextCursor =
+        snapshot.docs.length === fetchLimit
+          ? snapshot.docs[snapshot.docs.length - 1]
+              .data().timestamp?.toDate?.()?.toISOString() ?? null
+          : null;
+
+      return streamJson({ artifacts, nextCursor, total });
     }
-  },
+
+    if (req.method === 'POST') {
+      const { artifacts } = await req.json();
+      if (!Array.isArray(artifacts) || artifacts.length === 0) {
+        return json({ error: 'artifacts array is required' }, 400);
+      }
+
+      const ids = [];
+      for (const art of artifacts) {
+        const ref = await db.collection('artifacts').add({
+          ...art,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        ids.push(ref.id);
+      }
+
+      return json({ ids, count: ids.length });
+    }
+
+    return json({ error: 'Method not allowed' }, 405);
+  } catch (err) {
+    console.error('Function error:', err);
+    return json({ error: err.message }, 500);
+  }
 };
