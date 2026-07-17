@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchCredentials, addCredential, deleteCredential, fetchExtractedCredentials } from './api';
+import { fetchCredentials, addCredential, deleteCredential, fetchArtifacts } from './api';
 import { SkeletonTableRows } from './Skeleton';
-import { deduplicate } from './credentialExtract';
+import { extractFromArtifact, deduplicate } from './credentialExtract';
 
 const ENVS = ['DEV', 'UAT', 'PROD'];
 
@@ -115,13 +115,21 @@ export default function CredentialsPage({ theme, toggleTheme }) {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [manualRes, extractedRes] = await Promise.all([
+      const [manualRes, artRes] = await Promise.all([
         Promise.all(ENVS.map((env) => fetchCredentials(env).then((r) => [env, r.credentials || []]))),
-        fetchExtractedCredentials(),
+        fetchArtifacts(),
       ]);
 
       const manual = Object.fromEntries(manualRes);
-      const extracted = extractedRes.credentials || {};
+      const extracted = {};
+      for (const env of ENVS) extracted[env] = [];
+
+      for (const art of artRes.artifacts || []) {
+        const entry = extractFromArtifact(art);
+        if (entry && ENVS.includes(entry.env)) {
+          extracted[entry.env].push(entry);
+        }
+      }
 
       const grouped = {};
       for (const env of ENVS) {
@@ -129,7 +137,7 @@ export default function CredentialsPage({ theme, toggleTheme }) {
       }
 
       setAllCreds(grouped);
-      console.log(`Server extracted credentials per env:`, Object.fromEntries(ENVS.map(e => [e, extracted[e]?.length || 0])));
+      console.log(`Loaded ${artRes?.artifacts?.length || 0} artifacts, extracted credentials per env:`, Object.fromEntries(ENVS.map(e => [e, extracted[e]?.length || 0])));
     } catch (err) {
       console.error('Failed to load credentials:', err);
     } finally {

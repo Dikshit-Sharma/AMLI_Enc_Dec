@@ -28,7 +28,7 @@ const handler = async (event) => {
       const params = event.queryStringParameters || {};
       const env = params.env;
 
-      const snapshot = await db.collection('credentials').orderBy('timestamp', 'desc').limit(200).get();
+      const snapshot = await db.collection('credentials').get();
       let credentials = snapshot.docs.map((doc) => {
         const data = doc.data();
         return {
@@ -42,12 +42,16 @@ const handler = async (event) => {
         credentials = credentials.filter((c) => c.env === env);
       }
 
-      const body = JSON.stringify({ credentials });
-      console.log('credentials size:', body.length, 'count:', credentials.length, 'env:', env || 'all');
+      credentials.sort((a, b) => {
+        if (!a.timestamp) return 1;
+        if (!b.timestamp) return -1;
+        return b.timestamp.localeCompare(a.timestamp);
+      });
+
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body,
+        body: JSON.stringify({ credentials }),
       };
     }
 
