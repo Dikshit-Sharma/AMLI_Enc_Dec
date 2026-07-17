@@ -28,7 +28,7 @@ const handler = async (event) => {
       const params = event.queryStringParameters || {};
       const env = params.env;
 
-      const snapshot = await db.collection('credentials').get();
+      const snapshot = await db.collection('credentials').orderBy('timestamp', 'desc').limit(200).get();
       let credentials = snapshot.docs.map((doc) => {
         const data = doc.data();
         return {
