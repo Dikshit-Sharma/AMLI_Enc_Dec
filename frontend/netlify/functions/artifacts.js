@@ -18,24 +18,12 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
+function jsonRes(data, status = 200) {
+  return {
+    statusCode: status,
     headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
-}
-
-function streamJson(data) {
-  const encoded = new TextEncoder().encode(JSON.stringify(data));
-  return new Response(
-    new ReadableStream({
-      start(ctrl) {
-        ctrl.enqueue(encoded);
-        ctrl.close();
-      },
-    }),
-    { headers: { ...CORS, 'Content-Type': 'application/json' } }
-  );
+    body: JSON.stringify(data),
+  };
 }
 
 function formatArtifact(doc, summary) {
@@ -49,12 +37,12 @@ function formatArtifact(doc, summary) {
     aesKey: d.aesKey,
     algo: d.algo,
     numRequests: d.numRequests,
-    extraRequests: d.extraRequests,
     timestamp: d.timestamp?.toDate?.()?.toISOString() ?? null,
   };
   if (!summary) {
     art.curl = d.curl;
     art.response = d.response;
+    art.extraRequests = d.extraRequests;
   }
   return art;
 }
@@ -164,24 +152,24 @@ function deduplicate(list) {
   });
 }
 
-export default async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS });
+export default async (event, context) => {
+  const method = event.httpMethod;
+  const params = event.queryStringParameters || {};
+
+  if (method === 'OPTIONS') {
+    return { statusCode: 204, headers: CORS, body: '' };
   }
 
   try {
-    if (req.method === 'GET') {
-      const url = new URL(req.url);
-      const params = url.searchParams;
-
-      const id = params.get('id');
+    if (method === 'GET') {
+      const id = params.id;
       if (id) {
         const doc = await db.collection('artifacts').doc(id).get();
-        if (!doc.exists) return json({ error: 'Not found' }, 404);
-        return json({ artifact: formatArtifact(doc, false) });
+        if (!doc.exists) return jsonRes({ error: 'Not found' }, 404);
+        return jsonRes({ artifact: formatArtifact(doc, false) });
       }
 
-      if (params.get('extract-credentials') === '1') {
+      if (params['extract-credentials'] === '1') {
         const snapshot = await db.collection('artifacts').orderBy('timestamp', 'desc').get();
         const grouped = { DEV: [], UAT: [], PROD: [] };
         for (const doc of snapshot.docs) {
@@ -193,15 +181,15 @@ export default async (req) => {
         for (const env of Object.keys(grouped)) {
           grouped[env] = deduplicate(grouped[env]);
         }
-        return json({ credentials: grouped, totalArtifacts: snapshot.docs.length });
+        return jsonRes({ credentials: grouped, totalArtifacts: snapshot.docs.length });
       }
 
-      const summary = params.get('summary') === '1';
-      const search = params.get('search')?.toLowerCase();
-      const limit = params.get('limit')
-        ? Math.min(parseInt(params.get('limit')), 100)
+      const summary = params.summary === '1';
+      const search = params.search?.toLowerCase();
+      const limit = params.limit
+        ? Math.min(parseInt(params.limit), 100)
         : 50;
-      const cursor = params.get('cursor') || null;
+      const cursor = params.cursor || null;
 
       let total = 0;
       try {
@@ -231,13 +219,13 @@ export default async (req) => {
               .data().timestamp?.toDate?.()?.toISOString() ?? null
           : null;
 
-      return streamJson({ artifacts, nextCursor, total });
+      return jsonRes({ artifacts, nextCursor, total });
     }
 
-    if (req.method === 'POST') {
-      const { artifacts } = await req.json();
+    if (method === 'POST') {
+      const { artifacts } = JSON.parse(event.body || '{}');
       if (!Array.isArray(artifacts) || artifacts.length === 0) {
-        return json({ error: 'artifacts array is required' }, 400);
+        return jsonRes({ error: 'artifacts array is required' }, 400);
       }
 
       const ids = [];
@@ -249,12 +237,12 @@ export default async (req) => {
         ids.push(ref.id);
       }
 
-      return json({ ids, count: ids.length });
+      return jsonRes({ ids, count: ids.length });
     }
 
-    return json({ error: 'Method not allowed' }, 405);
+    return jsonRes({ error: 'Method not allowed' }, 405);
   } catch (err) {
     console.error('Function error:', err);
-    return json({ error: err.message }, 500);
+    return jsonRes({ error: err.message }, 500);
   }
 };
