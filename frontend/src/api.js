@@ -1,15 +1,32 @@
 const ARTIFACTS_URL = import.meta.env.VITE_API_BASE_URL || '/api/artifacts';
 const CREDENTIALS_URL = '/api/credentials';
 
-export async function fetchArtifacts({ limit, cursor, search } = {}) {
+export async function fetchArtifacts({ limit, cursor, search, summary } = {}) {
   const params = new URLSearchParams();
   if (limit) params.set('limit', limit);
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
+  if (summary) params.set('summary', '1');
   const qs = params.toString();
-  const res = await fetch(qs ? `${ARTIFACTS_URL}?${qs}` : ARTIFACTS_URL);
+  const res = await fetch(qs ? `${ARTIFACTS_URL}?${qs}` : `${ARTIFACTS_URL}?summary=1`);
   if (!res.ok) {
     throw new Error(`Failed to fetch artifacts: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchArtifact(id) {
+  const res = await fetch(`${ARTIFACTS_URL}?id=${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch artifact: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchExtractedCredentials() {
+  const res = await fetch(`${ARTIFACTS_URL}?extract-credentials=1`);
+  if (!res.ok) {
+    throw new Error(`Failed to extract credentials: ${res.statusText}`);
   }
   return res.json();
 }

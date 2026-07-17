@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchArtifacts, fetchCredentials, toDate } from './api';
+import { fetchArtifacts, fetchCredentials, fetchExtractedCredentials, toDate } from './api';
 import { SkeletonStatCard, SkeletonRecentCard, SkeletonChart } from './Skeleton';
-import { extractFromArtifact } from './credentialExtract';
 
 const ENVS = ['DEV', 'UAT', 'PROD'];
 const ENV_COLORS = { DEV: '#10b981', UAT: '#f59e0b', PROD: '#ef4444' };
@@ -771,11 +770,12 @@ export default function HomePage({ theme, toggleTheme }) {
 
   useEffect(() => {
     Promise.all([
-      fetchArtifacts(),
+      fetchArtifacts({ summary: 1 }),
       Promise.all(ENVS.map((e) =>
         fetchCredentials(e).then((r) => [e, r.credentials || []]).catch(() => [e, []])
       )),
-    ]).then(([artRes, credRes]) => {
+      fetchExtractedCredentials().catch(() => ({ credentials: {} })),
+    ]).then(([artRes, credRes, extractedRes]) => {
       const arts = artRes.artifacts || [];
       setAllArts(arts);
       setRecent(arts.slice(0, 5));
@@ -787,14 +787,7 @@ export default function HomePage({ theme, toggleTheme }) {
       }
       setEnvData(Object.entries(map).map(([label, value]) => ({ label, value })));
       const credMap = Object.fromEntries(credRes);
-      const extracted = {};
-      for (const env of ENVS) extracted[env] = [];
-      for (const art of arts) {
-        const entry = extractFromArtifact(art);
-        if (entry && ENVS.includes(entry.env)) {
-          extracted[entry.env].push(entry);
-        }
-      }
+      const extracted = extractedRes.credentials || {};
       const merged = {};
       for (const env of ENVS) {
         merged[env] = [...(credMap[env] || []), ...(extracted[env] || [])];
