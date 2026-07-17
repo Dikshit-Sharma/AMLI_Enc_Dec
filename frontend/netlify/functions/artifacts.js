@@ -156,6 +156,8 @@ export default async (event, context) => {
   const method = event.httpMethod;
   const params = event.queryStringParameters || {};
 
+  console.log('artifacts fn', { method, params: Object.keys(params) });
+
   if (method === 'OPTIONS') {
     return { statusCode: 204, headers: CORS, body: '' };
   }
@@ -184,7 +186,7 @@ export default async (event, context) => {
         return jsonRes({ credentials: grouped, totalArtifacts: snapshot.docs.length });
       }
 
-      const summary = params.summary === '1';
+      const summary = params.summary !== '0';
       const search = params.search?.toLowerCase();
       const limit = params.limit
         ? Math.min(parseInt(params.limit), 100)
