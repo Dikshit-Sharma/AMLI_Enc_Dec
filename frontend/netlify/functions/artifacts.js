@@ -152,6 +152,8 @@ function deduplicate(list) {
   });
 }
 
+const SUMMARY_FIELDS = ['apiName', 'jiraTicket', 'env', 'encryption', 'aesKey', 'algo', 'numRequests', 'timestamp'];
+
 const handler = async (event) => {
   const method = event.httpMethod;
   const params = event.queryStringParameters || {};
@@ -165,11 +167,17 @@ const handler = async (event) => {
       if (params.id) {
         const doc = await db.collection('artifacts').doc(params.id).get();
         if (!doc.exists) return jsonRes({ error: 'Not found' }, 404);
-        return jsonRes({ artifact: formatArtifact(doc, false) });
+        const body = JSON.stringify({ artifact: formatArtifact(doc, false) });
+        console.log('single-fetch size:', body.length);
+        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
       }
 
       if (params['extract-credentials'] === '1') {
-        const snapshot = await db.collection('artifacts').orderBy('timestamp', 'desc').limit(500).get();
+        const snapshot = await db.collection('artifacts')
+          .select('apiName', 'jiraTicket', 'env', 'aesKey', 'curl', 'response', 'extraRequests')
+          .orderBy('timestamp', 'desc')
+          .limit(500)
+          .get();
         const grouped = { DEV: [], UAT: [], PROD: [] };
         for (const doc of snapshot.docs) {
           const entry = extractCredentialsFromArtifact(doc);
@@ -180,14 +188,16 @@ const handler = async (event) => {
         for (const env of Object.keys(grouped)) {
           grouped[env] = deduplicate(grouped[env]);
         }
-        return jsonRes({ credentials: grouped, totalArtifacts: snapshot.docs.length });
+        const body = JSON.stringify({ credentials: grouped, totalArtifacts: snapshot.docs.length });
+        console.log('extract-credentials size:', body.length);
+        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
       }
 
       const summary = params.summary !== '0';
       const search = params.search?.toLowerCase();
       const limit = params.limit
         ? Math.min(parseInt(params.limit), 100)
-        : 50;
+        : 20;
       const cursor = params.cursor || null;
 
       let total = 0;
@@ -196,7 +206,22 @@ const handler = async (event) => {
         total = countSnap.data().count;
       } catch (_) { /* count may not be available */ }
 
-      const fetchLimit = search ? 500 : limit;
+      if (summary && !search) {
+        let query = db.collection('artifacts').select(...SUMMARY_FIELDS).orderBy('timestamp', 'desc').limit(limit);
+        if (cursor) query = query.startAfter(new Date(cursor));
+        const snapshot = await query.get();
+        const artifacts = snapshot.docs.map((doc) => formatArtifact(doc, true));
+        const nextCursor =
+          snapshot.docs.length === limit
+            ? snapshot.docs[snapshot.docs.length - 1]
+                .data().timestamp?.toDate?.()?.toISOString() ?? null
+            : null;
+        const body = JSON.stringify({ artifacts, nextCursor, total });
+        console.log('summary-list size:', body.length, 'count:', artifacts.length);
+        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
+      }
+
+      const fetchLimit = search ? 200 : limit;
       let query = db.collection('artifacts').orderBy('timestamp', 'desc').limit(fetchLimit);
       if (cursor) query = query.startAfter(new Date(cursor));
 
@@ -218,7 +243,9 @@ const handler = async (event) => {
               .data().timestamp?.toDate?.()?.toISOString() ?? null
           : null;
 
-      return jsonRes({ artifacts, nextCursor, total });
+      const body = JSON.stringify({ artifacts, nextCursor, total });
+      console.log('list size:', body.length, 'count:', artifacts.length);
+      return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
     }
 
     if (method === 'POST') {
