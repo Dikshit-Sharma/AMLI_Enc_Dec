@@ -40,7 +40,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   const pasteSuggestion = useSmartPaste(libraryForPaste);
 
   React.useEffect(() => {
-    fetchArtifacts({ summary: 1 }).then(r => setLibraryForPaste(r.artifacts)).catch(() => {});
+    fetchArtifacts().then(r => setLibraryForPaste(r.artifacts)).catch(() => {});
   }, []);
 
   const updateArtifact = (index, field, value) => {

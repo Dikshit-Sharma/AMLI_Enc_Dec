@@ -12,246 +12,67 @@ if (admin.apps.length === 0) {
 
 const db = admin.firestore();
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
-
-function jsonRes(data, status = 200) {
-  return {
-    statusCode: status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  };
-}
-
-function formatArtifact(doc, summary) {
-  const d = doc.data();
-  const art = {
-    id: doc.id,
-    apiName: d.apiName,
-    jiraTicket: d.jiraTicket,
-    env: d.env,
-    encryption: d.encryption,
-    aesKey: d.aesKey,
-    algo: d.algo,
-    numRequests: d.numRequests,
-    timestamp: d.timestamp?.toDate?.()?.toISOString() ?? null,
-  };
-  if (!summary) {
-    art.curl = d.curl;
-    art.response = d.response;
-    art.extraRequests = d.extraRequests;
-  }
-  return art;
-}
-
-const CREDENTIAL_KEYS = [
-  'x-api-key', 'x-apigw-api-id', 'xapigwapiid',
-  'clientid', 'client_id', 'client-id',
-  'clientsecret', 'client_secret', 'client-secret',
-  'appid', 'soaappid',
-];
-
-function parseCurlForHeaders(curlString) {
-  const headers = {};
-  if (!curlString) return headers;
-  const headerRegex = /-(?:H|-header)\s+["']([^"']+)["']/g;
-  let match;
-  while ((match = headerRegex.exec(curlString)) !== null) {
-    const [key, ...values] = match[1].split(':');
-    if (key && values.length) {
-      headers[key.trim()] = values.join(':').trim();
-    }
-  }
-  return headers;
-}
-
-function parseCurlBody(curlString) {
-  if (!curlString) return null;
-  const bodyMatch = curlString.match(/-(?:d|-data(?:-raw)?)\s+["']({[\s\S]+?})["']/);
-  if (!bodyMatch) return null;
-  try {
-    return JSON.parse(bodyMatch[1]);
-  } catch {
-    return null;
-  }
-}
-
-function findCredentialsInObject(obj, depth = 0) {
-  if (!obj || typeof obj !== 'object' || depth > 3) return {};
-  const found = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const lk = key.toLowerCase();
-    if (typeof value === 'string' && value.length > 0) {
-      for (const ck of CREDENTIAL_KEYS) {
-        if (lk === ck) found[ck] = value;
-      }
-    }
-    if (typeof value === 'object') {
-      const nested = findCredentialsInObject(value, depth + 1);
-      Object.assign(found, nested);
-    }
-  }
-  return found;
-}
-
-function tryParseJson(str) {
-  if (!str || typeof str !== 'string') return null;
-  try { return JSON.parse(str); } catch { return null; }
-}
-
-function extractCredentialsFromArtifact(doc) {
-  const d = doc.data();
-  const art = { id: doc.id, ...d };
-  if (!art.env) return null;
-  const found = {};
-  const headers = parseCurlForHeaders(art.curl);
-  for (const [k, v] of Object.entries(headers)) {
-    const lk = k.toLowerCase();
-    for (const ck of CREDENTIAL_KEYS) {
-      if (lk === ck) found[ck] = v;
-    }
-  }
-  const body = parseCurlBody(art.curl);
-  if (body) Object.assign(found, findCredentialsInObject(body));
-  const responseObj = tryParseJson(art.response);
-  if (responseObj) Object.assign(found, findCredentialsInObject(responseObj));
-  if (Array.isArray(art.extraRequests)) {
-    for (const extra of art.extraRequests) {
-      if (extra.response) {
-        const extraRes = tryParseJson(extra.response);
-        if (extraRes) Object.assign(found, findCredentialsInObject(extraRes));
-      }
-    }
-  }
-  const xApiKey = found['x-api-key'] || found['x-apigw-api-id'] || found['xapigwapiid'] || '';
-  const clientId = found['clientid'] || found['client_id'] || found['client-id'] || '';
-  const clientSecret = found['clientsecret'] || found['client_secret'] || found['client-secret'] || '';
-  const aesKey = art.aesKey || found['aeskey'] || '';
-  const appId = found['soaappid'] || found['appid'] || '';
-  if (!xApiKey && !clientId && !clientSecret && !aesKey) return null;
-  return {
-    id: `art_${art.id}`,
-    soaAppId: appId || art.jiraTicket || 'Unknown',
-    apiName: art.apiName || '',
-    env: art.env,
-    xApiKey, clientId, clientSecret, aesKey,
-    _source: 'artifact',
-  };
-}
-
-function deduplicate(list) {
-  const seen = new Set();
-  return list.filter((item) => {
-    const key = `${item.xApiKey}|${item.clientId}|${item.clientSecret}|${item.aesKey}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-const SUMMARY_FIELDS = ['apiName', 'jiraTicket', 'env', 'encryption', 'aesKey', 'algo', 'numRequests', 'timestamp'];
-
 const handler = async (event) => {
-  const method = event.httpMethod;
-  const params = event.queryStringParameters || {};
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  };
 
-  if (method === 'OPTIONS') {
-    return { statusCode: 204, headers: CORS, body: '' };
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers, body: '' };
   }
 
   try {
-    if (method === 'GET') {
-      if (params.id) {
-        const doc = await db.collection('artifacts').doc(params.id).get();
-        if (!doc.exists) return jsonRes({ error: 'Not found' }, 404);
-        const body = JSON.stringify({ artifact: formatArtifact(doc, false) });
-        console.log('single-fetch size:', body.length);
-        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
-      }
-
-      if (params['extract-credentials'] === '1') {
-        const snapshot = await db.collection('artifacts')
-          .select('apiName', 'jiraTicket', 'env', 'aesKey', 'curl', 'response', 'extraRequests')
-          .orderBy('timestamp', 'desc')
-          .limit(500)
-          .get();
-        const grouped = { DEV: [], UAT: [], PROD: [] };
-        for (const doc of snapshot.docs) {
-          const entry = extractCredentialsFromArtifact(doc);
-          if (entry && ['DEV', 'UAT', 'PROD'].includes(entry.env)) {
-            grouped[entry.env].push(entry);
-          }
-        }
-        for (const env of Object.keys(grouped)) {
-          grouped[env] = deduplicate(grouped[env]);
-        }
-        const body = JSON.stringify({ credentials: grouped, totalArtifacts: snapshot.docs.length });
-        console.log('extract-credentials size:', body.length);
-        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
-      }
-
-      const summary = params.summary !== '0';
-      const search = params.search?.toLowerCase();
-      const limit = params.limit
-        ? Math.min(parseInt(params.limit), 100)
-        : 20;
+    if (event.httpMethod === 'GET') {
+      const params = event.queryStringParameters || {};
+      const limit = params.limit ? Math.min(parseInt(params.limit), 200) : null;
       const cursor = params.cursor || null;
 
       let total = 0;
       try {
         const countSnap = await db.collection('artifacts').count().get();
         total = countSnap.data().count;
-      } catch (_) { /* count may not be available */ }
+      } catch (_) { /* count aggregation may not be available */ }
 
-      if (summary && !search) {
-        let query = db.collection('artifacts').select(...SUMMARY_FIELDS).orderBy('timestamp', 'desc').limit(limit);
-        if (cursor) query = query.startAfter(new Date(cursor));
-        const snapshot = await query.get();
-        const artifacts = snapshot.docs.map((doc) => formatArtifact(doc, true));
-        const nextCursor =
-          snapshot.docs.length === limit
-            ? snapshot.docs[snapshot.docs.length - 1]
-                .data().timestamp?.toDate?.()?.toISOString() ?? null
-            : null;
-        const body = JSON.stringify({ artifacts, nextCursor, total });
-        console.log('summary-list size:', body.length, 'count:', artifacts.length);
-        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
-      }
-
-      const fetchLimit = search ? 200 : limit;
-      let query = db.collection('artifacts').orderBy('timestamp', 'desc').limit(fetchLimit);
+      let query = db.collection('artifacts').orderBy('timestamp', 'desc');
+      if (limit) query = query.limit(limit);
       if (cursor) query = query.startAfter(new Date(cursor));
 
       const snapshot = await query.get();
-      let artifacts = snapshot.docs.map((doc) => formatArtifact(doc, summary));
 
-      if (search) {
-        artifacts = artifacts.filter((art) =>
-          art.apiName?.toLowerCase().includes(search) ||
-          art.jiraTicket?.toLowerCase().includes(search) ||
-          art.env?.toLowerCase().includes(search) ||
-          (!summary && art.curl?.toLowerCase().includes(search))
-        );
-      }
+      const artifacts = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          timestamp: data.timestamp?.toDate?.().toISOString() ?? null,
+        };
+      });
 
       const nextCursor =
-        snapshot.docs.length === fetchLimit
+        limit && snapshot.docs.length === limit
           ? snapshot.docs[snapshot.docs.length - 1]
-              .data().timestamp?.toDate?.()?.toISOString() ?? null
+              .data()
+              .timestamp?.toDate?.()
+              ?.toISOString() ?? null
           : null;
 
-      const body = JSON.stringify({ artifacts, nextCursor, total });
-      console.log('list size:', body.length, 'count:', artifacts.length);
-      return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
+      return {
+        statusCode: 200,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifacts, nextCursor, total }),
+      };
     }
 
-    if (method === 'POST') {
+    if (event.httpMethod === 'POST') {
       const { artifacts } = JSON.parse(event.body || '{}');
       if (!Array.isArray(artifacts) || artifacts.length === 0) {
-        return jsonRes({ error: 'artifacts array is required' }, 400);
+        return {
+          statusCode: 400,
+          headers,
+          body: JSON.stringify({ error: 'artifacts array is required' }),
+        };
       }
 
       const ids = [];
@@ -263,13 +84,25 @@ const handler = async (event) => {
         ids.push(ref.id);
       }
 
-      return jsonRes({ ids, count: ids.length });
+      return {
+        statusCode: 200,
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, count: ids.length }),
+      };
     }
 
-    return jsonRes({ error: 'Method not allowed' }, 405);
+    return {
+      statusCode: 405,
+      headers,
+      body: JSON.stringify({ error: 'Method not allowed' }),
+    };
   } catch (err) {
     console.error('Function error:', err);
-    return jsonRes({ error: err.message }, 500);
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: err.message }),
+    };
   }
 };
 
