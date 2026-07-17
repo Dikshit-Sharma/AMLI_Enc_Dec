@@ -19,7 +19,7 @@ function FilterChip({ label, onClear }) {
 const DAY_LABELS = ['', 'Mon', '', 'Wed', '', 'Fri', ''];
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function ActivityCalendar({ artifacts, filterDate, onDateFilter }) {
+function ActivityCalendar({ activity, filterDate, onDateFilter }) {
   const weeks = 52;
   const cellSize = 13;
   const cellGap = 3;
@@ -35,11 +35,8 @@ function ActivityCalendar({ artifacts, filterDate, onDateFilter }) {
     start.setHours(0, 0, 0, 0);
 
     const countMap = {};
-    for (const a of artifacts || []) {
-      const ts = toDate(a.timestamp);
-      if (!ts) continue;
-      const key = ts.toISOString().slice(0, 10);
-      countMap[key] = (countMap[key] || 0) + 1;
+    for (const entry of activity || []) {
+      countMap[entry.date] = entry.count;
     }
 
     const cells = [];
@@ -73,7 +70,7 @@ function ActivityCalendar({ artifacts, filterDate, onDateFilter }) {
     const todayStr = now.toISOString().slice(0, 10);
 
     return { cells, monthMarkers, today: todayStr };
-  }, [artifacts]);
+  }, [activity]);
 
   const maxCount = useMemo(() => Math.max(...cells.map(c => c.count), 1), [cells]);
   const levels = useMemo(() => {
@@ -264,7 +261,7 @@ function DonutChart({ data, activeFilter, onFilterChange, chartType }) {
   );
 }
 
-function VelocityChart({ artifacts, chartType, onChartTypeChange, brushRange, onBrush, onFullscreen }) {
+function VelocityChart({ dailyVelocity, filterEnv, chartType, onChartTypeChange, brushRange, onBrush, onFullscreen }) {
   const [hovered, setHovered] = useState(null);
   const [isBrushing, setIsBrushing] = useState(false);
   const [brushStart, setBrushStart] = useState(null);
@@ -283,11 +280,10 @@ function VelocityChart({ artifacts, chartType, onChartTypeChange, brushRange, on
         count: 0, ma7: null,
       });
     }
-    for (const a of artifacts || []) {
-      const ts = toDate(a.timestamp);
-      if (!ts) continue;
-      const day = days.find(d => d.date === ts.toISOString().slice(0, 10));
-      if (day) day.count++;
+    for (const entry of dailyVelocity || []) {
+      if (filterEnv && entry.env !== filterEnv) continue;
+      const day = days.find(d => d.date === entry.date);
+      if (day) day.count += entry.count;
     }
     for (let i = 0; i < days.length; i++) {
       if (i >= 6) {
@@ -302,7 +298,7 @@ function VelocityChart({ artifacts, chartType, onChartTypeChange, brushRange, on
       total: days.reduce((s, d) => s + d.count, 0),
       avg: Math.round((days.reduce((s, d) => s + d.count, 0) / 30) * 10) / 10,
     };
-  }, [artifacts]);
+  }, [dailyVelocity, filterEnv]);
 
   const M = { top: 22, right: 16, bottom: 28, left: 36 };
   const W = 800, H = 220;
@@ -505,7 +501,7 @@ function VelocityChart({ artifacts, chartType, onChartTypeChange, brushRange, on
   );
 }
 
-function VelocityChartFull({ artifacts, chartType, onChartTypeChange, brushRange, onBrush }) {
+function VelocityChartFull({ dailyVelocity, filterEnv, chartType, onChartTypeChange, brushRange, onBrush }) {
   const [hovered, setHovered] = useState(null);
   const [isBrushing, setIsBrushing] = useState(false);
   const [brushStart, setBrushStart] = useState(null);
@@ -524,11 +520,10 @@ function VelocityChartFull({ artifacts, chartType, onChartTypeChange, brushRange
         count: 0, ma7: null,
       });
     }
-    for (const a of artifacts || []) {
-      const ts = toDate(a.timestamp);
-      if (!ts) continue;
-      const day = days.find(d => d.date === ts.toISOString().slice(0, 10));
-      if (day) day.count++;
+    for (const entry of dailyVelocity || []) {
+      if (filterEnv && entry.env !== filterEnv) continue;
+      const day = days.find(d => d.date === entry.date);
+      if (day) day.count += entry.count;
     }
     for (let i = 0; i < days.length; i++) {
       if (i >= 6) {
@@ -543,7 +538,7 @@ function VelocityChartFull({ artifacts, chartType, onChartTypeChange, brushRange
       total: days.reduce((s, d) => s + d.count, 0),
       avg: Math.round((days.reduce((s, d) => s + d.count, 0) / 30) * 10) / 10,
     };
-  }, [artifacts]);
+  }, [dailyVelocity, filterEnv]);
 
   const M = { top: 30, right: 24, bottom: 36, left: 50 };
   const W = 1200, H = 380;
@@ -712,18 +707,20 @@ function VelocityChartFull({ artifacts, chartType, onChartTypeChange, brushRange
   );
 }
 
-function TopApis({ artifacts, filterEnv }) {
+function TopApis({ topApisData, filterEnv }) {
   const tops = useMemo(() => {
+    let data = topApisData || [];
+    if (filterEnv) {
+      data = data.filter((d) => d.env === filterEnv);
+    }
     const map = {};
-    for (const a of artifacts || []) {
-      if (filterEnv && a.env !== filterEnv) continue;
-      const name = a.apiName || 'Unnamed';
-      map[name] = (map[name] || 0) + 1;
+    for (const d of data) {
+      map[d.apiName] = (map[d.apiName] || 0) + d.count;
     }
     return Object.entries(map)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 6);
-  }, [artifacts, filterEnv]);
+  }, [topApisData, filterEnv]);
 
   if (tops.length === 0) return null;
   const max = tops[0][1];
@@ -755,11 +752,14 @@ const TOOLS = [
 
 export default function HomePage({ theme, toggleTheme }) {
   const [recent, setRecent] = useState([]);
-  const [allArts, setAllArts] = useState([]);
   const [envData, setEnvData] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [credStats, setCredStats] = useState(null);
+  const [activity, setActivity] = useState([]);
+  const [dailyVelocity, setDailyVelocity] = useState([]);
+  const [velocity, setVelocity] = useState([]);
+  const [topApis, setTopApis] = useState([]);
   const [range, setRange] = useState('all');
   const [filterEnv, setFilterEnv] = useState(null);
   const [brushRange, setBrushRange] = useState(null);
@@ -776,16 +776,13 @@ export default function HomePage({ theme, toggleTheme }) {
       )),
       fetchExtractedCredentials().catch(() => ({ credentials: {} })),
     ]).then(([stats, credRes, extractedRes]) => {
-      const arts = stats.artifacts || [];
-      setAllArts(arts);
-      setRecent(stats.recent || arts.slice(0, 5));
-      setTotalCount(stats.total ?? arts.length);
-      const map = {};
-      for (const a of arts) {
-        const e = a.env || 'DEV';
-        map[e] = (map[e] || 0) + 1;
-      }
-      setEnvData(Object.entries(map).map(([label, value]) => ({ label, value })));
+      setRecent(stats.recent || []);
+      setTotalCount(stats.total || 0);
+      setEnvData(Object.entries(stats.envCounts || {}).map(([label, value]) => ({ label, value })));
+      setActivity(stats.activity || []);
+      setDailyVelocity(stats.dailyVelocity || []);
+      setVelocity(stats.velocity || []);
+      setTopApis(stats.topApis || []);
       const credMap = Object.fromEntries(credRes);
       const extracted = extractedRes.credentials || {};
       const merged = {};
@@ -797,50 +794,82 @@ export default function HomePage({ theme, toggleTheme }) {
     }).catch(() => setLoaded(true));
   }, []);
 
-  const filteredArts = React.useMemo(() => {
-    let arts = allArts;
-    if (range !== 'all' && allArts.length) {
+  const filteredActivity = React.useMemo(() => {
+    let data = activity;
+    if (range !== 'all' && activity.length) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - (range === '7d' ? 7 : 30));
-      arts = allArts.filter((a) => {
-        const ts = toDate(a.timestamp);
-        return ts && ts >= cutoff;
-      });
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      data = activity.filter((d) => d.date >= cutoffStr);
     }
     if (brushRange) {
-      const { startDate, endDate } = brushRange;
-      arts = arts.filter((a) => {
-        const ts = toDate(a.timestamp);
-        if (!ts) return false;
-        const d = ts.toISOString().slice(0, 10);
-        return d >= startDate && d <= endDate;
-      });
-    }
-    if (filterEnv) {
-      arts = arts.filter((a) => a.env === filterEnv);
+      data = activity.filter((d) => d.date >= brushRange.startDate && d.date <= brushRange.endDate);
     }
     if (filterDate) {
-      arts = arts.filter((a) => {
-        const ts = toDate(a.timestamp);
-        if (!ts) return false;
-        return ts.toISOString().slice(0, 10) === filterDate;
-      });
+      data = activity.filter((d) => d.date === filterDate);
     }
-    return arts;
-  }, [allArts, range, filterEnv, brushRange, filterDate]);
+    return data;
+  }, [activity, range, brushRange, filterDate]);
+
+  const filteredVelocity = React.useMemo(() => {
+    let data = velocity;
+    if (range !== 'all' && velocity.length) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - (range === '7d' ? 7 : 30));
+      const cutoffMonth = cutoff.toISOString().slice(0, 7);
+      data = velocity.filter((d) => d.month >= cutoffMonth);
+    }
+    if (brushRange) {
+      const startMonth = brushRange.startDate.slice(0, 7);
+      const endMonth = brushRange.endDate.slice(0, 7);
+      data = velocity.filter((d) => d.month >= startMonth && d.month <= endMonth);
+    }
+    if (filterEnv) {
+      data = velocity.filter((d) => d.env === filterEnv);
+    }
+    return data;
+  }, [velocity, range, brushRange, filterEnv]);
+
+  const filteredDailyVelocity = React.useMemo(() => {
+    let data = dailyVelocity;
+    if (range !== 'all' && dailyVelocity.length) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - (range === '7d' ? 7 : 30));
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      data = dailyVelocity.filter((d) => d.date >= cutoffStr);
+    }
+    if (brushRange) {
+      data = dailyVelocity.filter((d) => d.date >= brushRange.startDate && d.date <= brushRange.endDate);
+    }
+    if (filterEnv) {
+      data = dailyVelocity.filter((d) => d.env === filterEnv);
+    }
+    return data;
+  }, [dailyVelocity, range, brushRange, filterEnv]);
 
   const rangeEnvData = React.useMemo(() => {
     const map = {};
-    for (const a of filteredArts) {
-      const e = a.env || 'DEV';
-      map[e] = (map[e] || 0) + 1;
+    for (const d of filteredVelocity) {
+      map[d.env] = (map[d.env] || 0) + d.count;
+    }
+    if (Object.keys(map).length === 0) {
+      for (const d of envData) map[d.label] = d.value;
     }
     return Object.entries(map).map(([label, value]) => ({ label, value }));
-  }, [filteredArts]);
+  }, [filteredVelocity, envData]);
 
-  const rangeRecent = React.useMemo(() =>
-    filteredArts.slice(0, 5), [filteredArts]
-  );
+  const filteredTopApis = React.useMemo(() => {
+    let data = topApis;
+    if (filterEnv) {
+      data = topApis.filter((d) => d.env === filterEnv);
+    }
+    return data;
+  }, [topApis, filterEnv]);
+
+  const rangeRecent = React.useMemo(() => {
+    if (filterEnv) return recent.filter((a) => a.env === filterEnv);
+    return recent;
+  }, [recent, filterEnv]);
 
   const handleDonutFilter = (env) => {
     setFilterEnv(env);
@@ -992,7 +1021,7 @@ export default function HomePage({ theme, toggleTheme }) {
                   <DonutChart data={rangeEnvData} activeFilter={filterEnv} onFilterChange={handleDonutFilter} chartType={donutType} />
                 </div>
                 <div className="chart-section">
-                  <VelocityChart artifacts={filteredArts} chartType={velocityType} onChartTypeChange={setVelocityType}
+                  <VelocityChart dailyVelocity={filteredDailyVelocity} chartType={velocityType} onChartTypeChange={setVelocityType}
                     brushRange={brushRange} onBrush={handleBrush}
                     onFullscreen={() => handleFullScreen('velocity')} />
                 </div>
@@ -1000,7 +1029,7 @@ export default function HomePage({ theme, toggleTheme }) {
               {credStats && (
                 <div className="chart-grid-2">
                   <div className="chart-section">
-                    <TopApis artifacts={filteredArts} filterEnv={filterEnv} />
+                    <TopApis topApisData={filteredTopApis} filterEnv={filterEnv} />
                   </div>
                   <div className="chart-section">
                     <div className="chart-container">
@@ -1033,7 +1062,7 @@ export default function HomePage({ theme, toggleTheme }) {
           )}
 
           <div className="chart-section cal-section">
-            <ActivityCalendar artifacts={allArts} filterDate={filterDate} onDateFilter={handleDateFilter} />
+            <ActivityCalendar activity={filteredActivity} filterDate={filterDate} onDateFilter={handleDateFilter} />
           </div>
 
           <div className="recent-section">
@@ -1087,7 +1116,7 @@ export default function HomePage({ theme, toggleTheme }) {
             </div>
             <div className="fullscreen-chart-body">
               {fullScreenChart === 'velocity' ? (
-                <VelocityChartFull artifacts={filteredArts} chartType={velocityType} onChartTypeChange={setVelocityType}
+                <VelocityChartFull dailyVelocity={filteredDailyVelocity} chartType={velocityType} onChartTypeChange={setVelocityType}
                   brushRange={brushRange} onBrush={handleBrush} />
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3rem', height: '100%' }}>
