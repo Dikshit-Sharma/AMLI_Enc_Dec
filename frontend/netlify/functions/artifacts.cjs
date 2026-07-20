@@ -259,8 +259,9 @@ const handler = async (event) => {
       }
 
       const search = params.search?.toLowerCase();
+      const MAX_LOAD = 10000;
       const pageSize = params.limit
-        ? Math.min(parseInt(params.limit), 50)
+        ? Math.min(parseInt(params.limit), MAX_LOAD)
         : 20;
       const cursor = params.cursor || null;
 
@@ -271,20 +272,25 @@ const handler = async (event) => {
       } catch (_) {}
 
       if (search) {
-        const fetchLimit = 500;
+        const fetchLimit = Math.min(500, MAX_LOAD);
         let q = db.collection('artifacts').select(...SUMMARY_FIELDS).orderBy('timestamp', 'desc').limit(fetchLimit);
         if (cursor) q = q.startAfter(new Date(cursor));
         const snapshot = await q.get();
-        let artifacts = snapshot.docs.map((doc) => {
+        const artifacts = snapshot.docs.map((doc) => {
           const data = doc.data();
           return { id: doc.id, ...data, timestamp: data.timestamp?.toDate?.().toISOString() ?? null };
-        });
-        artifacts = artifacts.filter((a) =>
+        }).filter((a) =>
           a.apiName?.toLowerCase().includes(search) ||
           a.jiraTicket?.toLowerCase().includes(search) ||
           a.env?.toLowerCase().includes(search)
         );
-        return jsonRes({ artifacts, nextCursor: null, total });
+        const body = JSON.stringify({ artifacts, nextCursor: null, total });
+        console.log('search size:', body.length, 'count:', artifacts.length);
+        if (body.length > 5_000_000) {
+          console.error('search payload too large:', body.length);
+          return jsonRes({ artifacts: [], nextCursor: null, total, _truncated: true });
+        }
+        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
       }
 
       let q = db.collection('artifacts').select(...SUMMARY_FIELDS).orderBy('timestamp', 'desc').limit(pageSize);
@@ -302,6 +308,10 @@ const handler = async (event) => {
 
       const listBody = JSON.stringify({ artifacts, nextCursor, total });
       console.log('list size:', listBody.length, 'count:', artifacts.length);
+      if (listBody.length > 5_000_000) {
+        console.error('list payload too large:', listBody.length);
+        return jsonRes({ artifacts: [], nextCursor: null, total: 0, _truncated: true });
+      }
       return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: listBody };
     }
 

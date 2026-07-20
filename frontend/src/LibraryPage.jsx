@@ -23,37 +23,21 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   const [totalCount, setTotalCount] = useState(0);
   const [fullArtifacts, setFullArtifacts] = useState({});
   const [loadingFull, setLoadingFull] = useState(null);
-  const [nextCursor, setNextCursor] = useState(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-
   const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
   useEffect(() => {
     if (!isAuthenticated) return;
     setLoading(true);
-    fetchArtifacts({ limit: 50 })
+    fetchArtifacts({ limit: 10000 })
       .then(res => {
-        setAllArtifacts(res.artifacts || []);
-        setNextCursor(res.nextCursor || null);
+        const list = res.artifacts || [];
+        setAllArtifacts(list);
         if (res.total !== undefined) setTotalCount(res.total);
+        console.log(`Library: loaded ${list.length} artifacts in summary mode`);
       })
       .catch(err => console.error('Failed to load artifacts:', err))
       .finally(() => setLoading(false));
   }, [isAuthenticated]);
-
-  const loadMore = async () => {
-    if (!nextCursor || loadingMore) return;
-    setLoadingMore(true);
-    try {
-      const res = await fetchArtifacts({ limit: 50, cursor: nextCursor });
-      setAllArtifacts(prev => [...prev, ...(res.artifacts || [])]);
-      setNextCursor(res.nextCursor || null);
-    } catch (err) {
-      console.error('Failed to load more:', err);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
 
   const getFullArtifact = async (id) => {
     if (fullArtifacts[id]) return fullArtifacts[id];
@@ -480,16 +464,10 @@ const LibraryPage = ({ theme, toggleTheme }) => {
               Loading artifacts...
             </div>
           )}
-          {!loading && nextCursor && (
-            <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
-              <button
-                className="btn-primary"
-                onClick={loadMore}
-                disabled={loadingMore}
-                style={{ padding: '0.6rem 2rem', fontSize: '0.9rem' }}
-              >
-                {loadingMore ? 'Loading...' : `Load More (${allArtifacts.length} of ${totalCount})`}
-              </button>
+          {!loading && (
+            <div style={{ textAlign: 'center', padding: '1.5rem 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Showing all {allArtifacts.length} artifacts
+              {totalCount > allArtifacts.length && ` (first ${allArtifacts.length} of ${totalCount})`}
             </div>
           )}
         </div>
