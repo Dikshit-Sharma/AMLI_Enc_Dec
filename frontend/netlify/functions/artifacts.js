@@ -157,12 +157,6 @@ const handler = async (event) => {
       }
 
       if (params.stats === '1') {
-        const recentSnap = await db.collection('artifacts')
-          .select('apiName', 'jiraTicket', 'env', 'numRequests', 'timestamp')
-          .orderBy('timestamp', 'desc')
-          .limit(5)
-          .get();
-
         let total = 0;
         try {
           const countSnap = await db.collection('artifacts').count().get();
@@ -175,61 +169,48 @@ const handler = async (event) => {
         const monthEnvCounts = {};
         const apiCounts = {};
 
-        const batchSize = 500;
-        let lastDoc = null;
-        let hasMore = true;
+        const MAX_DOCS = 5000;
+        const snap = await db.collection('artifacts')
+          .select('env', 'apiName', 'timestamp')
+          .orderBy('timestamp', 'desc')
+          .limit(MAX_DOCS)
+          .get();
 
-        while (hasMore) {
-          let q = db.collection('artifacts')
-            .select('env', 'apiName', 'timestamp')
-            .orderBy('timestamp', 'desc')
-            .limit(batchSize);
-          if (lastDoc) q = q.startAfter(lastDoc);
-          const snap = await q.get();
-          for (const d of snap.docs) {
-            const data = d.data();
-            const env = data.env || 'DEV';
-            envCounts[env] = (envCounts[env] || 0) + 1;
+        const recent = [];
+        for (const d of snap.docs) {
+          const data = d.data();
+          const env = data.env || 'DEV';
+          envCounts[env] = (envCounts[env] || 0) + 1;
 
-            const ts = data.timestamp?.toDate?.();
-            if (ts) {
-              const dateStr = ts.toISOString().slice(0, 10);
-              dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
-              const deKey = dateStr + '|' + env;
-              dateEnvCounts[deKey] = (dateEnvCounts[deKey] || 0) + 1;
-              const monthStr = ts.toISOString().slice(0, 7);
-              const meKey = monthStr + '|' + env;
-              monthEnvCounts[meKey] = (monthEnvCounts[meKey] || 0) + 1;
-            }
-
-            const apiName = data.apiName || 'Unknown';
-            const ak = apiName + '|' + env;
-            apiCounts[ak] = (apiCounts[ak] || 0) + 1;
+          const ts = data.timestamp?.toDate?.();
+          if (ts) {
+            const dateStr = ts.toISOString().slice(0, 10);
+            dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
+            const deKey = dateStr + '|' + env;
+            dateEnvCounts[deKey] = (dateEnvCounts[deKey] || 0) + 1;
+            const monthStr = ts.toISOString().slice(0, 7);
+            const meKey = monthStr + '|' + env;
+            monthEnvCounts[meKey] = (monthEnvCounts[meKey] || 0) + 1;
           }
-          if (snap.docs.length < batchSize) {
-            hasMore = false;
-          } else {
-            lastDoc = snap.docs[snap.docs.length - 1];
+
+          const apiName = data.apiName || 'Unknown';
+          const ak = apiName + '|' + env;
+          apiCounts[ak] = (apiCounts[ak] || 0) + 1;
+
+          if (recent.length < 5) {
+            recent.push({ id: d.id, ...data, timestamp: data.timestamp?.toDate?.().toISOString() ?? null });
           }
         }
 
-        const recent = recentSnap.docs.map((doc) => {
-          const data = doc.data();
-          return { id: doc.id, ...data, timestamp: data.timestamp?.toDate?.().toISOString() ?? null };
-        });
-
         const activity = Object.entries(dateCounts).map(([date, count]) => ({ date, count }));
-
         const dailyVelocity = Object.entries(dateEnvCounts).map(([key, count]) => {
           const [date, env] = key.split('|');
           return { date, env, count };
         });
-
         const velocity = Object.entries(monthEnvCounts).map(([key, count]) => {
           const [month, env] = key.split('|');
           return { month, env, count };
         });
-
         const topApis = Object.entries(apiCounts)
           .map(([key, count]) => {
             const [apiName, env] = key.split('|');
@@ -237,9 +218,18 @@ const handler = async (event) => {
           })
           .sort((a, b) => b.count - a.count)
           .slice(0, 20);
+        const sampledCount = snap.docs.length;
 
-        const body = JSON.stringify({ total, envCounts, recent, activity, dailyVelocity, velocity, topApis });
-        console.log('stats size:', body.length);
+        const body = JSON.stringify({ total, envCounts, recent, activity, dailyVelocity, velocity, topApis, sampledCount });
+        console.log('stats size:', body.length, 'sampled:', sampledCount);
+        if (body.length > 5_000_000) {
+          console.error('stats payload still too large:', body.length);
+          return jsonRes({
+            total, envCounts, recent: [],
+            activity: [], dailyVelocity: [], velocity: [], topApis: [],
+            sampledCount, _truncated: true,
+          });
+        }
         return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
       }
 
@@ -247,7 +237,7 @@ const handler = async (event) => {
         const snapshot = await db.collection('artifacts')
           .select('apiName', 'jiraTicket', 'env', 'aesKey', 'curl', 'response', 'extraRequests')
           .orderBy('timestamp', 'desc')
-          .limit(500)
+          .limit(200)
           .get();
         const grouped = { DEV: [], UAT: [], PROD: [] };
         for (const doc of snapshot.docs) {
@@ -261,6 +251,10 @@ const handler = async (event) => {
         }
         const credBody = JSON.stringify({ credentials: grouped, totalArtifacts: snapshot.docs.length });
         console.log('extract-credentials size:', credBody.length);
+        if (credBody.length > 5_000_000) {
+          console.error('extract-credentials payload too large:', credBody.length);
+          return jsonRes({ credentials: { DEV: [], UAT: [], PROD: [] }, totalArtifacts: 0, _truncated: true });
+        }
         return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: credBody };
       }
 

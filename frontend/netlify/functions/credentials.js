@@ -28,7 +28,11 @@ const handler = async (event) => {
       const params = event.queryStringParameters || {};
       const env = params.env;
 
-      const snapshot = await db.collection('credentials').orderBy('timestamp', 'desc').limit(200).get();
+      const snapshot = await db.collection('credentials')
+        .select('soaAppId', 'env', 'apiName', 'xApiKey', 'clientId', 'clientSecret', 'aesKey', 'timestamp')
+        .orderBy('timestamp', 'desc')
+        .limit(200)
+        .get();
       let credentials = snapshot.docs.map((doc) => {
         const data = doc.data();
         return {
@@ -48,10 +52,20 @@ const handler = async (event) => {
         return b.timestamp.localeCompare(a.timestamp);
       });
 
+      const body = JSON.stringify({ credentials });
+      console.log('credentials size:', body.length, 'count:', credentials.length);
+      if (body.length > 5_000_000) {
+        console.error('credentials payload too large:', body.length);
+        return {
+          statusCode: 200,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credentials: [], _truncated: true }),
+        };
+      }
       return {
         statusCode: 200,
         headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credentials }),
+        body,
       };
     }
 
