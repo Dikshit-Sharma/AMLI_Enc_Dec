@@ -157,10 +157,8 @@ const handler = async (event) => {
       }
 
       if (params.stats === '1') {
-        const LIGHT_FIELDS = ['apiName', 'jiraTicket', 'env', 'numRequests', 'timestamp'];
-
         const recentSnap = await db.collection('artifacts')
-          .select(...SUMMARY_FIELDS)
+          .select('apiName', 'jiraTicket', 'env', 'numRequests', 'timestamp')
           .orderBy('timestamp', 'desc')
           .limit(5)
           .get();
@@ -171,25 +169,42 @@ const handler = async (event) => {
           total = countSnap.data().count;
         } catch (_) {}
 
-        const artifacts = [];
+        const envCounts = {};
+        const dateCounts = {};
+        const dateEnvCounts = {};
+        const monthEnvCounts = {};
+        const apiCounts = {};
+
         const batchSize = 500;
         let lastDoc = null;
         let hasMore = true;
 
         while (hasMore) {
-          let q = db.collection('artifacts').select(...LIGHT_FIELDS).orderBy('timestamp', 'desc').limit(batchSize);
+          let q = db.collection('artifacts')
+            .select('env', 'apiName', 'timestamp')
+            .orderBy('timestamp', 'desc')
+            .limit(batchSize);
           if (lastDoc) q = q.startAfter(lastDoc);
           const snap = await q.get();
           for (const d of snap.docs) {
             const data = d.data();
-            artifacts.push({
-              id: d.id,
-              apiName: data.apiName || '',
-              jiraTicket: data.jiraTicket || '',
-              env: data.env || 'DEV',
-              numRequests: data.numRequests || 0,
-              timestamp: data.timestamp?.toDate?.().toISOString() ?? null,
-            });
+            const env = data.env || 'DEV';
+            envCounts[env] = (envCounts[env] || 0) + 1;
+
+            const ts = data.timestamp?.toDate?.();
+            if (ts) {
+              const dateStr = ts.toISOString().slice(0, 10);
+              dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
+              const deKey = dateStr + '|' + env;
+              dateEnvCounts[deKey] = (dateEnvCounts[deKey] || 0) + 1;
+              const monthStr = ts.toISOString().slice(0, 7);
+              const meKey = monthStr + '|' + env;
+              monthEnvCounts[meKey] = (monthEnvCounts[meKey] || 0) + 1;
+            }
+
+            const apiName = data.apiName || 'Unknown';
+            const ak = apiName + '|' + env;
+            apiCounts[ak] = (apiCounts[ak] || 0) + 1;
           }
           if (snap.docs.length < batchSize) {
             hasMore = false;
@@ -203,7 +218,29 @@ const handler = async (event) => {
           return { id: doc.id, ...data, timestamp: data.timestamp?.toDate?.().toISOString() ?? null };
         });
 
-        return jsonRes({ total, artifacts, recent });
+        const activity = Object.entries(dateCounts).map(([date, count]) => ({ date, count }));
+
+        const dailyVelocity = Object.entries(dateEnvCounts).map(([key, count]) => {
+          const [date, env] = key.split('|');
+          return { date, env, count };
+        });
+
+        const velocity = Object.entries(monthEnvCounts).map(([key, count]) => {
+          const [month, env] = key.split('|');
+          return { month, env, count };
+        });
+
+        const topApis = Object.entries(apiCounts)
+          .map(([key, count]) => {
+            const [apiName, env] = key.split('|');
+            return { apiName, env, count };
+          })
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 20);
+
+        const body = JSON.stringify({ total, envCounts, recent, activity, dailyVelocity, velocity, topApis });
+        console.log('stats size:', body.length);
+        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
       }
 
       if (params['extract-credentials'] === '1') {
@@ -222,7 +259,9 @@ const handler = async (event) => {
         for (const env of Object.keys(grouped)) {
           grouped[env] = deduplicate(grouped[env]);
         }
-        return jsonRes({ credentials: grouped, totalArtifacts: snapshot.docs.length });
+        const credBody = JSON.stringify({ credentials: grouped, totalArtifacts: snapshot.docs.length });
+        console.log('extract-credentials size:', credBody.length);
+        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: credBody };
       }
 
       const search = params.search?.toLowerCase();
@@ -267,7 +306,9 @@ const handler = async (event) => {
               .data().timestamp?.toDate?.()?.toISOString() ?? null
           : null;
 
-      return jsonRes({ artifacts, nextCursor, total });
+      const listBody = JSON.stringify({ artifacts, nextCursor, total });
+      console.log('list size:', listBody.length, 'count:', artifacts.length);
+      return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: listBody };
     }
 
     if (method === 'POST') {
