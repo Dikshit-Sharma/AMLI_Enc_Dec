@@ -165,15 +165,135 @@ function ExtensionsTab({ jobs }) {
   );
 }
 
+function extractEnv(name) {
+  const lower = name.toLowerCase();
+  if (lower.includes('prod') || lower.includes('production')) return 'PROD';
+  if (lower.includes('uat') || lower.includes('staging') || lower.includes('stage')) return 'UAT';
+  if (lower.includes('dev') || lower.includes('develop') || lower.includes('test') || lower.includes('qa')) return 'DEV';
+  return 'OTHER';
+}
+
+function extractRepoUrl(configXml) {
+  if (!configXml) return null;
+  const urlMatch = configXml.match(/<url>(.*?)<\/url>/i);
+  return urlMatch ? urlMatch[1].trim() : null;
+}
+
+function extractBranch(configXml) {
+  if (!configXml) return null;
+  const branchMatch = configXml.match(/<branches>.*?<name>\*\*(.*?)\*\*<\/name>.*?<\/branches>/is);
+  if (branchMatch) return branchMatch[1].trim();
+  const masterMatch = configXml.match(/<name>\*\*(master|main)\*\*<\/name>/i);
+  return masterMatch ? masterMatch[1] : null;
+}
+
+function extractPropertyFiles(configXml) {
+  if (!configXml) return [];
+  const files = [];
+  const patterns = [
+    /--spring\.config\.(?:name|location)=["']?([^\s"'&]+)/gi,
+    /-DpropertyFile=["']?([^\s"'&]+)/gi,
+    /-Dconfig\.file=["']?([^\s"'&]+)/gi,
+    /config\/([\w.-]+\.(?:properties|yml|yaml))/gi,
+    /([\w.-]+\.properties)/gi,
+    /([\w.-]+\.ya?ml)/gi,
+  ];
+  for (const pattern of patterns) {
+    let m;
+    while ((m = pattern.exec(configXml)) !== null) {
+      const f = m[1].trim();
+      if (!files.includes(f) && !f.includes('pom.xml') && !f.includes('package.json')) {
+        files.push(f);
+      }
+    }
+  }
+  return files;
+}
+
+const PROXY_ONLY = ['save_connection', 'load_connection', 'delete_connection', 'update_connection', 'list_connections'];
+
 async function api(action, extra = {}) {
-  const res = await fetch('/api/jenkins-proxy', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...extra }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
-  return data;
+  if (PROXY_ONLY.includes(action)) {
+    const res = await fetch('/api/jenkins-proxy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...extra }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  }
+
+  const { jenkinsUrl, token, jobName } = extra;
+  if (!jenkinsUrl || !token) throw new Error('jenkinsUrl and token required');
+  const base = jenkinsUrl.replace(/\/+$/, '');
+  const auth = 'Basic ' + btoa(token + ':' + token);
+
+  const directFetch = async (url) => {
+    const r = await fetch(url, { headers: { 'Authorization': auth } });
+    if (!r.ok) throw new Error(`Jenkins returned ${r.status}`);
+    return r;
+  };
+
+  try {
+    if (action === 'test_connection') {
+      const r = await directFetch(`${base}/api/json?tree=nodeName`);
+      const data = await r.json();
+      return { connected: true, nodeName: data.nodeName || 'Jenkins' };
+    }
+
+    if (action === 'list_jobs') {
+      const r = await directFetch(`${base}/api/json?tree=jobs[name,url,color,lastSuccessfulBuild[number,timestamp]]`);
+      const data = await r.json();
+      return {
+        jobs: (data.jobs || []).map(j => ({
+          name: j.name, url: j.url, color: j.color,
+          env: extractEnv(j.name),
+          lastBuildNumber: j.lastSuccessfulBuild?.number || null,
+          lastBuildTimestamp: j.lastSuccessfulBuild?.timestamp || null,
+        })),
+      };
+    }
+
+    if (action === 'job_detail') {
+      if (!jobName) throw new Error('jobName required');
+      const enc = encodeURIComponent(jobName);
+      const [jobData, configXml] = await Promise.all([
+        directFetch(`${base}/job/${enc}/api/json`).then(r => r.json()),
+        directFetch(`${base}/job/${enc}/config.xml`).then(r => r.ok ? r.text() : null).catch(() => null),
+      ]);
+      let lastBuildData = null;
+      if (jobData.lastSuccessfulBuild?.number) {
+        try {
+          lastBuildData = await directFetch(`${base}/job/${enc}/${jobData.lastSuccessfulBuild.number}/api/json`).then(r => r.json());
+        } catch {}
+      }
+      const parameters = lastBuildData
+        ? ((lastBuildData.actions || []).find(a => a._class === 'hudson.model.ParametersAction')?.parameters || []).map(p => ({ name: p.name, value: p.value }))
+        : [];
+      const envFromParams = parameters.find(p => p.name?.toLowerCase() === 'env' || p.name?.toLowerCase() === 'environment');
+      return {
+        name: jobData.name, url: jobData.url, description: jobData.description || '',
+        env: envFromParams?.value || extractEnv(jobData.name),
+        repoUrl: extractRepoUrl(configXml), branch: extractBranch(configXml),
+        propertyFiles: extractPropertyFiles(configXml || ''),
+        parameters, lastBuild: jobData.lastSuccessfulBuild?.number || null,
+        lastBuildTimestamp: jobData.lastSuccessfulBuild?.timestamp || null,
+        buildable: jobData.buildable, inQueue: jobData.inQueue,
+        configXml: configXml ? configXml.slice(0, 5000) : null,
+      };
+    }
+
+    throw new Error('Unknown action: ' + action);
+  } catch (err) {
+    console.warn('Direct Jenkins call failed, falling back to proxy:', err.message);
+    const res = await fetch('/api/jenkins-proxy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ...extra }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Proxy failed');
+    return data;
+  }
 }
 
 function CredentialPrompt({ connMeta, onCredentials, onCancel }) {
