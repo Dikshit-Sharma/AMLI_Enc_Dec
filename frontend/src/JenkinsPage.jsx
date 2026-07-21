@@ -5,13 +5,13 @@ import { SkeletonTableRows } from './Skeleton';
 const ENVS = ['DEV', 'UAT', 'PROD'];
 
 function SetupForm({ initial, onConnect, onCancel }) {
-  const [form, setForm] = useState(initial || { jenkinsUrl: '', username: '', token: '', label: '' });
+  const [form, setForm] = useState(initial || { jenkinsUrl: '', token: '', label: '' });
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.jenkinsUrl.trim() || !form.username.trim() || !form.token.trim()) return;
+    if (!form.jenkinsUrl.trim() || !form.token.trim()) return;
     setConnecting(true);
     setError('');
     try {
@@ -42,13 +42,8 @@ function SetupForm({ initial, onConnect, onCancel }) {
         <input className="main-input" placeholder="e.g. Corp Jenkins" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
       </div>
       <div className="form-group">
-        <label className="field-label">Username</label>
-        <input className="main-input" placeholder="jenkins-username" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required autoComplete="off" />
-      </div>
-      <div className="form-group">
-        <label className="field-label">API Token or Password</label>
-        <input type="password" className="main-input" placeholder="API token (preferred)" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} required autoComplete="off" />
-        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>API token recommended. Generate in Jenkins &gt; Profile &gt; Configure &gt; API Token.</div>
+        <label className="field-label">Token</label>
+        <input type="password" className="main-input" placeholder="API token or Git token" value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} required autoComplete="off" />
       </div>
       {error && <div className="error-message"><span>⚠️ {error}</span></div>}
       <button type="submit" className="btn-primary full-width" disabled={connecting} style={{ marginTop: '1rem' }}>
@@ -182,18 +177,17 @@ async function api(action, extra = {}) {
 }
 
 function CredentialPrompt({ connMeta, onCredentials, onCancel }) {
-  const [username, setUsername] = useState('');
   const [token, setToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username.trim() || !token.trim()) return;
+    if (!token.trim()) return;
     setLoading(true);
     setError('');
     try {
-      await onCredentials({ username: username.trim(), token: token.trim() });
+      await onCredentials({ token: token.trim() });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -210,17 +204,13 @@ function CredentialPrompt({ connMeta, onCredentials, onCancel }) {
         background: 'var(--card-bg)', borderRadius: '1rem', padding: '2rem',
         maxWidth: '400px', width: '90%', border: '1px solid var(--border)',
       }}>
-        <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Re-enter Jenkins Credentials</h3>
+        <h3 style={{ marginTop: 0, marginBottom: '0.5rem' }}>Enter Token</h3>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-          Credentials are not stored — enter them to refresh. Connected to {connMeta?.label || connMeta?.jenkinsUrl}.
+          Token is not stored — enter it to refresh. Connected to {connMeta?.label || connMeta?.jenkinsUrl}.
         </p>
         <div className="form-group">
-          <label className="field-label">Username</label>
-          <input className="main-input" placeholder="jenkins-username" value={username} onChange={e => setUsername(e.target.value)} required autoComplete="off" />
-        </div>
-        <div className="form-group">
-          <label className="field-label">API Token</label>
-          <input type="password" className="main-input" placeholder="API token" value={token} onChange={e => setToken(e.target.value)} required autoComplete="off" />
+          <label className="field-label">Token</label>
+          <input type="password" className="main-input" placeholder="API token or Git token" value={token} onChange={e => setToken(e.target.value)} required autoComplete="off" />
         </div>
         {error && <div className="error-message"><span>⚠️ {error}</span></div>}
         <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
@@ -261,10 +251,10 @@ const JenkinsPage = ({ theme, toggleTheme }) => {
   }, []);
 
   const fetchAndSaveJobs = async (jenkinsUrl, creds) => {
-    const listData = await api('list_jobs', { jenkinsUrl, username: creds.username, token: creds.token });
+    const listData = await api('list_jobs', { jenkinsUrl, token: creds.token });
     const jobsWithDetails = await Promise.all((listData.jobs || []).map(async (job) => {
       try {
-        return await api('job_detail', { jenkinsUrl, username: creds.username, token: creds.token, jobName: job.name });
+        return await api('job_detail', { jenkinsUrl, token: creds.token, jobName: job.name });
       } catch { return job; }
     }));
     const saveData = await api('save_connection', {
@@ -274,9 +264,9 @@ const JenkinsPage = ({ theme, toggleTheme }) => {
   };
 
   const handleConnect = async (form) => {
-    await api('test_connection', { jenkinsUrl: form.jenkinsUrl, username: form.username, token: form.token });
-    setCredentials({ username: form.username, token: form.token });
-    const { id, jobs } = await fetchAndSaveJobs(form.jenkinsUrl, { username: form.username, token: form.token });
+    await api('test_connection', { jenkinsUrl: form.jenkinsUrl, token: form.token });
+    setCredentials({ token: form.token });
+    const { id, jobs } = await fetchAndSaveJobs(form.jenkinsUrl, { token: form.token });
     setConnectionId(id);
     setConnMeta({ jenkinsUrl: form.jenkinsUrl, label: form.label || form.jenkinsUrl });
     setAllJobs(jobs);
@@ -353,7 +343,7 @@ const JenkinsPage = ({ theme, toggleTheme }) => {
         </div>
         <h1>🔧 JENKINS PIPELINES</h1>
         <SetupForm
-          initial={showSetup && connMeta ? { jenkinsUrl: connMeta.jenkinsUrl, username: '', token: '', label: connMeta.label } : null}
+          initial={showSetup && connMeta ? { jenkinsUrl: connMeta.jenkinsUrl, token: '', label: connMeta.label } : null}
           onConnect={handleConnect}
           onCancel={connectionId ? () => setShowSetup(false) : null}
         />
