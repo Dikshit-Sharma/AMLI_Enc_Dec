@@ -1,3 +1,17 @@
+const admin = require('firebase-admin');
+
+const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
+  process.env.FIREBASE_SERVICE_ACCOUNT || '{}'
+);
+
+if (admin.apps.length === 0) {
+  admin.initializeApp({
+    credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT),
+  });
+}
+
+const db = admin.firestore();
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -111,15 +125,113 @@ const handler = async (event) => {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  const { jenkinsUrl, username, token, action, jobName } = body;
-  if (!jenkinsUrl || !username || !token) {
-    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'jenkinsUrl, username, and token required' }) };
-  }
-
-  const base = jenkinsUrl.replace(/\/+$/, '');
-  const auth = authHeader(username, token);
+  const { action } = body;
 
   try {
+    if (action === 'save_connection') {
+      const { jenkinsUrl, label, jobs } = body;
+      if (!jenkinsUrl) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'jenkinsUrl required' }) };
+      }
+      const docRef = await db.collection('jenkins_connections').add({
+        jenkinsUrl,
+        label: label || jenkinsUrl,
+        jobs: jobs || [],
+        fetchedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return {
+        statusCode: 200,
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: docRef.id, saved: true }),
+      };
+    }
+
+    if (action === 'load_connection') {
+      const { id } = body;
+      let snap;
+      if (id) {
+        snap = await db.collection('jenkins_connections').doc(id).get();
+        if (!snap.exists) {
+          return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: 'Connection not found' }) };
+        }
+        return {
+          statusCode: 200,
+          headers: { ...CORS, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: snap.id, ...snap.data() }),
+        };
+      }
+      snap = await db.collection('jenkins_connections')
+        .orderBy('fetchedAt', 'desc')
+        .limit(1)
+        .get();
+      if (snap.empty) {
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ data: null }) };
+      }
+      const doc = snap.docs[0];
+      return {
+        statusCode: 200,
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: doc.id, ...doc.data() }),
+      };
+    }
+
+    if (action === 'list_connections') {
+      const snap = await db.collection('jenkins_connections')
+        .orderBy('fetchedAt', 'desc')
+        .limit(20)
+        .get();
+      const connections = snap.docs.map(d => ({
+        id: d.id,
+        jenkinsUrl: d.data().jenkinsUrl,
+        label: d.data().label || d.data().jenkinsUrl,
+        fetchedAt: d.data().fetchedAt?.toDate?.()?.toISOString() || null,
+        jobCount: (d.data().jobs || []).length,
+      }));
+      return {
+        statusCode: 200,
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connections }),
+      };
+    }
+
+    if (action === 'delete_connection') {
+      const { id } = body;
+      if (!id) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'id required' }) };
+      }
+      await db.collection('jenkins_connections').doc(id).delete();
+      return {
+        statusCode: 200,
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deleted: true }),
+      };
+    }
+
+    if (action === 'update_connection') {
+      const { id, jobs } = body;
+      if (!id) {
+        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'id required' }) };
+      }
+      await db.collection('jenkins_connections').doc(id).update({
+        jobs: jobs || [],
+        fetchedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return {
+        statusCode: 200,
+        headers: { ...CORS, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updated: true }),
+      };
+    }
+
+    const { jenkinsUrl, username, token, jobName } = body;
+    if (!jenkinsUrl || !username || !token) {
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'jenkinsUrl, username, and token required' }) };
+    }
+
+    const base = jenkinsUrl.replace(/\/+$/, '');
+    const auth = authHeader(username, token);
+
     if (action === 'list_jobs') {
       const data = await fetchJenkins(`${base}/api/json?tree=jobs[name,url,color,lastSuccessfulBuild[number,timestamp]]`, auth);
       const jobs = (data.jobs || []).map(j => ({
@@ -184,7 +296,7 @@ const handler = async (event) => {
     return {
       statusCode: 400,
       headers: CORS,
-      body: JSON.stringify({ error: 'Unknown action. Use list_jobs, job_detail, or test_connection' }),
+      body: JSON.stringify({ error: 'Unknown action' }),
     };
   } catch (err) {
     console.error('Jenkins proxy error:', err);
