@@ -1,4 +1,3 @@
-const { schedule } = require('@netlify/functions');
 const admin = require('firebase-admin');
 
 const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
@@ -267,5 +266,4 @@ const handler = async (event) => {
   }
 };
 
-const scheduledHandler = schedule('30 3 * * MON', handler);
-module.exports = { handler: scheduledHandler };
+module.exports = { handler };

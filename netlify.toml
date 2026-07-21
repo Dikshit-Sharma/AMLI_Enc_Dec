@@ -30,4 +30,6 @@
   status = 200
 
 [functions]
-  # Weekly Ecosystem Digest schedule is declared inline in weekly-digest.cjs via @netlify/functions schedule()
+  [functions."weekly-digest"]
+    schedule = "30 3 * * MON"
+    # Required env vars (set in Netlify UI): SENDGRID_API_KEY, DIGEST_RECIPIENT, DIGEST_FROM, GROQ_API_KEY
