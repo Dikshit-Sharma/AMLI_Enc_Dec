@@ -18,8 +18,8 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
-function authHeader(username, token) {
-  return 'Basic ' + Buffer.from(username + ':' + token).toString('base64');
+function authHeader(token) {
+  return 'Basic ' + Buffer.from(token + ':' + token).toString('base64');
 }
 
 async function fetchJenkins(url, auth) {
@@ -224,13 +224,13 @@ const handler = async (event) => {
       };
     }
 
-    const { jenkinsUrl, username, token, jobName } = body;
-    if (!jenkinsUrl || !username || !token) {
-      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'jenkinsUrl, username, and token required' }) };
+    const { jenkinsUrl, token, jobName } = body;
+    if (!jenkinsUrl || !token) {
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'jenkinsUrl and token required' }) };
     }
 
     const base = jenkinsUrl.replace(/\/+$/, '');
-    const auth = authHeader(username, token);
+    const auth = authHeader(token);
 
     if (action === 'list_jobs') {
       const data = await fetchJenkins(`${base}/api/json?tree=jobs[name,url,color,lastSuccessfulBuild[number,timestamp]]`, auth);
