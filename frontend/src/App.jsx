@@ -13,6 +13,7 @@ import useHotkeys from './hooks/useHotkeys';
 import OnboardingBot from './OnboardingBot';
 import QuickAnswerBot from './QuickAnswerBot';
 import CommandPalette from './CommandPalette';
+import JenkinsPage from './JenkinsPage';
 
 function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
@@ -68,6 +69,7 @@ function App() {
       <Route path="/credentials" element={<CredentialsPage theme={theme} toggleTheme={toggleTheme} />} />
 
       <Route path="/cipher" element={<CipherTool theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/jenkins" element={<JenkinsPage theme={theme} toggleTheme={toggleTheme} />} />
     </Routes>
 
     <CommandPalette open={showCmdPalette} onClose={() => setShowCmdPalette(false)} />

@@ -23,6 +23,11 @@ export default function useHotkeys({ onToggleHelp, onEscape } = {}) {
         navigate('/library');
         return;
       }
+      if (CTRL(e) && e.shiftKey && e.key === 'J') {
+        e.preventDefault();
+        navigate('/jenkins');
+        return;
+      }
       if (e.key === '?' && !CTRL(e)) {
         e.preventDefault();
         onToggleHelp?.();
