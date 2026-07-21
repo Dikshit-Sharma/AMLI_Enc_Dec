@@ -1,14 +1,30 @@
 {
   "manifest_version": 3,
   "name": "RepoScope",
-  "version": "2.0.0",
-  "description": "GitLab analytics dashboard — activity calendars, contributor graphs, codebase treemaps, bus factor, and interactive mindmaps.",
+  "version": "2.1.0",
+  "description": "GitLab analytics dashboard + Jenkins Pipeline Explorer proxy.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "https://*.gitlab.com/*",
-    "https://*.gitlab.internal/*"
+    "https://*.gitlab.internal/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://amliaes.netlify.app/*",
+        "http://localhost:5173/*",
+        "http://localhost:4173/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
   ],
   "action": {
     "default_popup": "popup.html",
