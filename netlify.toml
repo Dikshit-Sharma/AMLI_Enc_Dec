@@ -32,7 +32,7 @@
 [functions]
   # Weekly Ecosystem Digest — runs every Monday at 9 AM IST (3:30 UTC)
   [functions."weekly-digest"]
-    schedule = "cron(30 3 * * MON)"
+    schedule = "30 3 * * MON"
     # Required env vars for weekly-digest (set in Netlify UI):
     # SENDGRID_API_KEY     — SendGrid API key for sending email
     # DIGEST_RECIPIENT     — Email address to receive digest (default: dikshit.sharma2580@gmail.com)
