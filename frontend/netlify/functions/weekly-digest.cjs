@@ -15,7 +15,7 @@ const db = admin.firestore();
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY || '';
 const DIGEST_FROM = process.env.DIGEST_FROM || 'dikshit.sharma2580@gmail.com';
 const DIGEST_RECIPIENT = process.env.DIGEST_RECIPIENT || 'dikshit.sharma2580@gmail.com';
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || '';
 
 function formatPercent(n) {
   return (n * 100).toFixed(1) + '%';
@@ -97,6 +97,56 @@ Stats for this week:
   } catch (_) {
     return null;
   }
+}
+
+function generateRuleBasedSummary(stats) {
+  const lines = [];
+  const prev = stats.lastWeek;
+  const diff = prev ? stats.total - prev.total : 0;
+  const newPct = prev?.total ? ((diff / prev.total) * 100).toFixed(1) : '0.0';
+
+  lines.push('🟢 <strong>Highlights</strong>');
+  lines.push(`• Ecosystem now tracks <strong>${stats.total}</strong> artifacts across ${Object.keys(stats.domainCounts || {}).length} domains.`);
+  if (diff !== 0) {
+    lines.push(`• ${diff > 0 ? '📈' : '📉'} Week-over-week: ${diff > 0 ? '+' : ''}${diff} artifacts (${diff > 0 ? '+' : ''}${newPct}% vs last week).`);
+  }
+  lines.push(`• <strong>${stats.newThisWeek}</strong> new artifact(s) added this week.`);
+  if (stats.newCredentials > 0) {
+    lines.push(`• ⚠️ <strong>${stats.newCredentials}</strong> credential(s) found — encryption recommended.`);
+  } else {
+    lines.push('• ✅ No plaintext credentials detected — good security hygiene.');
+  }
+
+  lines.push('');
+  lines.push('🔴 <strong>Risks & Action Items</strong>');
+  const lowEncEnvs = ['DEV', 'UAT', 'PROD'].filter(e => (stats.encryptionRates?.[e] || 0) < 0.5);
+  if (lowEncEnvs.length > 0) {
+    lines.push(`• Encryption below 50% in: <strong>${lowEncEnvs.join(', ')}</strong>. Prioritize encrypting secrets.`);
+  }
+  const prodEnc = stats.encryptionRates?.PROD || 0;
+  if (prodEnc < 0.9) {
+    lines.push(`• ⚠️ PROD encryption at <strong>${formatPercent(prodEnc)}</strong> — target is 90%+. Focus on PROD credential encryption.`);
+  }
+  if (stats.newCredentials > 0) {
+    lines.push(`• Rotate any exposed credentials and migrate to encrypted storage.`);
+  }
+  const unencrypted = stats.total - Object.values(stats.encryptedCounts || {}).reduce((a, b) => a + b, 0);
+  if (unencrypted > 0) {
+    lines.push(`• <strong>${unencrypted}</strong> artifact(s) remain unencrypted — consider bulk encryption.`);
+  }
+
+  lines.push('');
+  lines.push('📋 <strong>Outlook</strong>');
+  const overallEnc = stats.total ? Object.values(stats.encryptedCounts || {}).reduce((a, b) => a + b, 0) / stats.total : 0;
+  if (overallEnc >= 0.8) {
+    lines.push('Ecosystem health is strong. Encryption coverage trending well — maintain current pace.');
+  } else if (overallEnc >= 0.5) {
+    lines.push('Ecosystem is moderate. Encryption needs improvement — focus on high-risk environments.');
+  } else {
+    lines.push('Ecosystem needs attention. Low encryption coverage across the board — prioritize security remediation.');
+  }
+
+  return lines.join('\n');
 }
 
 function buildHtmlEmail(stats, aiSummary) {
@@ -182,6 +232,14 @@ function buildHtmlEmail(stats, aiSummary) {
       </tr>
 
       <tr><td style="padding:36px 40px">
+
+        <!-- Greeting -->
+        <div style="margin-bottom:24px">
+          <div style="font-size:16px;color:#1e293b;line-height:1.7">
+            Hi there 👋,<br><br>
+            Here's your <strong>Weekly Ecosystem Digest</strong> covering <strong>${stats.weekRange}</strong>. This report summarizes all AMLI-scanned artifacts, encryption coverage, credential exposure, and deployment activity across your DEV, UAT, and PROD environments.
+          </div>
+        </div>
 
         <!-- AI Summary -->
         ${aiFormatted ? `
@@ -274,6 +332,62 @@ function buildHtmlEmail(stats, aiSummary) {
             ${domainRows}
           </table>
         </div>` : ''}
+
+        <!-- Week in Numbers -->
+        <div style="background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-radius:16px;padding:24px;margin-bottom:28px">
+          <div style="font-size:16px;font-weight:700;color:#1e293b;margin-bottom:16px">📊 Week in Numbers</div>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td width="25%" style="text-align:center;padding:12px">
+                <div style="font-size:28px;font-weight:800;color:#6366f1">${stats.total}</div>
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px">Total Tracked</div>
+              </td>
+              <td width="25%" style="text-align:center;padding:12px">
+                <div style="font-size:28px;font-weight:800;color:#22c55e">${stats.newThisWeek}</div>
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px">New This Week</div>
+              </td>
+              <td width="25%" style="text-align:center;padding:12px">
+                <div style="font-size:28px;font-weight:800;color:#f59e0b">${Object.keys(stats.domainCounts || {}).length}</div>
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px">Domains</div>
+              </td>
+              <td width="25%" style="text-align:center;padding:12px">
+                <div style="font-size:28px;font-weight:800;color:${stats.newCredentials > 0 ? '#ef4444' : '#22c55e'}">${stats.newCredentials}</div>
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-top:4px">Credentials</div>
+              </td>
+            </tr>
+          </table>
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;border-top:1px solid #e2e8f0;padding-top:12px">
+            <tr>
+              <td width="25%" style="text-align:center;padding:12px 0">
+                <div style="font-size:22px;font-weight:700;color:#3b82f6">${stats.envCounts?.DEV || 0}</div>
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">DEV</div>
+              </td>
+              <td width="25%" style="text-align:center;padding:12px 0">
+                <div style="font-size:22px;font-weight:700;color:#f59e0b">${stats.envCounts?.UAT || 0}</div>
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">UAT</div>
+              </td>
+              <td width="25%" style="text-align:center;padding:12px 0">
+                <div style="font-size:22px;font-weight:700;color:#ef4444">${stats.envCounts?.PROD || 0}</div>
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">PROD</div>
+              </td>
+              <td width="25%" style="text-align:center;padding:12px 0">
+                <div style="font-size:22px;font-weight:700;color:#6366f1">${formatPercent(stats.total ? Object.values(stats.encryptedCounts || {}).reduce((a, b) => a + b, 0) / stats.total : 0)}</div>
+                <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-top:2px">Encrypted</div>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- What's Next -->
+        <div style="background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:16px;padding:24px;margin-bottom:28px">
+          <div style="font-size:16px;font-weight:700;color:#1e293b;margin-bottom:12px">🎯 What's Next</div>
+          <div style="font-size:13px;color:#475569;line-height:1.8">
+            <div style="margin-bottom:8px">• <strong>Encryption Focus:</strong> ${stats.total ? formatPercent(1 - (Object.values(stats.encryptedCounts || {}).reduce((a, b) => a + b, 0) / stats.total)) : '100%'} of artifacts remain unencrypted — schedule bulk encryption via AMLI.</div>
+            <div style="margin-bottom:8px">• <strong>Credential Audit:</strong> ${stats.newCredentials > 0 ? 'Rotate exposed credentials and migrate to encrypted storage.' : 'No credentials exposed — maintain current practices.'}</div>
+            <div style="margin-bottom:8px">• <strong>Next Report:</strong> Monday 9:00 AM IST — data refreshes every Monday automatically.</div>
+            <div>• <strong>Live Dashboard:</strong> Visit <a href="https://amliaes.netlify.app/library" style="color:#6366f1;text-decoration:none;font-weight:600">AMLI Library</a> for real-time artifact tracking and search.</div>
+          </div>
+        </div>
 
         <!-- Footer -->
         <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e2e8f0;margin-top:8px">
@@ -399,7 +513,7 @@ const handler = async (event) => {
       lastWeek: previous,
     };
 
-    const aiSummary = await generateAiSummary(stats);
+    const aiSummary = (await generateAiSummary(stats)) || generateRuleBasedSummary(stats);
     const html = buildHtmlEmail(stats, aiSummary);
     await sendEmail(html);
     await saveSnapshot(stats);
