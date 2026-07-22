@@ -13,7 +13,7 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY || '';
-const DIGEST_FROM = process.env.DIGEST_FROM || '';
+const DIGEST_FROM = process.env.DIGEST_FROM || 'dikshit.sharma2580@gmail.com';
 const DIGEST_RECIPIENT = process.env.DIGEST_RECIPIENT || 'dikshit.sharma2580@gmail.com';
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 
