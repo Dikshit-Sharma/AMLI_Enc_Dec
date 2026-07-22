@@ -747,7 +747,7 @@ const TOOLS = [
   { path: '/artifacts', icon: '💎', name: 'Artifacts', desc: 'Generate structured documentation packages and ZIP archives.' },
   { path: '/library', icon: '📚', name: 'API Library', desc: 'Browse, search, and re-download past artifact configurations.' },
   { path: '/credentials', icon: '🔑', name: 'Credentials', desc: 'Manage secrets for DEV, UAT, and PROD environments.' },
-  { path: '/jenkins', icon: '🔧', name: 'Jenkins Pipelines', desc: 'Browse pipelines, repos, branches, and configs per environment.' },
+  { href: 'https://microsoftedge.microsoft.com/addons/detail/reposcope/oaimoakbhmeehijoncpbijcdpinhndof', icon: '🔍', name: 'RepoScope', desc: 'Git repository analytics — activity, contributors, codebase insights.', external: true },
   { href: 'https://sharedclip.netlify.app/', icon: '📋', name: 'SharedClip', desc: 'Real-time collaborative clipboard for teams.', external: true },
 ];
 

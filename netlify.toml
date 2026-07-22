@@ -20,11 +20,6 @@
   status = 200
 
 [[redirects]]
-  from = "/api/jenkins-proxy"
-  to = "/.netlify/functions/jenkins-proxy"
-  status = 200
-
-[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

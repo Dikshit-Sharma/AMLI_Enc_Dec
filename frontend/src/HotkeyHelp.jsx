@@ -4,7 +4,6 @@ const shortcuts = [
   { keys: ['Ctrl', 'Shift', 'E'], label: 'Go to Cipher Tool' },
   { keys: ['Ctrl', 'Shift', 'A'], label: 'Go to Artifacts' },
   { keys: ['Ctrl', 'Shift', 'L'], label: 'Go to Library' },
-  { keys: ['Ctrl', 'Shift', 'J'], label: 'Go to Jenkins Pipelines' },
   { keys: ['?'], label: 'Toggle this help modal' },
   { keys: ['Esc'], label: 'Close modals' },
 ];
