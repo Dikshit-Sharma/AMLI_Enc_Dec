@@ -13,7 +13,7 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY || '';
-const DIGEST_FROM = process.env.DIGEST_FROM || 'amli-digest@amliaes.netlify.app';
+const DIGEST_FROM = process.env.DIGEST_FROM || '';
 const DIGEST_RECIPIENT = process.env.DIGEST_RECIPIENT || 'dikshit.sharma2580@gmail.com';
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 
@@ -164,10 +164,10 @@ async function sendEmail(html) {
   }
   const payload = {
     personalizations: [{ to: [{ email: DIGEST_RECIPIENT }] }],
-    from: { email: DIGEST_FROM },
     subject: `📊 Weekly Ecosystem Digest — ${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}`,
     content: [{ type: 'text/html', value: html }],
   };
+  if (DIGEST_FROM) payload.from = { email: DIGEST_FROM };
   const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
     method: 'POST',
     headers: {
