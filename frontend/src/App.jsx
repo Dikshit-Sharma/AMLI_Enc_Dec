@@ -8,6 +8,7 @@ import ArtifactsPage from './ArtifactsPage';
 import CipherTool from './CipherTool';
 import LibraryPage from './LibraryPage';
 import CredentialsPage from './CredentialsPage';
+import BSAPage from './BSAPage';
 import HotkeyHelp from './HotkeyHelp';
 import useHotkeys from './hooks/useHotkeys';
 import OnboardingBot from './OnboardingBot';
@@ -66,6 +67,7 @@ function App() {
       <Route path="/artifacts" element={<ArtifactsPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/credentials" element={<CredentialsPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/bsa" element={<BSAPage theme={theme} toggleTheme={toggleTheme} />} />
 
       <Route path="/cipher" element={<CipherTool theme={theme} toggleTheme={toggleTheme} />} />
     </Routes>

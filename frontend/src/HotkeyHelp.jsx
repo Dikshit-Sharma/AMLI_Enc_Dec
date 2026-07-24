@@ -4,6 +4,7 @@ const shortcuts = [
   { keys: ['Ctrl', 'Shift', 'E'], label: 'Go to Cipher Tool' },
   { keys: ['Ctrl', 'Shift', 'A'], label: 'Go to Artifacts' },
   { keys: ['Ctrl', 'Shift', 'L'], label: 'Go to Library' },
+  { keys: ['Ctrl', 'Shift', 'B'], label: 'Go to BSA' },
   { keys: ['?'], label: 'Toggle this help modal' },
   { keys: ['Esc'], label: 'Close modals' },
 ];

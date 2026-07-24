@@ -84,6 +84,52 @@ export async function deleteCredential(id) {
   return res.json();
 }
 
+const BSA_URL = '/api/bsa';
+
+export async function fetchBSAEntries() {
+  const res = await fetch(BSA_URL);
+  if (!res.ok) {
+    throw new Error('Failed to fetch BSA entries: ' + res.statusText);
+  }
+  return res.json();
+}
+
+export async function addBSAEntry(data) {
+  const res = await fetch(BSA_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to add BSA entry: ' + res.statusText);
+  }
+  return res.json();
+}
+
+export async function updateBSAEntry(id, data) {
+  const res = await fetch(BSA_URL, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ...data }),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to update BSA entry: ' + res.statusText);
+  }
+  return res.json();
+}
+
+export async function deleteBSAEntry(id) {
+  const res = await fetch(BSA_URL, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to delete BSA entry: ' + res.statusText);
+  }
+  return res.json();
+}
+
 export function toDate(timestamp) {
   if (!timestamp) return null;
   if (typeof timestamp === 'object' && typeof timestamp.toDate === 'function') {
