@@ -25,6 +25,19 @@ const handler = async (event) => {
 
   try {
     if (event.httpMethod === 'GET') {
+      const params = event.queryStringParameters || {};
+
+      if (params.history) {
+        const snap = await db.collection('bsa').doc(params.history)
+          .collection('history').orderBy('timestamp', 'desc').limit(50).get();
+        const versions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        return {
+          statusCode: 200,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ versions }),
+        };
+      }
+
       const snapshot = await db.collection('bsa')
         .orderBy('api', 'asc')
         .limit(2000)
@@ -67,9 +80,9 @@ const handler = async (event) => {
     }
 
     if (event.httpMethod === 'PUT') {
-      const { id, api, consumers } = JSON.parse(event.body || '{}');
+      const { id, api, consumers, bulkUpdate } = JSON.parse(event.body || '{}');
 
-      if (!id) {
+      if (!id && !bulkUpdate) {
         return {
           statusCode: 400,
           headers,
@@ -77,12 +90,59 @@ const handler = async (event) => {
         };
       }
 
+      if (bulkUpdate && bulkUpdate.ids?.length > 0) {
+        const batch = db.batch();
+        for (const entryId of bulkUpdate.ids) {
+          const docRef = db.collection('bsa').doc(entryId);
+          const docSnap = await docRef.get();
+          if (docSnap.exists) {
+            const old = docSnap.data();
+            const newConsumers = (old.consumers || []).map(c => {
+              if (bulkUpdate.newSpoc !== undefined) return { ...c, spoc: bulkUpdate.newSpoc };
+              return c;
+            });
+            batch.update(docRef, {
+              consumers: newConsumers,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            const historyRef = docRef.collection('history').doc();
+            batch.set(historyRef, {
+              before: { consumers: old.consumers },
+              after: { consumers: newConsumers },
+              changeType: 'bulk-edit',
+              detail: bulkUpdate.newSpoc !== undefined ? `SPOC → ${bulkUpdate.newSpoc}` : '',
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+        }
+        await batch.commit();
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({ ok: true, updated: bulkUpdate.ids.length }),
+        };
+      }
+
+      const docRef = db.collection('bsa').doc(id);
+      const docSnap = await docRef.get();
+      const oldData = docSnap.exists ? docSnap.data() : null;
+
       const updateData = {};
       if (api !== undefined) updateData.api = api;
       if (consumers !== undefined) updateData.consumers = consumers;
       updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
 
-      await db.collection('bsa').doc(id).update(updateData);
+      await docRef.update(updateData);
+
+      if (oldData) {
+        const historyRef = docRef.collection('history').doc();
+        await historyRef.set({
+          before: { api: oldData.api, consumers: oldData.consumers },
+          after: { api: updateData.api || oldData.api, consumers: updateData.consumers || oldData.consumers },
+          changeType: 'edit',
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
 
       return {
         statusCode: 200,

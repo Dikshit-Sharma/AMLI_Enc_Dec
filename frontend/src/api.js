@@ -130,6 +130,26 @@ export async function deleteBSAEntry(id) {
   return res.json();
 }
 
+export async function fetchBSAHistory(id) {
+  const res = await fetch(`${BSA_URL}?history=${encodeURIComponent(id)}`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch BSA history: ' + res.statusText);
+  }
+  return res.json();
+}
+
+export async function bulkUpdateBSA(ids, update) {
+  const res = await fetch(BSA_URL, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bulkUpdate: { ids, ...update } }),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to bulk update BSA entries: ' + res.statusText);
+  }
+  return res.json();
+}
+
 export function toDate(timestamp) {
   if (!timestamp) return null;
   if (typeof timestamp === 'object' && typeof timestamp.toDate === 'function') {
