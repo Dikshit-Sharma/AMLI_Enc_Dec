@@ -69,15 +69,15 @@ function AddForm({ onAdded, onCancel }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', marginBottom: '1.5rem', padding: '1.5rem', background: 'var(--output-bg)', borderRadius: '1rem', border: '1px solid var(--border)' }}>
-      <input className="main-input" placeholder="API Name *" value={api} onChange={(e) => setApi(e.target.value)} required />
-      <input className="main-input" placeholder="Consumers (semicolon-separated)" value={consumerStr} onChange={(e) => setConsumerStr(e.target.value)} />
-      <input className="main-input" placeholder="SPOCs (semicolon-separated, matching order)" value={spocStr} onChange={(e) => setSpocStr(e.target.value)} />
-      <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.5rem' }}>
-        <button type="submit" className="btn-primary" disabled={saving} style={{ flex: 1, padding: '0.65rem' }}>
+    <form onSubmit={handleSubmit} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginBottom: '1rem', padding: '1rem', background: 'var(--output-bg)', borderRadius: '0.75rem', border: '1px solid var(--border)' }}>
+      <input className="main-input" placeholder="API Name *" value={api} onChange={(e) => setApi(e.target.value)} required style={{ fontSize: '0.85rem', padding: '0.55rem 0.75rem' }} />
+      <input className="main-input" placeholder="Consumers (semicolon-separated)" value={consumerStr} onChange={(e) => setConsumerStr(e.target.value)} style={{ fontSize: '0.85rem', padding: '0.55rem 0.75rem' }} />
+      <input className="main-input" placeholder="SPOCs (semicolon-separated, matching order)" value={spocStr} onChange={(e) => setSpocStr(e.target.value)} style={{ fontSize: '0.85rem', padding: '0.55rem 0.75rem' }} />
+      <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '0.4rem' }}>
+        <button type="submit" className="btn-primary" disabled={saving} style={{ flex: 1, padding: '0.45rem', fontSize: '0.8rem' }}>
           {saving ? <div className="loader tiny" /> : '+ Add Entry'}
         </button>
-        <button type="button" onClick={onCancel} style={{ padding: '0.65rem 1.5rem', borderRadius: '0.5rem', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}>
+        <button type="button" onClick={onCancel} style={{ padding: '0.45rem 1rem', borderRadius: '0.4rem', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem' }}>
           Cancel
         </button>
       </div>
@@ -110,15 +110,15 @@ function EditInline({ entry, onSave, onCancel }) {
   return (
     <tr className="expanded-row-content">
       <td colSpan={7}>
-        <div className="expanded-row-inner" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', alignItems: 'end' }}>
-          <div><div className="field-label">API Name</div><input className="main-input" value={api} onChange={(e) => setApi(e.target.value)} style={{ fontSize: '0.9rem' }} /></div>
-          <div><div className="field-label">Consumers</div><input className="main-input" value={consumerStr} onChange={(e) => setConsumerStr(e.target.value)} placeholder="App1; App2" style={{ fontSize: '0.9rem' }} /></div>
-          <div><div className="field-label">SPOCs</div><input className="main-input" value={spocStr} onChange={(e) => setSpocStr(e.target.value)} placeholder="Alice; Bob" style={{ fontSize: '0.9rem' }} /></div>
-          <div style={{ display: 'flex', gap: '0.5rem', gridColumn: '1 / -1' }}>
-            <button className="btn-primary" onClick={handleSave} disabled={saving} style={{ padding: '0.5rem 1.5rem', fontSize: '0.85rem', width: 'auto' }}>
+        <div className="expanded-row-inner" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', alignItems: 'end' }}>
+          <div><div className="field-label" style={{ fontSize: '0.7rem', marginBottom: '0.2rem' }}>API Name</div><input className="main-input" value={api} onChange={(e) => setApi(e.target.value)} style={{ fontSize: '0.85rem', padding: '0.45rem 0.65rem' }} /></div>
+          <div><div className="field-label" style={{ fontSize: '0.7rem', marginBottom: '0.2rem' }}>Consumers</div><input className="main-input" value={consumerStr} onChange={(e) => setConsumerStr(e.target.value)} placeholder="App1; App2" style={{ fontSize: '0.85rem', padding: '0.45rem 0.65rem' }} /></div>
+          <div><div className="field-label" style={{ fontSize: '0.7rem', marginBottom: '0.2rem' }}>SPOCs</div><input className="main-input" value={spocStr} onChange={(e) => setSpocStr(e.target.value)} placeholder="Alice; Bob" style={{ fontSize: '0.85rem', padding: '0.45rem 0.65rem' }} /></div>
+          <div style={{ display: 'flex', gap: '0.4rem', gridColumn: '1 / -1' }}>
+            <button className="btn-primary" onClick={handleSave} disabled={saving} style={{ padding: '0.4rem 1rem', fontSize: '0.8rem', width: 'auto' }}>
               {saving ? <div className="loader tiny" /> : 'Save'}
             </button>
-            <button onClick={onCancel} style={{ padding: '0.5rem 1.5rem', borderRadius: '0.5rem', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}>Cancel</button>
+            <button onClick={onCancel} style={{ padding: '0.4rem 1rem', borderRadius: '0.4rem', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
           </div>
         </div>
       </td>
@@ -131,7 +131,7 @@ function ExpandedRow({ consumers, conflicts, search }) {
     return (
       <tr className="expanded-row-content">
         <td colSpan={7}>
-          <div className="expanded-row-inner" style={{ textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', padding: '1.5rem' }}>No consumers added yet.</div>
+          <div className="expanded-row-inner" style={{ textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.75rem' }}>No consumers added yet.</div>
         </td>
       </tr>
     );
@@ -141,7 +141,7 @@ function ExpandedRow({ consumers, conflicts, search }) {
     <tr className="expanded-row-content">
       <td colSpan={7}>
         <div className="expanded-row-inner">
-          <div className="field-label">Consumers & SPOCs</div>
+          <div className="field-label" style={{ fontSize: '0.7rem', marginBottom: '0.3rem' }}>Consumers & SPOCs</div>
           <div className="table-responsive">
             <table className="api-table" style={{ margin: 0 }}>
               <thead>
@@ -158,8 +158,8 @@ function ExpandedRow({ consumers, conflicts, search }) {
                       </td>
                       <td>
                         {isConflict && (
-                          <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', borderRadius: '0.3rem', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: 600 }}>
-                            ⚠ Conflict: {isConflict.join(', ')}
+                          <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: 600 }}>
+                            ⚠ {isConflict.join(', ')}
                           </span>
                         )}
                       </td>
@@ -178,14 +178,14 @@ function ExpandedRow({ consumers, conflicts, search }) {
 function ConfirmDeleteModal({ entry, onConfirm, onCancel }) {
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px', padding: '1.5rem' }}>
-        <h3 style={{ margin: '0 0 0.75rem' }}>Delete BSA Entry</h3>
-        <p style={{ color: 'var(--text-muted)', margin: '0 0 1.25rem', fontSize: '0.9rem' }}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '360px', padding: '1.25rem' }}>
+        <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>Delete BSA Entry</h3>
+        <p style={{ color: 'var(--text-muted)', margin: '0 0 1rem', fontSize: '0.82rem' }}>
           Are you sure you want to delete <strong>{entry.api}</strong>? This will remove {entry.consumers?.length || 0} consumer(s).
         </p>
-        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-          <button onClick={onCancel} style={{ padding: '0.5rem 1rem', borderRadius: '0.5rem', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}>Cancel</button>
-          <button onClick={onConfirm} style={{ padding: '0.5rem 1rem', borderRadius: '0.5rem', border: 'none', background: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '0.85rem' }}>Delete</button>
+        <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+          <button onClick={onCancel} style={{ padding: '0.4rem 0.85rem', borderRadius: '0.4rem', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem' }}>Cancel</button>
+          <button onClick={onConfirm} style={{ padding: '0.4rem 0.85rem', borderRadius: '0.4rem', border: 'none', background: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>Delete</button>
         </div>
       </div>
     </div>
@@ -204,13 +204,13 @@ function TopStakeholders({ consumerMap }) {
   if (sorted.length === 0) return null;
 
   return (
-    <div style={{ background: 'var(--output-bg)', borderRadius: '1rem', border: '1px solid var(--border)', padding: '1.25rem', marginBottom: '1.5rem' }}>
-      <div className="field-label" style={{ marginBottom: '0.75rem' }}>Top Stakeholders</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+    <div style={{ background: 'var(--output-bg)', borderRadius: '0.75rem', border: '1px solid var(--border)', padding: '0.75rem 1rem', marginBottom: '1rem' }}>
+      <div className="field-label" style={{ marginBottom: '0.5rem', fontSize: '0.7rem' }}>Top Stakeholders</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
         {sorted.map(s => (
-          <span key={s.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.3rem 0.7rem', borderRadius: '2rem', background: 'var(--primary-glow)', border: '1px solid rgba(99,102,241,0.25)', fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 500 }}>
+          <span key={s.name} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.15rem 0.5rem', borderRadius: '2rem', background: 'var(--primary-glow)', border: '1px solid rgba(99,102,241,0.25)', fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 500 }}>
             {s.name}
-            <span style={{ fontSize: '0.65rem', background: 'var(--primary)', color: '#fff', borderRadius: '50%', width: '1.1rem', height: '1.1rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
+            <span style={{ fontSize: '0.6rem', background: 'var(--primary)', color: '#fff', borderRadius: '50%', width: '1rem', height: '1rem', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
               {s.count}
             </span>
           </span>
@@ -412,46 +412,46 @@ export default function BSAPage({ theme, toggleTheme }) {
   return (
     <div className="container">
       <div className="card">
-        <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '1rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <Link to="/" className="back-link" style={{ marginBottom: 0 }}>← Back</Link>
-            <button className="theme-toggle" onClick={toggleTheme}>{theme === 'light' ? '🌙' : '☀️'}</button>
+        <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Link to="/" className="back-link" style={{ marginBottom: 0, fontSize: '0.85rem' }}>← Back</Link>
+            <button className="theme-toggle" onClick={toggleTheme} style={{ padding: '0.3rem 0.5rem', fontSize: '0.85rem' }}>{theme === 'light' ? '🌙' : '☀️'}</button>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
             {selectedIds.length > 0 && (
-              <button onClick={handleBulkCopy} style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '0.75rem', padding: '0.5rem 1rem', cursor: 'pointer', color: 'var(--success)', fontSize: '0.8rem', fontWeight: 600 }}>
-                {bulkCopied ? '✓ Copied!' : `📋 Copy Selected (${selectedIds.length})`}
+              <button onClick={handleBulkCopy} style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '0.5rem', padding: '0.35rem 0.75rem', cursor: 'pointer', color: 'var(--success)', fontSize: '0.75rem', fontWeight: 600 }}>
+                {bulkCopied ? '✓ Copied!' : `📋 Copy (${selectedIds.length})`}
               </button>
             )}
-            <button onClick={handleExportExcel} style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '0.75rem', padding: '0.5rem 1rem', cursor: 'pointer', color: 'var(--success)', fontSize: '0.8rem', fontWeight: 600 }}>
-              📥 Export Excel
+            <button onClick={handleExportExcel} style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '0.5rem', padding: '0.35rem 0.75rem', cursor: 'pointer', color: 'var(--success)', fontSize: '0.75rem', fontWeight: 600 }}>
+              📥 Export
             </button>
-            <button onClick={() => fileInputRef.current?.click()} disabled={importing} style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '0.75rem', padding: '0.5rem 1rem', cursor: 'pointer', color: '#d97706', fontSize: '0.8rem', fontWeight: 600 }}>
-              {importing ? '...' : '📤 Import CSV'}
+            <button onClick={() => fileInputRef.current?.click()} disabled={importing} style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '0.5rem', padding: '0.35rem 0.75rem', cursor: 'pointer', color: '#d97706', fontSize: '0.75rem', fontWeight: 600 }}>
+              {importing ? '...' : '📤 Import'}
             </button>
             <input ref={fileInputRef} type="file" accept=".csv" onChange={handleImportCSV} style={{ display: 'none' }} />
-            <button onClick={() => { setExpandForm(p => !p); setEditingId(null); }} style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '0.75rem', padding: '0.5rem 1rem', cursor: 'pointer', color: 'var(--primary)', fontSize: '0.8rem', fontWeight: 600 }}>
+            <button onClick={() => { setExpandForm(p => !p); setEditingId(null); }} style={{ background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '0.5rem', padding: '0.35rem 0.75rem', cursor: 'pointer', color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 600 }}>
               {expandForm ? '✕ Close' : '+ New'}
             </button>
           </div>
         </div>
 
-        <h1>📊 BSA</h1>
+        <h1 style={{ fontSize: '1.4rem', marginBottom: '0.75rem' }}>📊 BSA</h1>
 
-        <div className="form-group" style={{ margin: '2rem 0' }}>
-          <input type="text" className="main-input" placeholder="Search by API, consumer, or SPOC..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ fontSize: '1.1rem', padding: '1.25rem' }} />
-          {search && <div style={{ marginTop: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>{filtered.length} of {entries.length} match</div>}
+        <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+          <input type="text" className="main-input" placeholder="Search by API, consumer, or SPOC..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ fontSize: '0.9rem', padding: '0.65rem 0.85rem' }} />
+          {search && <div style={{ marginTop: '0.3rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>{filtered.length} of {entries.length} match</div>}
         </div>
 
         {uniqueConsumers.length > 0 && (
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.03em', fontWeight: 600 }}>
-              Filter by consumer {consumerFilter && <span style={{ textTransform: 'none', marginLeft: '0.5rem' }}>(<button onClick={() => setConsumerFilter('')} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.75rem', textDecoration: 'underline' }}>clear</button>)</span>}
+          <div style={{ marginBottom: '0.75rem' }}>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.03em', fontWeight: 600 }}>
+              Filter by consumer {consumerFilter && <span style={{ textTransform: 'none', marginLeft: '0.4rem' }}>(<button onClick={() => setConsumerFilter('')} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.65rem', textDecoration: 'underline' }}>clear</button>)</span>}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
               {uniqueConsumers.slice(0, 20).map(([name, count]) => (
-                <button key={name} onClick={() => setConsumerFilter(consumerFilter === name ? '' : name)} style={{ padding: '0.2rem 0.6rem', borderRadius: '2rem', border: consumerFilter === name ? '1.5px solid var(--primary)' : '1px solid var(--border)', background: consumerFilter === name ? 'var(--primary-glow)' : 'var(--input-bg)', color: consumerFilter === name ? 'var(--primary)' : 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', fontWeight: consumerFilter === name ? 600 : 400, transition: 'all 0.15s' }}>
-                  {name} <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>({count})</span>
+                <button key={name} onClick={() => setConsumerFilter(consumerFilter === name ? '' : name)} style={{ padding: '0.15rem 0.5rem', borderRadius: '2rem', border: consumerFilter === name ? '1.5px solid var(--primary)' : '1px solid var(--border)', background: consumerFilter === name ? 'var(--primary-glow)' : 'var(--input-bg)', color: consumerFilter === name ? 'var(--primary)' : 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer', fontWeight: consumerFilter === name ? 600 : 400, transition: 'all 0.15s' }}>
+                  {name} <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>({count})</span>
                 </button>
               ))}
             </div>
@@ -462,7 +462,7 @@ export default function BSAPage({ theme, toggleTheme }) {
 
         <TopStakeholders consumerMap={consumerMap} />
 
-        <div style={{ textAlign: 'center', padding: '1rem 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+        <div style={{ textAlign: 'center', padding: '0.5rem 0', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
           {entries.length} total API{entries.length !== 1 && 's'} · {Object.keys(consumerMap).length} unique consumer{Object.keys(consumerMap).length !== 1 && 's'}
           {Object.keys(conflictMap).length > 0 && <span style={{ color: '#b45309', marginLeft: '0.5rem' }}> · {Object.keys(conflictMap).length} conflict{Object.keys(conflictMap).length !== 1 && 's'}</span>}
           {search && ` · matching "${search}"`}
@@ -477,7 +477,7 @@ export default function BSAPage({ theme, toggleTheme }) {
             </table>
           </div>
         ) : filtered.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>
+          <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
             {search || consumerFilter ? 'No matching entries found.' : 'No BSA entries yet. Click "+ New" to add one.'}
           </div>
         ) : (
@@ -511,20 +511,20 @@ export default function BSAPage({ theme, toggleTheme }) {
                         </td>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                            <span style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                               {(entry.consumers || []).map(c => c.name).join('; ') || '—'}
                             </span>
-                            <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem', borderRadius: '2rem', background: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            <span style={{ fontSize: '0.6rem', padding: '0.05rem 0.35rem', borderRadius: '2rem', background: 'var(--input-bg)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                               {entry.consumers?.length || 0}
                             </span>
                             {(entry.consumers || []).some(c => conflictMap[c.name]) && (
-                              <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.45rem', borderRadius: '2rem', background: '#fef3c7', border: '1px solid #fde68a', color: '#b45309', fontWeight: 600 }}>⚠ conflict</span>
+                              <span style={{ fontSize: '0.6rem', padding: '0.05rem 0.35rem', borderRadius: '2rem', background: '#fef3c7', border: '1px solid #fde68a', color: '#b45309', fontWeight: 600 }}>⚠ conflict</span>
                             )}
                           </div>
                         </td>
-                        <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{formatDate(entry.updatedAt || entry.createdAt)}</td>
+                        <td style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{formatDate(entry.updatedAt || entry.createdAt)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
-                          <div style={{ display: 'flex', gap: '0.4rem' }}>
+                          <div style={{ display: 'flex', gap: '0.3rem' }}>
                             <button className="copy-icon-btn" onClick={() => setEditingId(entry.id)} title="Edit">✏️</button>
                             <button className={`copy-icon-btn ${copiedId === entry.id ? 'copied' : ''}`} onClick={() => handleCopy(entry)} title="Copy">{copiedId === entry.id ? '✓' : '📋'}</button>
                             <button className="copy-icon-btn" onClick={() => setDeleteTarget(entry)} title="Delete" style={{ color: 'var(--error)', borderColor: 'rgba(244,63,94,0.3)' }}>🗑️</button>
