@@ -407,8 +407,9 @@ export default function BSAPage({ theme, toggleTheme }) {
   const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   const toggleSelectAll = () => setSelectedIds(prev => prev.length === filtered.length ? [] : filtered.map(e => e.id));
 
-  const handleCopy = (entry) => { copyRich(buildCopyHtml([entry], copyFields), buildCopyText([entry], copyFields)); setCopiedId(entry.id); setCopyMenuId(null); setTimeout(() => setCopiedId(null), 2000); };
-  const handleBulkCopy = () => { const sel = filtered.filter(e => selectedIds.includes(e.id)); if (!sel.length) return; copyRich(buildCopyHtml(sel, copyFields), buildCopyText(sel, copyFields)); setBulkCopied(true); setCopyMenuId(null); setTimeout(() => setBulkCopied(false), 2000); };
+  const allFields = { api: true, consumer: true, spoc: true, approval: true };
+  const handleCopy = (entry, fields) => { const f = fields || allFields; copyRich(buildCopyHtml([entry], f), buildCopyText([entry], f)); setCopiedId(entry.id); setCopyMenuId(null); setTimeout(() => setCopiedId(null), 2000); };
+  const handleBulkCopy = (fields) => { const sel = filtered.filter(e => selectedIds.includes(e.id)); if (!sel.length) return; const f = fields || allFields; copyRich(buildCopyHtml(sel, f), buildCopyText(sel, f)); setBulkCopied(true); setCopyMenuId(null); setTimeout(() => setBulkCopied(false), 2000); };
 
   const buildCopyHtml = (list, fields) => {
     const headers = [];
@@ -493,10 +494,11 @@ export default function BSAPage({ theme, toggleTheme }) {
             </button>
             {selectedIds.length > 0 && (
               <>
-                <div style={{ position: 'relative' }}>
-                  <button onClick={() => setCopyMenuId(copyMenuId === 'bulk' ? null : 'bulk')} style={{ ...btnStyle('var(--success)' ) }}>{bulkCopied ? '✓ Copied!' : `📋 Copy (${selectedIds.length})`}</button>
+                <div style={{ display: 'flex', position: 'relative' }}>
+                  <button onClick={() => handleBulkCopy()} style={{ ...btnStyle('var(--success)'), borderRadius: '4px 0 0 4px', borderRight: 'none' }}>{bulkCopied ? '✓ Copied!' : `📋 Copy (${selectedIds.length})`}</button>
+                  <button onClick={() => setCopyMenuId(copyMenuId === 'bulk' ? null : 'bulk')} style={{ ...btnStyle('var(--success)'), borderRadius: '0 4px 4px 0', padding: '0.35rem 0.5rem', fontSize: '0.7rem' }}>▾</button>
                   {copyMenuId === 'bulk' && (
-                    <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', minWidth: '160px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                    <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', minWidth: '160px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
                       {[
                         { key: 'api', label: 'API' },
                         { key: 'consumer', label: 'Consumer' },
@@ -508,7 +510,7 @@ export default function BSAPage({ theme, toggleTheme }) {
                           {f.label}
                         </label>
                       ))}
-                      <button onClick={handleBulkCopy} style={{ width: '100%', marginTop: '6px', padding: '4px 8px', fontSize: '0.75rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Copy</button>
+                      <button onClick={() => handleBulkCopy(copyFields)} style={{ width: '100%', marginTop: '6px', padding: '4px 8px', fontSize: '0.75rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Copy</button>
                     </div>
                   )}
                 </div>
@@ -653,10 +655,11 @@ export default function BSAPage({ theme, toggleTheme }) {
                         <td onClick={(e) => e.stopPropagation()}>
                           <div style={{ display: 'flex', gap: '0.3rem', position: 'relative' }}>
                             <button className="copy-icon-btn" onClick={() => setEditingId(entry.id)} title="Edit">✏️</button>
-                            <div style={{ position: 'relative' }}>
-                              <button className={`copy-icon-btn ${copiedId === entry.id ? 'copied' : ''}`} onClick={() => setCopyMenuId(copyMenuId === entry.id ? null : entry.id)} title="Copy">{copiedId === entry.id ? '✓' : '📋'}</button>
+                            <div style={{ display: 'flex', position: 'relative' }}>
+                              <button className={`copy-icon-btn ${copiedId === entry.id ? 'copied' : ''}`} onClick={() => handleCopy(entry)} title="Copy all">{copiedId === entry.id ? '✓' : '📋'}</button>
+                              <button className="copy-icon-btn" onClick={() => setCopyMenuId(copyMenuId === entry.id ? null : entry.id)} title="Choose fields" style={{ fontSize: '0.6rem', padding: '0.2rem 0.3rem', borderLeft: 'none', borderRadius: '0 4px 4px 0' }}>▾</button>
                               {copyMenuId === entry.id && (
-                                <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', minWidth: '160px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', minWidth: '160px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
                                   {[
                                     { key: 'api', label: 'API' },
                                     { key: 'consumer', label: 'Consumer' },
@@ -668,7 +671,7 @@ export default function BSAPage({ theme, toggleTheme }) {
                                       {f.label}
                                     </label>
                                   ))}
-                                  <button onClick={() => handleCopy(entry)} style={{ width: '100%', marginTop: '6px', padding: '4px 8px', fontSize: '0.75rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Copy</button>
+                                  <button onClick={() => handleCopy(entry, copyFields)} style={{ width: '100%', marginTop: '6px', padding: '4px 8px', fontSize: '0.75rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Copy</button>
                                 </div>
                               )}
                             </div>
