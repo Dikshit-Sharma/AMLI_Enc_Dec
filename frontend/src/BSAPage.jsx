@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import { fetchBSAEntries, addBSAEntry, updateBSAEntry, deleteBSAEntry, fetchBSAHistory, bulkUpdateBSA } from './api';
+import { fetchBSAEntries, addBSAEntry, updateBSAEntry, deleteBSAEntry, fetchBSAHistory, fetchAllBSAHistory, bulkUpdateBSA } from './api';
 import { SkeletonTableRows } from './Skeleton';
 
 function Highlight({ text, query }) {
@@ -171,22 +171,43 @@ function EditInline({ entry, onSave, onCancel }) {
   );
 }
 
-function ExpandedRow({ consumers, conflicts, search, entry, onCopySelected }) {
+function ExpandedRow({ consumers, conflicts, search, entry, onCopySelected, onAddConsumer, onUpdateSpoc }) {
   const [selected, setSelected] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newSpoc, setNewSpoc] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [editingSpocIdx, setEditingSpocIdx] = useState(null);
+  const [editSpocVal, setEditSpocVal] = useState('');
   const toggle = (i) => setSelected(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]);
   const toggleAll = () => setSelected(prev => prev.length === consumers.length ? [] : consumers.map((_, i) => i));
 
-  if (!consumers || consumers.length === 0) {
-    return <tr className="expanded-row-content"><td colSpan={7}><div className="expanded-row-inner" style={{ textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.75rem' }}>No consumers added yet.</div></td></tr>;
-  }
+  const handleAdd = async () => {
+    if (!newName.trim()) return;
+    setSaving(true);
+    try {
+      await onAddConsumer(entry, { name: newName.trim(), spoc: newSpoc.trim() });
+      setNewName(''); setNewSpoc(''); setShowAdd(false);
+    } finally { setSaving(false); }
+  };
+
+  const handleSpocSave = async (idx) => {
+    const updated = consumers.map((c, i) => i === idx ? { ...c, spoc: editSpocVal } : c);
+    await onUpdateSpoc(entry, updated);
+    setEditingSpocIdx(null);
+  };
+
   return (
     <tr className="expanded-row-content"><td colSpan={7}>
       <div className="expanded-row-inner">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
           <div className="field-label" style={{ fontSize: '0.7rem' }}>Consumers & SPOCs</div>
-          {selected.length > 0 && (
-            <button onClick={() => onCopySelected(selected.map(i => consumers[i]), entry)} style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📋 Copy ({selected.length})</button>
-          )}
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+            {selected.length > 0 && (
+              <button onClick={() => onCopySelected(selected.map(i => consumers[i]), entry)} style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📋 Copy ({selected.length})</button>
+            )}
+            <button onClick={() => setShowAdd(p => !p)} style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem', background: 'var(--success, #22c55e)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>+ Add</button>
+          </div>
         </div>
         <div className="table-responsive">
           <table className="api-table" style={{ margin: 0 }}>
@@ -199,10 +220,32 @@ function ExpandedRow({ consumers, conflicts, search, entry, onCopySelected }) {
                 <tr key={i} onClick={() => toggle(i)} style={{ cursor: 'pointer', background: selected.includes(i) ? 'var(--hover-bg, #f0f7ff)' : undefined }}>
                   <td><input type="checkbox" checked={selected.includes(i)} onChange={() => toggle(i)} onClick={(e) => e.stopPropagation()} style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: 'var(--primary)' }} /></td>
                   <td style={{ fontWeight: 500 }}><Highlight text={c.name} query={search} /></td>
-                  <td style={{ color: c.spoc ? 'var(--text)' : 'var(--text-muted)' }}><Highlight text={c.spoc || '—'} query={search} /></td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    {editingSpocIdx === i ? (
+                      <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                        <input className="main-input" value={editSpocVal} onChange={(e) => setEditSpocVal(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSpocSave(i); if (e.key === 'Escape') setEditingSpocIdx(null); }} autoFocus style={{ fontSize: '0.78rem', padding: '0.2rem 0.4rem', maxWidth: '180px' }} />
+                        <button onClick={() => handleSpocSave(i)} style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>✓</button>
+                      </div>
+                    ) : (
+                      <span onClick={() => { setEditingSpocIdx(i); setEditSpocVal(c.spoc || ''); }} style={{ color: c.spoc ? 'var(--text)' : 'var(--text-muted)', cursor: 'pointer', borderBottom: '1px dashed var(--border)', padding: '1px 0' }} title="Click to edit SPOC"><Highlight text={c.spoc || '—'} query={search} /></span>
+                    )}
+                  </td>
                   <td>{conflicts[c.name] && <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: 600 }}>⚠ {conflicts[c.name].join(', ')}</span>}</td>
                 </tr>
               ))}
+              {showAdd && (
+                <tr style={{ background: 'var(--hover-bg, #f0fdf4)' }}>
+                  <td></td>
+                  <td><input className="main-input" placeholder="Consumer name *" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} autoFocus style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', width: '100%' }} /></td>
+                  <td><input className="main-input" placeholder="SPOC" value={newSpoc} onChange={(e) => setNewSpoc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }} style={{ fontSize: '0.78rem', padding: '0.25rem 0.5rem', width: '100%' }} /></td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                      <button onClick={handleAdd} disabled={saving || !newName.trim()} style={{ fontSize: '0.65rem', padding: '0.15rem 0.5rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '3px', cursor: 'pointer', opacity: saving || !newName.trim() ? 0.5 : 1 }}>{saving ? '...' : '✓'}</button>
+                      <button onClick={() => { setShowAdd(false); setNewName(''); setNewSpoc(''); }} style={{ fontSize: '0.65rem', padding: '0.15rem 0.5rem', background: 'var(--border)', color: 'var(--text-muted)', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>✕</button>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -259,6 +302,121 @@ function VersionHistoryModal({ entryId, entryApi, onClose }) {
             ))}
           </div>
         }
+      </div>
+    </div>
+  );
+}
+
+function UndoToast({ message, onUndo, onDismiss }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 10000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  return (
+    <div style={{ position: 'fixed', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#1e293b', color: '#fff', padding: '0.75rem 1.25rem', borderRadius: '10px', boxShadow: '0 8px 32px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.85rem', animation: 'slideUp 0.3s ease' }}>
+      <span>{message}</span>
+      <button onClick={onUndo} style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.3rem 0.75rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}>Undo</button>
+      <button onClick={onDismiss} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '1rem', padding: '0 0.25rem' }}>&times;</button>
+    </div>
+  );
+}
+
+function ActivityFeedModal({ onClose }) {
+  const [versions, setVersions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAllBSAHistory().then(r => setVersions(r.versions || [])).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', padding: '1.25rem', maxHeight: '80vh', overflow: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 style={{ margin: 0, fontSize: '1rem' }}>Activity Feed</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-muted)' }}>&times;</button>
+        </div>
+        {loading ? <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)' }}><div className="loader tiny" style={{ margin: '0 auto' }} /></div>
+        : versions.length === 0 ? <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No activity yet.</div>
+        : <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {versions.map((v, i) => (
+              <div key={v.id || i} style={{ padding: '0.65rem 0.85rem', background: 'var(--input-bg)', borderRadius: '0.5rem', border: '1px solid var(--border)', fontSize: '0.8rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--primary)' }}>{v.api}</span>
+                    <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: v.changeType === 'bulk-edit' ? '#fef3c7' : '#ede9fe', color: v.changeType === 'bulk-edit' ? '#92400e' : '#5b21b6', fontWeight: 600 }}>{v.changeType === 'bulk-edit' ? 'Bulk Edit' : 'Edit'}</span>
+                  </div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{formatDateTime(v.timestamp)}</span>
+                </div>
+                {v.detail && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{v.detail}</div>}
+              </div>
+            ))}
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+function OverlapMatrix({ entries, onClose }) {
+  const consumers = useMemo(() => {
+    const map = {};
+    entries.forEach(e => (e.consumers || []).forEach(c => {
+      if (!map[c.name]) map[c.name] = new Set();
+      map[c.name].add(e.api);
+    }));
+    return Object.entries(map).filter(([, apis]) => apis.size > 1).sort((a, b) => b[1].size - a[1].size);
+  }, [entries]);
+
+  const apis = useMemo(() => [...new Set(entries.map(e => e.api))].sort(), [entries]);
+
+  if (consumers.length === 0) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <h3 style={{ margin: 0, fontSize: '1rem' }}>Consumer Overlap Matrix</h3>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-muted)' }}>&times;</button>
+          </div>
+          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No consumers appear in multiple APIs.</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', padding: '1.25rem', maxHeight: '80vh', overflow: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 style={{ margin: 0, fontSize: '1rem' }}>Consumer Overlap Matrix ({consumers.length} shared)</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: 'var(--text-muted)' }}>&times;</button>
+        </div>
+        <div className="table-responsive">
+          <table className="api-table" style={{ fontSize: '0.72rem' }}>
+            <thead>
+              <tr>
+                <th style={{ position: 'sticky', left: 0, background: 'var(--card-bg, #fff)', zIndex: 1, minWidth: '140px' }}>Consumer</th>
+                {apis.map(a => <th key={a} style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', padding: '0.4rem 0.2rem', maxWidth: '40px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={a}>{a}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {consumers.map(([name, apiSet]) => (
+                <tr key={name}>
+                  <td style={{ position: 'sticky', left: 0, background: 'var(--card-bg, #fff)', zIndex: 1, fontWeight: 500, whiteSpace: 'nowrap' }} title={name}>{name.length > 18 ? name.slice(0, 16) + '…' : name}</td>
+                  {apis.map(a => (
+                    <td key={a} style={{ textAlign: 'center', padding: '0.3rem' }}>
+                      {apiSet.has(a)
+                        ? <span style={{ display: 'inline-block', width: '18px', height: '18px', borderRadius: '4px', background: '#6366f1', color: '#fff', fontSize: '0.65rem', lineHeight: '18px', fontWeight: 700 }}>✓</span>
+                        : <span style={{ display: 'inline-block', width: '18px', height: '18px', borderRadius: '4px', background: 'var(--input-bg, #f3f4f6)' }}></span>
+                      }
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -362,6 +520,9 @@ export default function BSAPage({ theme, toggleTheme }) {
   const [importing, setImporting] = useState(false);
   const [copyMenuId, setCopyMenuId] = useState(null);
   const [copyFields, setCopyFields] = useState({ api: true, consumer: true, spoc: true, approval: true });
+  const [toast, setToast] = useState(null);
+  const [showActivityFeed, setShowActivityFeed] = useState(false);
+  const [showOverlapMatrix, setShowOverlapMatrix] = useState(false);
   const fileInputRef = useRef(null);
 
   const loadEntries = async () => {
@@ -432,13 +593,13 @@ export default function BSAPage({ theme, toggleTheme }) {
     if (fields.approval) headers.push('Approval');
     const rows = list.flatMap(e => (e.consumers || []).map(c => {
       const cells = [];
-      if (fields.api) cells.push(`<td style="border:1px solid #ccc;padding:6px 10px;">${e.api}</td>`);
-      if (fields.consumer) cells.push(`<td style="border:1px solid #ccc;padding:6px 10px;">${c.name}</td>`);
-      if (fields.spoc) cells.push(`<td style="border:1px solid #ccc;padding:6px 10px;">${c.spoc || ''}</td>`);
-      if (fields.approval) cells.push(`<td style="border:1px solid #ccc;padding:6px 10px;background:#fee2e2;color:#dc2626;font-weight:600;">Pending</td>`);
+      if (fields.api) cells.push(`<td style="border:1px solid #d1d5db;padding:6px 10px;color:#1f2937;">${e.api}</td>`);
+      if (fields.consumer) cells.push(`<td style="border:1px solid #d1d5db;padding:6px 10px;color:#1f2937;">${c.name}</td>`);
+      if (fields.spoc) cells.push(`<td style="border:1px solid #d1d5db;padding:6px 10px;color:#1f2937;">${c.spoc || ''}</td>`);
+      if (fields.approval) cells.push(`<td style="border:1px solid #d1d5db;padding:6px 10px;background:#fef2f2;color:#dc2626;font-weight:600;">Pending</td>`);
       return `<tr>${cells.join('')}</tr>`;
     }));
-    return `<table style="border-collapse:collapse;font-family:Arial,sans-serif;"><thead><tr>${headers.map(h => `<th style="border:1px solid #ccc;padding:6px 10px;background:#f3f4f6;text-align:left;">${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
+    return `<table style="border-collapse:collapse;font-family:Arial,sans-serif;background:#fff;"><thead><tr>${headers.map(h => `<th style="border:1px solid #d1d5db;padding:6px 10px;background:#f9fafb;text-align:left;color:#374151;">${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
   };
   const buildCopyText = (list, fields) => {
     const cols = [];
@@ -491,7 +652,40 @@ export default function BSAPage({ theme, toggleTheme }) {
     setShowBulkEdit(false); setSelectedIds([]); loadEntries();
   };
 
-  const handleDelete = async () => { if (!deleteTarget) return; try { await deleteBSAEntry(deleteTarget.id); setDeleteTarget(null); loadEntries(); } catch (err) { alert('Failed to delete: ' + err.message); } };
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const snapshot = { ...deleteTarget, consumers: [...(deleteTarget.consumers || [])] };
+    try {
+      await deleteBSAEntry(deleteTarget.id);
+      setDeleteTarget(null);
+      loadEntries();
+      setToast({ message: `"${snapshot.api}" deleted`, onUndo: async () => {
+        await addBSAEntry({ api: snapshot.api, consumers: snapshot.consumers });
+        loadEntries();
+      }});
+    } catch (err) { alert('Failed to delete: ' + err.message); }
+  };
+
+  const handleInlineAddConsumer = async (entry, consumer) => {
+    const updated = [...(entry.consumers || []), consumer];
+    await updateBSAEntry(entry.id, { consumers: updated });
+    loadEntries();
+    setToast({ message: `Added "${consumer.name}" to ${entry.api}`, onUndo: async () => {
+      const reduced = (entry.consumers || []).filter(c => c.name !== consumer.name);
+      await updateBSAEntry(entry.id, { consumers: reduced });
+      loadEntries();
+    }});
+  };
+
+  const handleInlineSpocUpdate = async (entry, updatedConsumers) => {
+    const oldConsumers = [...(entry.consumers || [])];
+    await updateBSAEntry(entry.id, { consumers: updatedConsumers });
+    loadEntries();
+    setToast({ message: `Updated SPOCs for ${entry.api}`, onUndo: async () => {
+      await updateBSAEntry(entry.id, { consumers: oldConsumers });
+      loadEntries();
+    }});
+  };
 
   return (
     <div className="container">
@@ -534,6 +728,9 @@ export default function BSAPage({ theme, toggleTheme }) {
             <button onClick={() => fileInputRef.current?.click()} disabled={importing} style={btnStyle('#d97706')}>{importing ? '...' : '📤 Import'}</button>
             <input ref={fileInputRef} type="file" accept=".csv" onChange={handleImportCSV} style={{ display: 'none' }} />
             <button onClick={() => { setExpandForm(p => !p); setEditingId(null); }} style={btnStyle('var(--primary)')}>{expandForm ? '✕ Close' : '+ New'}</button>
+            <button onClick={() => setShowActivityFeed(true)} style={btnStyle('#8b5cf6')}>📜 Activity</button>
+            <button onClick={() => setShowOverlapMatrix(true)} style={btnStyle('#06b6d4')}>🗺️ Overlap</button>
+            <button onClick={() => { const w = window.open('', '_blank'); w.document.write(`<html><head><title>BSA Print</title><style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px 12px;text-align:left;font-size:13px}th{background:#f3f4f6;font-weight:600}tr:nth-child(even){background:#fafafa}@media print{body{padding:0}th{background:#f3f4f6 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><h2 style="margin-bottom:4px">BSA Report</h2><p style="color:#666;font-size:13px;margin-top:0">Generated ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p><table><thead><tr><th>API</th><th>Consumer</th><th>SPOC</th><th>Status</th></tr></thead><tbody>${filtered.flatMap(e => (e.consumers || []).map(c => `<tr><td>${e.api}</td><td>${c.name}</td><td>${c.spoc || '—'}</td><td style="color:#dc2626;font-weight:600">Pending</td></tr>`)).join('')}</tbody></table></body></html>`); w.document.close(); w.print(); }} style={btnStyle('#64748b')}>🖨️ Print</button>
           </div>
         </div>
 
@@ -693,7 +890,7 @@ export default function BSAPage({ theme, toggleTheme }) {
                           </div>
                         </td>
                       </tr>
-                      {expandedId === entry.id && <ExpandedRow consumers={entry.consumers} conflicts={conflictMap} search={search} entry={entry} onCopySelected={(consumers, e) => copyRich(buildCopyHtml([{ ...e, consumers }], allFields), buildCopyText([{ ...e, consumers }], allFields))} />}
+                      {expandedId === entry.id && <ExpandedRow consumers={entry.consumers} conflicts={conflictMap} search={search} entry={entry} onCopySelected={(consumers, e) => copyRich(buildCopyHtml([{ ...e, consumers }], allFields), buildCopyText([{ ...e, consumers }], allFields))} onAddConsumer={handleInlineAddConsumer} onUpdateSpoc={handleInlineSpocUpdate} />}
                     </React.Fragment>
                   )
                 ))}
@@ -705,6 +902,9 @@ export default function BSAPage({ theme, toggleTheme }) {
 
       {deleteTarget && <ConfirmDeleteModal entry={deleteTarget} onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />}
       {historyTarget && <VersionHistoryModal entryId={historyTarget.id} entryApi={historyTarget.api} onClose={() => setHistoryTarget(null)} />}
+      {showActivityFeed && <ActivityFeedModal onClose={() => setShowActivityFeed(false)} />}
+      {showOverlapMatrix && <OverlapMatrix entries={entries} onClose={() => setShowOverlapMatrix(false)} />}
+      {toast && <UndoToast message={toast.message} onUndo={() => { toast.onUndo(); setToast(null); }} onDismiss={() => setToast(null)} />}
     </div>
   );
 }

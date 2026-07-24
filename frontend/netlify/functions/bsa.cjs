@@ -38,6 +38,26 @@ const handler = async (event) => {
         };
       }
 
+      if (params.historyAll) {
+        const bsaSnap = await db.collection('bsa').select('api').get();
+        const allVersions = [];
+        for (const doc of bsaSnap.docs) {
+          const histSnap = await db.collection('bsa').doc(doc.id)
+            .collection('history').orderBy('timestamp', 'desc').limit(20).get();
+          histSnap.docs.forEach(d => allVersions.push({ id: d.id, api: doc.data().api, entryId: doc.id, ...d.data() }));
+        }
+        allVersions.sort((a, b) => {
+          const ta = a.timestamp?.seconds || 0;
+          const tb = b.timestamp?.seconds || 0;
+          return tb - ta;
+        });
+        return {
+          statusCode: 200,
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ versions: allVersions.slice(0, 100) }),
+        };
+      }
+
       const snapshot = await db.collection('bsa')
         .orderBy('api', 'asc')
         .limit(2000)

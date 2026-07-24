@@ -138,6 +138,14 @@ export async function fetchBSAHistory(id) {
   return res.json();
 }
 
+export async function fetchAllBSAHistory() {
+  const res = await fetch(`${BSA_URL}?historyAll=1`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch all BSA history: ' + res.statusText);
+  }
+  return res.json();
+}
+
 export async function bulkUpdateBSA(ids, update) {
   const res = await fetch(BSA_URL, {
     method: 'PUT',
