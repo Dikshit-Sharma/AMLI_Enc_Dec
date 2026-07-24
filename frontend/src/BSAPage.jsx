@@ -232,6 +232,7 @@ export default function BSAPage({ theme, toggleTheme }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkCopied, setBulkCopied] = useState(false);
   const [consumerFilter, setConsumerFilter] = useState('');
+  const [apiFilter, setApiFilter] = useState('');
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -270,11 +271,14 @@ export default function BSAPage({ theme, toggleTheme }) {
         (e.consumers || []).some(c => c.name.toLowerCase().includes(q) || c.spoc?.toLowerCase().includes(q))
       );
     }
+    if (apiFilter) {
+      result = result.filter(e => e.api === apiFilter);
+    }
     if (consumerFilter) {
       result = result.filter(e => (e.consumers || []).some(c => c.name === consumerFilter));
     }
     return result;
-  }, [entries, search, consumerFilter]);
+  }, [entries, search, apiFilter, consumerFilter]);
 
   const toggleSelect = (id) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
@@ -404,10 +408,28 @@ export default function BSAPage({ theme, toggleTheme }) {
   const formatDate = (ts) => {
     if (!ts) return '';
     try {
-      const d = typeof ts === 'string' ? new Date(ts) : ts?.toDate?.() || new Date(ts);
+      let d;
+      if (typeof ts === 'string') {
+        d = new Date(ts);
+      } else if (ts.seconds) {
+        d = new Date(ts.seconds * 1000);
+      } else if (ts._seconds) {
+        d = new Date(ts._seconds * 1000);
+      } else if (ts.toDate) {
+        d = ts.toDate();
+      } else {
+        d = new Date(ts);
+      }
+      if (isNaN(d.getTime())) return '';
       return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
     } catch { return ''; }
   };
+
+  const uniqueApis = useMemo(() => {
+    const counts = {};
+    entries.forEach(e => { counts[e.api] = (counts[e.api] || 0) + 1; });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [entries]);
 
   return (
     <div className="container">
@@ -443,20 +465,29 @@ export default function BSAPage({ theme, toggleTheme }) {
           {search && <div style={{ marginTop: '0.3rem', color: 'var(--text-muted)', fontSize: '0.75rem' }}>{filtered.length} of {entries.length} match</div>}
         </div>
 
-        {uniqueConsumers.length > 0 && (
-          <div style={{ marginBottom: '0.75rem' }}>
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.03em', fontWeight: 600 }}>
-              Filter by consumer {consumerFilter && <span style={{ textTransform: 'none', marginLeft: '0.4rem' }}>(<button onClick={() => setConsumerFilter('')} style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.65rem', textDecoration: 'underline' }}>clear</button>)</span>}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-              {uniqueConsumers.slice(0, 20).map(([name, count]) => (
-                <button key={name} onClick={() => setConsumerFilter(consumerFilter === name ? '' : name)} style={{ padding: '0.15rem 0.5rem', borderRadius: '2rem', border: consumerFilter === name ? '1.5px solid var(--primary)' : '1px solid var(--border)', background: consumerFilter === name ? 'var(--primary-glow)' : 'var(--input-bg)', color: consumerFilter === name ? 'var(--primary)' : 'var(--text-muted)', fontSize: '0.7rem', cursor: 'pointer', fontWeight: consumerFilter === name ? 600 : 400, transition: 'all 0.15s' }}>
-                  {name} <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>({count})</span>
-                </button>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+          {uniqueApis.length > 0 && (
+            <select value={apiFilter} onChange={(e) => setApiFilter(e.target.value)} style={{ padding: '0.35rem 0.6rem', borderRadius: '0.4rem', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: '0.78rem', cursor: 'pointer', minWidth: '160px' }}>
+              <option value="">All APIs ({uniqueApis.length})</option>
+              {uniqueApis.map(([name, count]) => (
+                <option key={name} value={name}>{name} ({count})</option>
               ))}
-            </div>
-          </div>
-        )}
+            </select>
+          )}
+          {uniqueConsumers.length > 0 && (
+            <select value={consumerFilter} onChange={(e) => setConsumerFilter(e.target.value)} style={{ padding: '0.35rem 0.6rem', borderRadius: '0.4rem', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: '0.78rem', cursor: 'pointer', minWidth: '160px' }}>
+              <option value="">All Consumers ({uniqueConsumers.length})</option>
+              {uniqueConsumers.map(([name, count]) => (
+                <option key={name} value={name}>{name} ({count})</option>
+              ))}
+            </select>
+          )}
+          {(apiFilter || consumerFilter) && (
+            <button onClick={() => { setApiFilter(''); setConsumerFilter(''); }} style={{ padding: '0.35rem 0.6rem', borderRadius: '0.4rem', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text-muted)', fontSize: '0.78rem', cursor: 'pointer' }}>
+              ✕ Clear filters
+            </button>
+          )}
+        </div>
 
         {expandForm && <AddForm onAdded={() => { loadEntries(); setExpandForm(false); }} onCancel={() => setExpandForm(false)} />}
 
@@ -466,7 +497,8 @@ export default function BSAPage({ theme, toggleTheme }) {
           {entries.length} total API{entries.length !== 1 && 's'} · {Object.keys(consumerMap).length} unique consumer{Object.keys(consumerMap).length !== 1 && 's'}
           {Object.keys(conflictMap).length > 0 && <span style={{ color: '#b45309', marginLeft: '0.5rem' }}> · {Object.keys(conflictMap).length} conflict{Object.keys(conflictMap).length !== 1 && 's'}</span>}
           {search && ` · matching "${search}"`}
-          {consumerFilter && ` · filtered by "${consumerFilter}"`}
+          {apiFilter && ` · API: "${apiFilter}"`}
+          {consumerFilter && ` · Consumer: "${consumerFilter}"`}
         </div>
 
         {!loaded ? (
@@ -478,7 +510,7 @@ export default function BSAPage({ theme, toggleTheme }) {
           </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
-            {search || consumerFilter ? 'No matching entries found.' : 'No BSA entries yet. Click "+ New" to add one.'}
+            {search || consumerFilter || apiFilter ? 'No matching entries found.' : 'No BSA entries yet. Click "+ New" to add one.'}
           </div>
         ) : (
           <div className="table-responsive">
