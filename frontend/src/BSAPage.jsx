@@ -347,6 +347,8 @@ export default function BSAPage({ theme, toggleTheme }) {
   const [showBulkEdit, setShowBulkEdit] = useState(false);
   const [csvPreview, setCsvPreview] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [copyMenuId, setCopyMenuId] = useState(null);
+  const [copyFields, setCopyFields] = useState({ api: true, consumer: true, spoc: true, approval: true });
   const fileInputRef = useRef(null);
 
   const loadEntries = async () => {
@@ -356,6 +358,13 @@ export default function BSAPage({ theme, toggleTheme }) {
   };
 
   useEffect(() => { loadEntries(); }, []);
+
+  useEffect(() => {
+    if (!copyMenuId) return;
+    const handler = () => setCopyMenuId(null);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [copyMenuId]);
 
   const consumerMap = useMemo(() => buildConsumerMap(entries), [entries]);
   const conflictMap = useMemo(() => buildConflictMap(entries), [entries]);
@@ -398,16 +407,42 @@ export default function BSAPage({ theme, toggleTheme }) {
   const toggleSelect = (id) => setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   const toggleSelectAll = () => setSelectedIds(prev => prev.length === filtered.length ? [] : filtered.map(e => e.id));
 
-  const handleCopy = (entry) => { copyRich(buildCopyHtml([entry]), buildCopyText([entry])); setCopiedId(entry.id); setTimeout(() => setCopiedId(null), 2000); };
-  const handleBulkCopy = () => { const sel = filtered.filter(e => selectedIds.includes(e.id)); if (!sel.length) return; copyRich(buildCopyHtml(sel), buildCopyText(sel)); setBulkCopied(true); setTimeout(() => setBulkCopied(false), 2000); };
+  const handleCopy = (entry) => { copyRich(buildCopyHtml([entry], copyFields), buildCopyText([entry], copyFields)); setCopiedId(entry.id); setCopyMenuId(null); setTimeout(() => setCopiedId(null), 2000); };
+  const handleBulkCopy = () => { const sel = filtered.filter(e => selectedIds.includes(e.id)); if (!sel.length) return; copyRich(buildCopyHtml(sel, copyFields), buildCopyText(sel, copyFields)); setBulkCopied(true); setCopyMenuId(null); setTimeout(() => setBulkCopied(false), 2000); };
 
-  const buildCopyHtml = (list) => {
-    const rows = list.flatMap(e => (e.consumers || []).map(c =>
-      `<tr><td style="border:1px solid #ccc;padding:6px 10px;">${e.api}</td><td style="border:1px solid #ccc;padding:6px 10px;">${c.name}</td><td style="border:1px solid #ccc;padding:6px 10px;">${c.spoc || ''}</td><td style="border:1px solid #ccc;padding:6px 10px;background:#fee2e2;color:#dc2626;font-weight:600;">Pending</td></tr>`
-    ));
-    return `<table style="border-collapse:collapse;font-family:Arial,sans-serif;"><thead><tr><th style="border:1px solid #ccc;padding:6px 10px;background:#f3f4f6;text-align:left;">API</th><th style="border:1px solid #ccc;padding:6px 10px;background:#f3f4f6;text-align:left;">Consumer</th><th style="border:1px solid #ccc;padding:6px 10px;background:#f3f4f6;text-align:left;">SPOC</th><th style="border:1px solid #ccc;padding:6px 10px;background:#f3f4f6;text-align:left;">Approval</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+  const buildCopyHtml = (list, fields) => {
+    const headers = [];
+    if (fields.api) headers.push('API');
+    if (fields.consumer) headers.push('Consumer');
+    if (fields.spoc) headers.push('SPOC');
+    if (fields.approval) headers.push('Approval');
+    const rows = list.flatMap(e => (e.consumers || []).map(c => {
+      const cells = [];
+      if (fields.api) cells.push(`<td style="border:1px solid #ccc;padding:6px 10px;">${e.api}</td>`);
+      if (fields.consumer) cells.push(`<td style="border:1px solid #ccc;padding:6px 10px;">${c.name}</td>`);
+      if (fields.spoc) cells.push(`<td style="border:1px solid #ccc;padding:6px 10px;">${c.spoc || ''}</td>`);
+      if (fields.approval) cells.push(`<td style="border:1px solid #ccc;padding:6px 10px;background:#fee2e2;color:#dc2626;font-weight:600;">Pending</td>`);
+      return `<tr>${cells.join('')}</tr>`;
+    }));
+    return `<table style="border-collapse:collapse;font-family:Arial,sans-serif;"><thead><tr>${headers.map(h => `<th style="border:1px solid #ccc;padding:6px 10px;background:#f3f4f6;text-align:left;">${h}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`;
   };
-  const buildCopyText = (list) => { const lines = ['API\tConsumer\tSPOC\tApproval']; list.forEach(e => (e.consumers || []).forEach(c => lines.push(`${e.api}\t${c.name}\t${c.spoc || ''}\tPending`))); return lines.join('\n'); };
+  const buildCopyText = (list, fields) => {
+    const cols = [];
+    if (fields.api) cols.push('API');
+    if (fields.consumer) cols.push('Consumer');
+    if (fields.spoc) cols.push('SPOC');
+    if (fields.approval) cols.push('Approval');
+    const lines = [cols.join('\t')];
+    list.forEach(e => (e.consumers || []).forEach(c => {
+      const vals = [];
+      if (fields.api) vals.push(e.api);
+      if (fields.consumer) vals.push(c.name);
+      if (fields.spoc) vals.push(c.spoc || '');
+      if (fields.approval) vals.push('Pending');
+      lines.push(vals.join('\t'));
+    }));
+    return lines.join('\n');
+  };
   const copyRich = (html, text) => { if (navigator.clipboard && window.ClipboardItem) { navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([text], { type: 'text/plain' }) })]).catch(() => navigator.clipboard.writeText(text)); } else { navigator.clipboard.writeText(text); } };
 
   const handleExportExcel = () => {
@@ -458,7 +493,25 @@ export default function BSAPage({ theme, toggleTheme }) {
             </button>
             {selectedIds.length > 0 && (
               <>
-                <button onClick={handleBulkCopy} style={{ ...btnStyle('var(--success)' ) }}>{bulkCopied ? '✓ Copied!' : `📋 Copy (${selectedIds.length})`}</button>
+                <div style={{ position: 'relative' }}>
+                  <button onClick={() => setCopyMenuId(copyMenuId === 'bulk' ? null : 'bulk')} style={{ ...btnStyle('var(--success)' ) }}>{bulkCopied ? '✓ Copied!' : `📋 Copy (${selectedIds.length})`}</button>
+                  {copyMenuId === 'bulk' && (
+                    <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', minWidth: '160px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                      {[
+                        { key: 'api', label: 'API' },
+                        { key: 'consumer', label: 'Consumer' },
+                        { key: 'spoc', label: 'SPOC' },
+                        { key: 'approval', label: 'Approval' },
+                      ].map(f => (
+                        <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text)' }}>
+                          <input type="checkbox" checked={copyFields[f.key]} onChange={() => setCopyFields(p => ({ ...p, [f.key]: !p[f.key] }))} style={{ accentColor: 'var(--primary)' }} />
+                          {f.label}
+                        </label>
+                      ))}
+                      <button onClick={handleBulkCopy} style={{ width: '100%', marginTop: '6px', padding: '4px 8px', fontSize: '0.75rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Copy</button>
+                    </div>
+                  )}
+                </div>
                 <button onClick={() => setShowBulkEdit(p => !p)} style={{ ...btnStyle('#f59e0b') }}>✏️ Bulk Edit</button>
               </>
             )}
@@ -598,9 +651,27 @@ export default function BSAPage({ theme, toggleTheme }) {
                         </td>
                         <td style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{formatDate(entry.updatedAt || entry.createdAt)}</td>
                         <td onClick={(e) => e.stopPropagation()}>
-                          <div style={{ display: 'flex', gap: '0.3rem' }}>
+                          <div style={{ display: 'flex', gap: '0.3rem', position: 'relative' }}>
                             <button className="copy-icon-btn" onClick={() => setEditingId(entry.id)} title="Edit">✏️</button>
-                            <button className={`copy-icon-btn ${copiedId === entry.id ? 'copied' : ''}`} onClick={() => handleCopy(entry)} title="Copy">{copiedId === entry.id ? '✓' : '📋'}</button>
+                            <div style={{ position: 'relative' }}>
+                              <button className={`copy-icon-btn ${copiedId === entry.id ? 'copied' : ''}`} onClick={() => setCopyMenuId(copyMenuId === entry.id ? null : entry.id)} title="Copy">{copiedId === entry.id ? '✓' : '📋'}</button>
+                              {copyMenuId === entry.id && (
+                                <div style={{ position: 'absolute', top: '100%', right: 0, zIndex: 100, background: 'var(--card-bg, #fff)', border: '1px solid var(--border)', borderRadius: '8px', padding: '8px', minWidth: '160px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                                  {[
+                                    { key: 'api', label: 'API' },
+                                    { key: 'consumer', label: 'Consumer' },
+                                    { key: 'spoc', label: 'SPOC' },
+                                    { key: 'approval', label: 'Approval' },
+                                  ].map(f => (
+                                    <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '3px 0', fontSize: '0.75rem', cursor: 'pointer', color: 'var(--text)' }}>
+                                      <input type="checkbox" checked={copyFields[f.key]} onChange={() => setCopyFields(p => ({ ...p, [f.key]: !p[f.key] }))} style={{ accentColor: 'var(--primary)' }} />
+                                      {f.label}
+                                    </label>
+                                  ))}
+                                  <button onClick={() => handleCopy(entry)} style={{ width: '100%', marginTop: '6px', padding: '4px 8px', fontSize: '0.75rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Copy</button>
+                                </div>
+                              )}
+                            </div>
                             <button className="copy-icon-btn" onClick={() => setHistoryTarget({ id: entry.id, api: entry.api })} title="History">🕐</button>
                             <button className="copy-icon-btn" onClick={() => setDeleteTarget(entry)} title="Delete" style={{ color: 'var(--error)', borderColor: 'rgba(244,63,94,0.3)' }}>🗑️</button>
                           </div>
