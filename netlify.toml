@@ -20,6 +20,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/bsa-report"
+  to = "/.netlify/functions/bsa-report"
+  status = 200
+
+[[redirects]]
   from = "/api/api-lib-cache"
   to = "/.netlify/functions/api-lib-cache"
   status = 200
@@ -33,3 +38,5 @@
   [functions."weekly-digest"]
     schedule = "30 3 * * MON"
     # Required env vars (set in Netlify UI): SENDGRID_API_KEY, DIGEST_RECIPIENT, DIGEST_FROM, GROQ_API_KEY
+  [functions."bsa-report"]
+    schedule = "30 3 * * MON"
