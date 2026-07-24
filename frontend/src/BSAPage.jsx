@@ -171,20 +171,33 @@ function EditInline({ entry, onSave, onCancel }) {
   );
 }
 
-function ExpandedRow({ consumers, conflicts, search }) {
+function ExpandedRow({ consumers, conflicts, search, entry, onCopySelected }) {
+  const [selected, setSelected] = useState([]);
+  const toggle = (i) => setSelected(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]);
+  const toggleAll = () => setSelected(prev => prev.length === consumers.length ? [] : consumers.map((_, i) => i));
+
   if (!consumers || consumers.length === 0) {
     return <tr className="expanded-row-content"><td colSpan={7}><div className="expanded-row-inner" style={{ textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.75rem' }}>No consumers added yet.</div></td></tr>;
   }
   return (
     <tr className="expanded-row-content"><td colSpan={7}>
       <div className="expanded-row-inner">
-        <div className="field-label" style={{ fontSize: '0.7rem', marginBottom: '0.3rem' }}>Consumers & SPOCs</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+          <div className="field-label" style={{ fontSize: '0.7rem' }}>Consumers & SPOCs</div>
+          {selected.length > 0 && (
+            <button onClick={() => onCopySelected(selected.map(i => consumers[i]), entry)} style={{ fontSize: '0.7rem', padding: '0.2rem 0.6rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>📋 Copy ({selected.length})</button>
+          )}
+        </div>
         <div className="table-responsive">
           <table className="api-table" style={{ margin: 0 }}>
-            <thead><tr><th>Consumer (App ID)</th><th>SPOC</th><th>Status</th></tr></thead>
+            <thead><tr>
+              <th style={{ width: '30px' }}><input type="checkbox" checked={selected.length === consumers.length && consumers.length > 0} onChange={toggleAll} style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: 'var(--primary)' }} /></th>
+              <th>Consumer (App ID)</th><th>SPOC</th><th>Status</th>
+            </tr></thead>
             <tbody>
               {consumers.map((c, i) => (
-                <tr key={i}>
+                <tr key={i} onClick={() => toggle(i)} style={{ cursor: 'pointer', background: selected.includes(i) ? 'var(--hover-bg, #f0f7ff)' : undefined }}>
+                  <td><input type="checkbox" checked={selected.includes(i)} onChange={() => toggle(i)} onClick={(e) => e.stopPropagation()} style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: 'var(--primary)' }} /></td>
                   <td style={{ fontWeight: 500 }}><Highlight text={c.name} query={search} /></td>
                   <td style={{ color: c.spoc ? 'var(--text)' : 'var(--text-muted)' }}><Highlight text={c.spoc || '—'} query={search} /></td>
                   <td>{conflicts[c.name] && <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: 600 }}>⚠ {conflicts[c.name].join(', ')}</span>}</td>
@@ -680,7 +693,7 @@ export default function BSAPage({ theme, toggleTheme }) {
                           </div>
                         </td>
                       </tr>
-                      {expandedId === entry.id && <ExpandedRow consumers={entry.consumers} conflicts={conflictMap} search={search} />}
+                      {expandedId === entry.id && <ExpandedRow consumers={entry.consumers} conflicts={conflictMap} search={search} entry={entry} onCopySelected={(consumers, e) => copyRich(buildCopyHtml([{ ...e, consumers }], allFields), buildCopyText([{ ...e, consumers }], allFields))} />}
                     </React.Fragment>
                   )
                 ))}
