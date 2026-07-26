@@ -205,8 +205,11 @@ function ExportDropdown({ editor, title }) {
       const blob = new Blob([full], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = `${title || 'clipboard'}.html`; a.click();
-      URL.revokeObjectURL(url);
+      a.href = url;
+      a.download = `${title || 'clipboard'}.html`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
     } catch (e) { console.error('Export HTML failed:', e); }
     setOpen(false);
   };
@@ -218,8 +221,11 @@ function ExportDropdown({ editor, title }) {
       const blob = new Blob([md], { type: 'text/markdown' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = `${title || 'clipboard'}.md`; a.click();
-      URL.revokeObjectURL(url);
+      a.href = url;
+      a.download = `${title || 'clipboard'}.md`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
     } catch (e) { console.error('Export Markdown failed:', e); }
     setOpen(false);
   };
