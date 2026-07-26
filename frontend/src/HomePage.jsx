@@ -749,7 +749,7 @@ const TOOLS = [
   { path: '/credentials', icon: '🔑', name: 'Credentials', desc: 'Manage secrets for DEV, UAT, and PROD environments.' },
   { path: '/bsa', icon: '📊', name: 'BSA', desc: 'Business Stakeholder Alignment — API consumers and SPOC mapping.' },
   { href: 'https://microsoftedge.microsoft.com/addons/detail/reposcope/oaimoakbhmeehijoncpbijcdpinhndof', icon: '🔍', name: 'RepoScope', desc: 'Git repository analytics — activity, contributors, codebase insights.', external: true },
-  { href: 'https://sharedclip.netlify.app/', icon: '📋', name: 'SharedClip', desc: 'Real-time collaborative clipboard for teams.', external: true },
+  { path: '/clipboard', icon: '📋', name: 'Clipboard', desc: 'Real-time collaborative rich text editor for teams.' },
 ];
 
 export default function HomePage({ theme, toggleTheme }) {

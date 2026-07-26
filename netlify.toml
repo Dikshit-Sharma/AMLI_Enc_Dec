@@ -30,6 +30,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/clipboard"
+  to = "/.netlify/functions/clipboard"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

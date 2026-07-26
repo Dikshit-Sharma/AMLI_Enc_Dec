@@ -1,6 +1,7 @@
 // src/firebase.js
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAnalytics, isSupported, logEvent } from "firebase/analytics";
+import { getFirestore } from "firebase/firestore";
 
 // Use Vite env vars (make sure these are set in Netlify + .env files)
 const firebaseConfig = {
@@ -15,6 +16,9 @@ const firebaseConfig = {
 
 // Avoid re-initialization during HMR or multiple imports
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+
+// Client-side Firestore
+const db = getFirestore(app);
 
 // Initialize Analytics if supported
 let analytics = null;
@@ -33,4 +37,4 @@ export const logAnalyticsEvent = (eventName, params = {}) => {
   }
 };
 
-export { app };
+export { app, db };

@@ -9,6 +9,7 @@ import CipherTool from './CipherTool';
 import LibraryPage from './LibraryPage';
 import CredentialsPage from './CredentialsPage';
 import BSAPage from './BSAPage';
+import ClipboardPage from './ClipboardPage';
 import HotkeyHelp from './HotkeyHelp';
 import useHotkeys from './hooks/useHotkeys';
 import OnboardingBot from './OnboardingBot';
@@ -68,6 +69,8 @@ function App() {
       <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/credentials" element={<CredentialsPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/bsa" element={<BSAPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/clipboard" element={<ClipboardPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/clipboard/:id" element={<ClipboardPage theme={theme} toggleTheme={toggleTheme} />} />
 
       <Route path="/cipher" element={<CipherTool theme={theme} toggleTheme={toggleTheme} />} />
     </Routes>
