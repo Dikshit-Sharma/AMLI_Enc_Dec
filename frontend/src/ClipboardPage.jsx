@@ -263,6 +263,7 @@ function ExportDropdown({ editor, title }) {
 function EditorPage({ clipboardId, theme, toggleTheme }) {
   const [title, setTitle] = useState('');
   const [syncStatus, setSyncStatus] = useState('connecting');
+  const [notFound, setNotFound] = useState(false);
   const [lastSynced, setLastSynced] = useState(null);
   const [copied, setCopied] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
@@ -346,9 +347,14 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
     const fetchDoc = async () => {
       try {
         const res = await fetch(`/api/clipboard?id=${clipboardId}`);
+        if (res.status === 404) {
+          if (alive) { setNotFound(true); setSyncStatus('error'); clearInterval(pollRef.current); }
+          return;
+        }
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;
+        setNotFound(false);
         if (data.title !== undefined) setTitle(data.title);
         if (data.content !== undefined && data.version > lastVersionRef.current) {
           isRemoteUpdate.current = true;
@@ -403,6 +409,26 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
 
   const statusColor = syncStatus === 'synced' ? 'var(--success, #22c55e)' : syncStatus === 'saving' ? '#f59e0b' : syncStatus === 'error' ? '#ef4444' : '#94a3b8';
   const statusText = syncStatus === 'synced' ? 'Synced' : syncStatus === 'saving' ? 'Saving...' : syncStatus === 'error' ? 'Error' : 'Connecting...';
+
+  if (notFound) {
+    return (
+      <div className="container">
+        <div className="card" style={{ maxWidth: '500px', margin: '4rem auto', textAlign: 'center' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔍</div>
+          <h2 style={{ fontSize: '1.3rem', marginBottom: '0.5rem', color: 'var(--text)' }}>Clipboard Not Found</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '0.3rem' }}>
+            No clipboard found with ID <strong style={{ fontFamily: 'monospace' }}>{clipboardId}</strong>
+          </p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '1.5rem' }}>
+            It may have been deleted or the ID is incorrect.
+          </p>
+          <Link to="/clipboard" style={{ display: 'inline-block', padding: '0.6rem 1.5rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '0.5rem', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 600 }}>
+            ← Back to Clipboard Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container">
@@ -521,7 +547,7 @@ function HomePage({ theme, toggleTheme }) {
 
         {/* Open existing */}
         <form onSubmit={openClipboard} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-          <input className="main-input" placeholder="Paste a Clipboard ID..." value={clipboardId} onChange={(e) => { setClipboardId(e.target.value); setError(''); }} style={{ flex: 1, fontSize: '0.85rem', padding: '0.6rem 0.85rem', textTransform: 'uppercase' }} />
+          <input className="main-input" placeholder="Paste a Clipboard ID..." value={clipboardId} onChange={(e) => { setClipboardId(e.target.value); setError(''); }} style={{ flex: 1, fontSize: '0.85rem', padding: '0.6rem 0.85rem' }} />
           <button type="submit" style={{ padding: '0.6rem 1.2rem', background: 'var(--success, #22c55e)', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, transition: 'opacity 0.2s' }}>Open</button>
         </form>
 
