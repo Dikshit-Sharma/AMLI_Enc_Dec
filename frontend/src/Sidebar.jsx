@@ -20,7 +20,7 @@ export default function Sidebar({ theme, toggleTheme, counts, open, onToggle }) 
       <button className="sidebar-hamburger" onClick={onToggle} title="Toggle navigation">
         {open ? '✕' : '☰'}
       </button>
-      {open && <div className="sidebar-overlay" onClick={onToggle} />}
+      <div className={`sidebar-overlay${open ? ' sidebar-overlay--visible' : ''}`} onClick={onToggle} />
       <aside className={`home-sidebar${open ? ' home-sidebar--open' : ''}`}>
         <div className="sidebar-brand">
           <Link to="/" style={{ textDecoration: 'none' }} onClick={onToggle}>
