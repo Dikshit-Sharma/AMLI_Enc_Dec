@@ -13,9 +13,20 @@ function getHeaders(event) {
 function ok(event, data, status) { return { statusCode: status || 200, headers: getHeaders(event), body: JSON.stringify(data) }; }
 function err(event, status, msg) { return ok(event, { error: msg || 'Internal server error' }, status || 500); }
 
-const FIREBASE_SERVICE_ACCOUNT = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-if (admin.apps.length === 0) { admin.initializeApp({ credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT) }); }
-const db = admin.firestore();
+let db;
+try {
+  const FIREBASE_SERVICE_ACCOUNT = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+    console.error('FIREBASE_SERVICE_ACCOUNT env var is not set');
+  }
+  if (Object.keys(FIREBASE_SERVICE_ACCOUNT).length === 0) {
+    console.error('FIREBASE_SERVICE_ACCOUNT parsed to empty object');
+  }
+  if (admin.apps.length === 0) { admin.initializeApp({ credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT) }); }
+  db = admin.firestore();
+} catch (initErr) {
+  console.error('Firebase admin init error:', initErr.message, initErr.stack);
+}
 
 function maskValue(val) {
   if (!val || typeof val !== 'string') return val;
@@ -25,6 +36,7 @@ function maskValue(val) {
 
 const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: getHeaders(event), body: '' };
+  if (!db) return err(event, 500, 'Firebase not initialized. Check FIREBASE_SERVICE_ACCOUNT env var.');
   try {
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};

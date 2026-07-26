@@ -4,6 +4,10 @@
   publish = "dist"
   functions = "netlify/functions"
 
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["firebase-admin"]
+
 [[redirects]]
   from = "/api/artifacts"
   to = "/.netlify/functions/artifacts"
