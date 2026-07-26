@@ -22,8 +22,6 @@ import FontFamily from '@tiptap/extension-font-family';
 import TextAlign from '@tiptap/extension-text-align';
 import Typography from '@tiptap/extension-typography';
 import { common, createLowlight } from 'lowlight';
-import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase';
 
 const lowlight = createLowlight(common);
 
@@ -267,6 +265,35 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
   const [wordCount, setWordCount] = useState({ words: 0, chars: 0, lines: 1, paragraphs: 0 });
   const saveTimeoutRef = useRef(null);
   const isRemoteUpdate = useRef(false);
+  const lastVersionRef = useRef(0);
+  const pollRef = useRef(null);
+
+  const apiUpdate = useCallback(async (patch) => {
+    try {
+      const res = await fetch('/api/clipboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', id: clipboardId, ...patch }),
+      });
+      if (!res.ok) throw new Error('Update failed');
+      setSyncStatus('synced');
+      setLastSynced(new Date());
+    } catch (err) {
+      console.error('Save failed:', err);
+      setSyncStatus('error');
+    }
+  }, [clipboardId]);
+
+  const updateWordCount = useCallback((ed) => {
+    try {
+      const text = ed.getText();
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      const chars = text.length;
+      const lines = text.split('\n').length;
+      const paragraphs = ed.getJSON().content?.filter(n => n.type === 'paragraph' && n.content?.length > 0).length || 0;
+      setWordCount({ words, chars, lines, paragraphs });
+    } catch (e) { /* editor not ready */ }
+  }, []);
 
   const editor = useEditor({
     extensions: [
@@ -297,71 +324,50 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
       if (isRemoteUpdate.current) return;
       try {
         const html = editor.getHTML();
-        const text = editor.getText();
-        const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-        const chars = text.length;
-        const lines = text.split('\n').length;
-        const paragraphs = editor.getJSON().content?.filter(n => n.type === 'paragraph' && n.content?.length > 0).length || 0;
-        setWordCount({ words, chars, lines, paragraphs });
+        updateWordCount(editor);
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         setSyncStatus('saving');
-        saveTimeoutRef.current = setTimeout(async () => {
-          try {
-            await setDoc(doc(db, 'clipboards', clipboardId), {
-              content: html,
-              updatedAt: serverTimestamp(),
-            }, { merge: true });
-            setSyncStatus('synced');
-            setLastSynced(new Date());
-          } catch (err) {
-            console.error('Save failed:', err);
-            setSyncStatus('error');
-          }
-        }, 800);
-      } catch (e) {
-        // editor not fully initialized yet, skip this update
-      }
+        saveTimeoutRef.current = setTimeout(() => apiUpdate({ content: html }), 800);
+      } catch (e) { /* editor not fully initialized */ }
     },
   });
 
   useEffect(() => {
     if (!clipboardId || !editor) return;
-    const ref = doc(db, 'clipboards', clipboardId);
-    const unsub = onSnapshot(ref, (snap) => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      if (data.title !== undefined) setTitle(data.title);
-      if (data.content !== undefined && editor.getHTML() !== data.content) {
-        isRemoteUpdate.current = true;
-        editor.commands.setContent(data.content);
-        isRemoteUpdate.current = false;
-        try {
-          const text = editor.getText();
-          const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-          const chars = text.length;
-          const lines = text.split('\n').length;
-          const paragraphs = editor.getJSON().content?.filter(n => n.type === 'paragraph' && n.content?.length > 0).length || 0;
-          setWordCount({ words, chars, lines, paragraphs });
-        } catch (e) { /* editor not ready yet */ }
-      }
-      setSyncStatus('synced');
-      setLastSynced(new Date());
-    }, (err) => {
-      console.error('Snapshot error:', err);
-      setSyncStatus('error');
-    });
-    return () => unsub();
-  }, [clipboardId, editor]);
+    let alive = true;
 
-  const updateTitle = useCallback(async (newTitle) => {
+    const fetchDoc = async () => {
+      try {
+        const res = await fetch(`/api/clipboard?id=${clipboardId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!alive) return;
+        if (data.title !== undefined) setTitle(data.title);
+        if (data.content !== undefined && editor.getHTML() !== data.content) {
+          isRemoteUpdate.current = true;
+          editor.commands.setContent(data.content);
+          isRemoteUpdate.current = false;
+          updateWordCount(editor);
+        }
+        if (data.version !== undefined) lastVersionRef.current = data.version;
+        setSyncStatus('synced');
+        setLastSynced(new Date());
+      } catch (err) {
+        console.error('Poll error:', err);
+        setSyncStatus('error');
+      }
+    };
+
+    fetchDoc();
+    pollRef.current = setInterval(fetchDoc, 3000);
+    return () => { alive = false; clearInterval(pollRef.current); };
+  }, [clipboardId, editor, updateWordCount]);
+
+  const updateTitle = useCallback((newTitle) => {
     setTitle(newTitle);
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(async () => {
-      try {
-        await setDoc(doc(db, 'clipboards', clipboardId), { title: newTitle, updatedAt: serverTimestamp() }, { merge: true });
-      } catch (err) { console.error('Title save failed:', err); }
-    }, 500);
-  }, [clipboardId]);
+    saveTimeoutRef.current = setTimeout(() => apiUpdate({ title: newTitle }), 500);
+  }, [apiUpdate]);
 
   const copyId = () => {
     navigator.clipboard.writeText(clipboardId);
