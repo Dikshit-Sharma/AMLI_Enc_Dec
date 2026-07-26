@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -132,11 +132,12 @@ function ToolbarTableActions({ editor }) {
   );
 }
 
-function EditorPage({ clipboardId, theme }) {
+function EditorPage({ clipboardId, theme, toggleTheme }) {
   const [title, setTitle] = useState('');
   const [syncStatus, setSyncStatus] = useState('connecting');
   const [lastSynced, setLastSynced] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [showToolbar, setShowToolbar] = useState(true);
   const saveTimeoutRef = useRef(null);
   const isRemoteUpdate = useRef(false);
 
@@ -157,7 +158,7 @@ function EditorPage({ clipboardId, theme }) {
       LinkExt.configure({ openOnClick: false }),
       TaskList,
       TaskItem.configure({ nested: true }),
-      Placeholder.configure({ placeholder: 'Start typing...' }),
+      Placeholder.configure({ placeholder: 'Start typing or paste content...' }),
       TableExt.configure({ resizable: true }),
       TableRow,
       TableCell,
@@ -223,29 +224,32 @@ function EditorPage({ clipboardId, theme }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const statusColor = syncStatus === 'synced' ? '#22c55e' : syncStatus === 'saving' ? '#f59e0b' : syncStatus === 'error' ? '#ef4444' : '#94a3b8';
+  const statusColor = syncStatus === 'synced' ? 'var(--success, #22c55e)' : syncStatus === 'saving' ? '#f59e0b' : syncStatus === 'error' ? '#ef4444' : '#94a3b8';
   const statusText = syncStatus === 'synced' ? 'Synced' : syncStatus === 'saving' ? 'Saving...' : syncStatus === 'error' ? 'Error' : 'Connecting...';
 
   return (
     <div className="container">
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 1rem', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: '0.4rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {/* Top header bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.55rem 1rem', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <Link to="/clipboard" className="back-link" style={{ marginBottom: 0, fontSize: '0.85rem' }}>← Back</Link>
-            <input value={title} onChange={(e) => updateTitle(e.target.value)} placeholder="Untitled" style={{ background: 'transparent', border: 'none', fontSize: '1rem', fontWeight: 600, color: 'var(--text)', outline: 'none', minWidth: '120px', maxWidth: '300px' }} />
+            <input value={title} onChange={(e) => updateTitle(e.target.value)} placeholder="Untitled" style={{ background: 'transparent', border: 'none', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text)', outline: 'none', minWidth: '100px', maxWidth: '300px' }} />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
               <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: statusColor, display: 'inline-block' }} />
               {statusText}
             </span>
-            {lastSynced && <span>Last synced {lastSynced.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
-            <button onClick={copyId} style={{ padding: '3px 8px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.72rem' }}>{copied ? '✓ Copied' : clipboardId}</button>
+            {lastSynced && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{lastSynced.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+            <button onClick={copyId} style={{ padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'monospace' }}>{copied ? '✓' : clipboardId}</button>
+            <button onClick={() => setShowToolbar(v => !v)} title="Toggle toolbar" style={{ padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.75rem' }}>{showToolbar ? '▾' : '▸'} T</button>
+            <button className="theme-toggle" onClick={toggleTheme} style={{ padding: '0.25rem 0.45rem', fontSize: '0.82rem' }}>{theme === 'light' ? '🌙' : '☀️'}</button>
           </div>
         </div>
-        <EditorToolbar editor={editor} />
-        <ToolbarTableActions editor={editor} />
-        <div style={{ minHeight: '60vh', padding: '1rem' }}>
+        {showToolbar && <EditorToolbar editor={editor} />}
+        {showToolbar && <ToolbarTableActions editor={editor} />}
+        <div style={{ minHeight: '65vh', padding: '1rem 1.25rem' }}>
           <EditorContent editor={editor} />
         </div>
       </div>
@@ -253,7 +257,7 @@ function EditorPage({ clipboardId, theme }) {
   );
 }
 
-function HomePage({ theme }) {
+function HomePage({ theme, toggleTheme }) {
   const [clipboardId, setClipboardId] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
@@ -269,7 +273,6 @@ function HomePage({ theme }) {
     setCreating(true);
     setError('');
     try {
-      const id = genId();
       const res = await fetch('/api/clipboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -277,7 +280,7 @@ function HomePage({ theme }) {
       });
       if (!res.ok) throw new Error('Failed to create');
       const data = await res.json();
-      const cid = data.id || id;
+      const cid = data.id || genId();
       saveRecent(cid, 'Untitled Clipboard');
       navigate(`/clipboard/${cid}`);
     } catch (err) {
@@ -308,32 +311,47 @@ function HomePage({ theme }) {
 
   return (
     <div className="container">
-      <div className="card" style={{ maxWidth: '560px', margin: '2rem auto' }}>
-        <h1 style={{ fontSize: '1.4rem', marginBottom: '0.5rem' }}>📋 Clipboard</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginBottom: '1.5rem' }}>Real-time collaborative rich text editor. Create a new clipboard or open an existing one.</p>
+      <div className="card" style={{ maxWidth: '600px', margin: '2rem auto' }}>
+        {/* Header with theme toggle */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+          <div>
+            <h1 style={{ fontSize: '1.5rem', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '1.6rem' }}>📋</span> Clipboard
+            </h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', lineHeight: 1.5, margin: 0 }}>
+              Real-time collaborative rich text editor. Create a new clipboard or open an existing one.
+            </p>
+          </div>
+          <button className="theme-toggle" onClick={toggleTheme} style={{ padding: '0.3rem 0.5rem', fontSize: '0.85rem', flexShrink: 0 }}>{theme === 'light' ? '🌙' : '☀️'}</button>
+        </div>
 
-        <button onClick={createClipboard} disabled={creating} style={{ width: '100%', padding: '0.75rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 600, marginBottom: '1rem', opacity: creating ? 0.6 : 1 }}>
+        {/* Create button */}
+        <button onClick={createClipboard} disabled={creating} style={{ width: '100%', padding: '0.8rem', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.95rem', fontWeight: 600, marginBottom: '1rem', opacity: creating ? 0.6 : 1, transition: 'opacity 0.2s' }}>
           {creating ? 'Creating...' : '+ Create New Clipboard'}
         </button>
 
+        {/* Open existing */}
         <form onSubmit={openClipboard} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-          <input className="main-input" placeholder="Enter Clipboard ID..." value={clipboardId} onChange={(e) => { setClipboardId(e.target.value); setError(''); }} style={{ flex: 1, fontSize: '0.85rem', padding: '0.6rem 0.85rem', textTransform: 'uppercase' }} />
-          <button type="submit" style={{ padding: '0.6rem 1.2rem', background: 'var(--success, #22c55e)', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 }}>Open</button>
+          <input className="main-input" placeholder="Paste a Clipboard ID..." value={clipboardId} onChange={(e) => { setClipboardId(e.target.value); setError(''); }} style={{ flex: 1, fontSize: '0.85rem', padding: '0.6rem 0.85rem', textTransform: 'uppercase' }} />
+          <button type="submit" style={{ padding: '0.6rem 1.2rem', background: 'var(--success, #22c55e)', color: '#fff', border: 'none', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, transition: 'opacity 0.2s' }}>Open</button>
         </form>
 
         {error && <div style={{ padding: '0.5rem 0.85rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.4rem', color: '#dc2626', fontSize: '0.8rem', marginBottom: '1rem' }}>{error}</div>}
 
+        {/* Recent */}
         {recent.length > 0 && (
           <div>
-            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Recent Clipboards</div>
+            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ fontSize: '0.85rem' }}>🕐</span> Recent Clipboards
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
               {recent.map(r => (
-                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', background: 'var(--input-bg)', borderRadius: '0.4rem', border: '1px solid var(--border)' }}>
-                  <div style={{ cursor: 'pointer', flex: 1 }} onClick={() => navigate(`/clipboard/${r.id}`)}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text)' }}>{r.title || 'Untitled'}</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{r.id}</div>
+                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.55rem 0.75rem', background: 'var(--input-bg)', borderRadius: '0.4rem', border: '1px solid var(--border)', transition: 'border-color 0.15s', cursor: 'pointer' }} onClick={() => navigate(`/clipboard/${r.id}`)}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text)', marginBottom: '2px' }}>{r.title || 'Untitled'}</div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{r.id}</div>
                   </div>
-                  <button onClick={() => removeRecent(r.id)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem', padding: '0.2rem 0.4rem' }} title="Remove">✕</button>
+                  <button onClick={(e) => { e.stopPropagation(); removeRecent(r.id); }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem', padding: '0.25rem 0.4rem', borderRadius: '4px', transition: 'color 0.15s' }} title="Remove" onMouseEnter={(e) => e.target.style.color = '#ef4444'} onMouseLeave={(e) => e.target.style.color = 'var(--text-muted)'}>✕</button>
                 </div>
               ))}
             </div>
@@ -346,7 +364,6 @@ function HomePage({ theme }) {
 
 export default function ClipboardPage({ theme, toggleTheme }) {
   const { id } = useParams();
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (id) {
@@ -359,6 +376,6 @@ export default function ClipboardPage({ theme, toggleTheme }) {
     }
   }, [id]);
 
-  if (id) return <EditorPage key={id} clipboardId={id} theme={theme} />;
-  return <HomePage theme={theme} />;
+  if (id) return <EditorPage key={id} clipboardId={id} theme={theme} toggleTheme={toggleTheme} />;
+  return <HomePage theme={theme} toggleTheme={toggleTheme} />;
 }
