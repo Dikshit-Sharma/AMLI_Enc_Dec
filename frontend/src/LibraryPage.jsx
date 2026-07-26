@@ -154,9 +154,6 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     return (
       <div className="container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <div className="card" style={{ maxWidth: '500px', flex: 'none', height: 'auto' }}>
-          <Link to="/" className="back-link">
-            ← Back to Home
-          </Link>
           <h2 style={{ marginTop: '1.5rem' }}>Library Protected</h2>
           <p
             className="field-label"
@@ -211,9 +208,6 @@ const LibraryPage = ({ theme, toggleTheme }) => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <Link to="/" className="back-link" style={{ marginBottom: 0 }}>
-              ← Back
-            </Link>
             <button className="theme-toggle" onClick={toggleTheme}>
               {theme === 'light' ? '🌙' : '☀️'}
             </button>

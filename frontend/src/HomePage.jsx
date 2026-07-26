@@ -742,16 +742,6 @@ function TopApis({ topApisData, filterEnv }) {
   );
 }
 
-const TOOLS = [
-  { path: '/cipher', icon: '🔐', name: 'Cipher Tool', desc: 'AES encryption/decryption with GCM and CBC modes.' },
-  { path: '/artifacts', icon: '💎', name: 'Artifacts', desc: 'Generate structured documentation packages and ZIP archives.' },
-  { path: '/library', icon: '📚', name: 'API Library', desc: 'Browse, search, and re-download past artifact configurations.' },
-  { path: '/credentials', icon: '🔑', name: 'Credentials', desc: 'Manage secrets for DEV, UAT, and PROD environments.' },
-  { path: '/bsa', icon: '📊', name: 'BSA', desc: 'Business Stakeholder Alignment — API consumers and SPOC mapping.' },
-  { href: 'https://microsoftedge.microsoft.com/addons/detail/reposcope/oaimoakbhmeehijoncpbijcdpinhndof', icon: '🔍', name: 'RepoScope', desc: 'Git repository analytics — activity, contributors, codebase insights.', external: true },
-  { path: '/clipboard', icon: '📋', name: 'Clipboard', desc: 'Real-time collaborative rich text editor for teams.' },
-];
-
 export default function HomePage({ theme, toggleTheme }) {
   const [recent, setRecent] = useState([]);
   const [envData, setEnvData] = useState([]);
@@ -899,46 +889,8 @@ export default function HomePage({ theme, toggleTheme }) {
   }, [fullScreenChart]);
 
   return (
-    <div className="home-layout">
-      <aside className="home-sidebar">
-        <div className="sidebar-brand">
-          <h2>AMLI</h2>
-        </div>
-        <nav className="sidebar-nav">
-          {TOOLS.map((tool) => {
-            const content = (
-              <>
-                <span className="sidebar-icon">{tool.icon}</span>
-                <div className="sidebar-item-text">
-                  <span className="sidebar-item-name">{tool.name}</span>
-                  <span className="sidebar-item-desc">{tool.desc}</span>
-                </div>
-              </>
-            );
-            if (tool.external) {
-              return (
-                <a key={tool.name} href={tool.href} target="_blank" rel="noopener noreferrer" className="sidebar-link">
-                  {content}
-                </a>
-              );
-            }
-            return (
-              <Link key={tool.name} to={tool.path} className="sidebar-link">
-                {content}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="sidebar-footer">
-          <button className="theme-toggle sidebar-theme-btn" onClick={toggleTheme}>
-            {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
-          </button>
-        </div>
-      </aside>
-
-      <main className="home-main">
-        <div className="home-container">
-          <section className="hero-section">
+    <div className="home-container">
+      <section className="hero-section">
             <h1>DASHBOARD</h1>
             <p>
               A suite of professional encryption, decryption, and artifact
@@ -1106,8 +1058,6 @@ export default function HomePage({ theme, toggleTheme }) {
           <footer className="footer-minimal">
             Built by <strong>Dikshit Sharma</strong> | dikshit.sharma2580@gmail.com
           </footer>
-        </div>
-      </main>
 
       {fullScreenChart && (
         <div className="fullscreen-chart-overlay" onClick={() => setFullScreenChart(null)}>
