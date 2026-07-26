@@ -275,6 +275,7 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
 
   const apiUpdate = useCallback(async (patch) => {
     try {
+      lastVersionRef.current += 1;
       const res = await fetch('/api/clipboard', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -284,6 +285,7 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
       setSyncStatus('synced');
       setLastSynced(new Date());
     } catch (err) {
+      lastVersionRef.current = Math.max(0, lastVersionRef.current - 1);
       console.error('Save failed:', err);
       setSyncStatus('error');
     }
@@ -348,13 +350,13 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
         const data = await res.json();
         if (!alive) return;
         if (data.title !== undefined) setTitle(data.title);
-        if (data.content !== undefined && editor.getHTML() !== data.content) {
+        if (data.content !== undefined && data.version > lastVersionRef.current) {
           isRemoteUpdate.current = true;
           editor.commands.setContent(data.content);
           isRemoteUpdate.current = false;
           updateWordCount(editor);
         }
-        if (data.version !== undefined) lastVersionRef.current = data.version;
+        if (data.version !== undefined) lastVersionRef.current = Math.max(lastVersionRef.current, data.version);
         setSyncStatus('synced');
         setLastSynced(new Date());
       } catch (err) {
