@@ -1,27 +1,31 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import { fetchArtifactStats, fetchCredentials } from './api';
+import { fetchCredentials } from './api';
 
 const ENVS = ['DEV', 'UAT', 'PROD'];
 
 export default function AppLayout({ theme, toggleTheme, children }) {
-  const [counts, setCounts] = useState({ artifacts: 0, credentials: 0 });
+  const location = useLocation();
+  const isHome = location.pathname === '/';
+  const [sidebarOpen, setSidebarOpen] = useState(isHome);
+  const [credCount, setCredCount] = useState(0);
 
   useEffect(() => {
-    Promise.all([
-      fetchArtifactStats().catch(() => ({ total: 0 })),
-      Promise.all(ENVS.map(e =>
-        fetchCredentials(e).then(r => r.credentials || []).catch(() => [])
-      )),
-    ]).then(([stats, credResults]) => {
-      const totalCreds = credResults.reduce((sum, arr) => sum + arr.length, 0);
-      setCounts({ artifacts: stats.total || 0, credentials: totalCreds });
+    setSidebarOpen(isHome);
+  }, [isHome]);
+
+  useEffect(() => {
+    Promise.all(ENVS.map(e =>
+      fetchCredentials(e).then(r => r.credentials || []).catch(() => [])
+    )).then(results => {
+      setCredCount(results.reduce((sum, arr) => sum + arr.length, 0));
     }).catch(() => {});
   }, []);
 
   return (
     <div className="home-layout">
-      <Sidebar theme={theme} toggleTheme={toggleTheme} counts={counts} />
+      <Sidebar theme={theme} toggleTheme={toggleTheme} open={sidebarOpen} onToggle={() => setSidebarOpen(p => !p)} counts={{ credentials: credCount }} />
       <main className="home-main">
         {children}
       </main>

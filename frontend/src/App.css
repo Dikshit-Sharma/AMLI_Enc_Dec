@@ -2404,6 +2404,39 @@ button:disabled {
   height: 100%;
 }
 
+.sidebar-hamburger {
+  display: none;
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 1001;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 1.2rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  transition: all 0.15s ease;
+}
+
+.sidebar-hamburger:hover {
+  background: var(--primary-glow);
+  border-color: var(--primary);
+}
+
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 999;
+}
+
 .home-sidebar {
   width: 260px;
   flex-shrink: 0;
@@ -2416,6 +2449,32 @@ button:disabled {
   position: sticky;
   top: 0;
   height: 100vh;
+}
+
+@media (max-width: 768px) {
+  .sidebar-hamburger {
+    display: flex;
+  }
+
+  .home-sidebar {
+    position: fixed;
+    top: 0;
+    left: -280px;
+    z-index: 1000;
+    transition: left 0.25s ease;
+  }
+
+  .home-sidebar--open {
+    left: 0;
+  }
+
+  .sidebar-overlay {
+    display: block;
+  }
+
+  .home-main {
+    margin-left: 0 !important;
+  }
 }
 
 .sidebar-brand {
