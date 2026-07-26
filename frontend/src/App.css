@@ -2405,6 +2405,7 @@ button:disabled {
 }
 
 .sidebar-hamburger {
+  display: none;
   position: fixed;
   top: 1rem;
   left: 1rem;
@@ -2436,10 +2437,6 @@ button:disabled {
   z-index: 999;
 }
 
-.sidebar-overlay--visible {
-  display: block;
-}
-
 .home-sidebar {
   width: 260px;
   flex-shrink: 0;
@@ -2449,16 +2446,35 @@ button:disabled {
   flex-direction: column;
   padding: 1.5rem 0;
   overflow-y: auto;
-  position: fixed;
+  position: sticky;
   top: 0;
-  left: -280px;
   height: 100vh;
-  z-index: 1000;
-  transition: left 0.25s ease;
 }
 
-.home-sidebar--open {
-  left: 0;
+@media (max-width: 768px) {
+  .sidebar-hamburger {
+    display: flex;
+  }
+
+  .home-sidebar {
+    position: fixed;
+    top: 0;
+    left: -280px;
+    z-index: 1000;
+    transition: left 0.25s ease;
+  }
+
+  .home-sidebar--open {
+    left: 0;
+  }
+
+  .sidebar-overlay {
+    display: block;
+  }
+
+  .home-main {
+    margin-left: 0 !important;
+  }
 }
 
 .sidebar-brand {
