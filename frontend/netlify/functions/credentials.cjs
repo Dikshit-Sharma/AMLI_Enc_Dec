@@ -63,7 +63,7 @@ const handler = async (event) => {
       return ok(event, { ok: true });
     }
     return err(event, 405, 'Method not allowed');
-  } catch (e) { console.error('credentials error:', e); return err(event, 500, 'Internal server error'); }
+  } catch (e) { console.error('credentials error:', e); return err(event, 500, e.message || 'Internal server error'); }
 };
 
 module.exports = { handler };

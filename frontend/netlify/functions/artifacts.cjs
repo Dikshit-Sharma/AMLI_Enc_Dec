@@ -186,7 +186,7 @@ const handler = async (event) => {
       return ok(event, { ids, count: ids.length });
     }
     return err(event, 405, 'Method not allowed');
-  } catch (e) { console.error('artifacts error:', e); return err(event, 500, 'Internal server error'); }
+  } catch (e) { console.error('artifacts error:', e); return err(event, 500, e.message || 'Internal server error'); }
 };
 
 module.exports = { handler };

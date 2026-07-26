@@ -4,10 +4,6 @@
   publish = "dist"
   functions = "netlify/functions"
 
-[functions]
-  node_bundler = "esbuild"
-  external_node_modules = ["firebase-admin"]
-
 [[redirects]]
   from = "/api/artifacts"
   to = "/.netlify/functions/artifacts"
@@ -51,6 +47,11 @@
 [[redirects]]
   from = "/api/auth-proxy"
   to = "/.netlify/functions/auth-proxy"
+  status = 200
+
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health"
   status = 200
 
 [[redirects]]
