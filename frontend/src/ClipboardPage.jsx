@@ -273,6 +273,7 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
   const isRemoteUpdate = useRef(false);
   const lastVersionRef = useRef(0);
   const pollRef = useRef(null);
+  const titleDirtyRef = useRef(false);
 
   const apiUpdate = useCallback(async (patch) => {
     try {
@@ -355,7 +356,7 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
         const data = await res.json();
         if (!alive) return;
         setNotFound(false);
-        if (data.title !== undefined) setTitle(data.title);
+        if (data.title !== undefined && !titleDirtyRef.current) setTitle(data.title);
         if (data.content !== undefined && data.version > lastVersionRef.current) {
           isRemoteUpdate.current = true;
           editor.commands.setContent(data.content);
@@ -378,8 +379,12 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
 
   const updateTitle = useCallback((newTitle) => {
     setTitle(newTitle);
+    titleDirtyRef.current = true;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => apiUpdate({ title: newTitle }), 500);
+    saveTimeoutRef.current = setTimeout(() => {
+      apiUpdate({ title: newTitle });
+      titleDirtyRef.current = false;
+    }, 500);
   }, [apiUpdate]);
 
   const copyId = () => {
@@ -530,9 +535,12 @@ function HomePage({ theme, toggleTheme }) {
         {/* Header with theme toggle */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
           <div>
-            <h1 style={{ fontSize: '1.5rem', marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '1.6rem' }}>📋</span> Clipboard
-            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.35rem' }}>
+              <Link to="/" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textDecoration: 'none', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)' }}>← Home</Link>
+              <h1 style={{ fontSize: '1.5rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.6rem' }}>📋</span> Clipboard
+              </h1>
+            </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', lineHeight: 1.5, margin: 0 }}>
               Real-time collaborative rich text editor. Create a new clipboard or open an existing one.
             </p>
