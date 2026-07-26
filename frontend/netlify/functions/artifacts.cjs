@@ -110,7 +110,7 @@ const handler = async (event) => {
       if (params.stats === '1') {
         let total = 0;
         try { const countSnap = await db.collection('artifacts').count().get(); total = countSnap.data().count; } catch (_) {}
-        const envCounts = {}, dateCounts = {}, apiCounts = {};
+        const envCounts = {}, dateCounts = {}, dateEnvCounts = {}, monthEnvCounts = {}, apiCounts = {};
         const snap = await db.collection('artifacts').select('env', 'apiName', 'timestamp').orderBy('timestamp', 'desc').limit(5000).get();
         const recent = [];
         for (const d of snap.docs) {
@@ -118,13 +118,21 @@ const handler = async (event) => {
           const env = data.env || 'DEV';
           envCounts[env] = (envCounts[env] || 0) + 1;
           const ts = data.timestamp?.toDate?.();
-          if (ts) { const dateStr = ts.toISOString().slice(0, 10); dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1; }
+          if (ts) {
+            const dateStr = ts.toISOString().slice(0, 10);
+            dateCounts[dateStr] = (dateCounts[dateStr] || 0) + 1;
+            dateEnvCounts[dateStr + '|' + env] = (dateEnvCounts[dateStr + '|' + env] || 0) + 1;
+            const monthStr = ts.toISOString().slice(0, 7);
+            monthEnvCounts[monthStr + '|' + env] = (monthEnvCounts[monthStr + '|' + env] || 0) + 1;
+          }
           apiCounts[(data.apiName || 'Unknown') + '|' + env] = (apiCounts[(data.apiName || 'Unknown') + '|' + env] || 0) + 1;
           if (recent.length < 5) recent.push({ id: d.id, ...data, timestamp: data.timestamp?.toDate?.().toISOString() ?? null });
         }
         const activity = Object.entries(dateCounts).map(([date, count]) => ({ date, count }));
+        const dailyVelocity = Object.entries(dateEnvCounts).map(([key, count]) => { const [date, env] = key.split('|'); return { date, env, count }; });
+        const velocity = Object.entries(monthEnvCounts).map(([key, count]) => { const [month, env] = key.split('|'); return { month, env, count }; });
         const topApis = Object.entries(apiCounts).map(([key, count]) => { const [apiName, env] = key.split('|'); return { apiName, env, count }; }).sort((a, b) => b.count - a.count).slice(0, 20);
-        return ok(event, { total, envCounts, recent, activity, topApis, sampledCount: snap.docs.length });
+        return ok(event, { total, envCounts, recent, activity, dailyVelocity, velocity, topApis, sampledCount: snap.docs.length });
       }
       if (params['extract-credentials'] === '1') {
         const snapshot = await db.collection('artifacts').select('apiName', 'jiraTicket', 'env', 'aesKey', 'curl', 'response', 'extraRequests').orderBy('timestamp', 'desc').limit(200).get();
