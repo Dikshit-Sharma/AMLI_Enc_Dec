@@ -12,58 +12,62 @@ const TOOLS = [
   { path: '/clipboard', icon: '📋', name: 'Clipboard', desc: 'Real-time collaborative rich text editor for teams.' },
 ];
 
-export default function Sidebar({ theme, toggleTheme, counts, open, onToggle }) {
+export default function Sidebar({ theme, toggleTheme, counts }) {
   const location = useLocation();
 
   return (
-    <>
-      <button className="sidebar-hamburger" onClick={onToggle} title="Toggle navigation">
-        {open ? '✕' : '☰'}
+    <aside className="home-sidebar">
+      <div className="sidebar-brand">
+        <Link to="/" style={{ textDecoration: 'none' }}>
+          <h2>AMLI</h2>
+        </Link>
+      </div>
+      <button className="sidebar-search-btn" onClick={() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
+      }}>
+        <span className="sidebar-search-icon">⌘</span>
+        <span>Search...</span>
+        <span className="sidebar-search-shortcut">⌘K</span>
       </button>
-      {open && <div className="sidebar-overlay" onClick={onToggle} />}
-      <aside className={`home-sidebar${open ? ' home-sidebar--open' : ''}`}>
-        <div className="sidebar-brand">
-          <Link to="/" style={{ textDecoration: 'none' }} onClick={onToggle}>
-            <h2>AMLI</h2>
-          </Link>
-        </div>
-        <nav className="sidebar-nav">
-          {TOOLS.map((tool) => {
-            const isActive = !tool.external && (
-              tool.path === '/' ? location.pathname === '/' : location.pathname.startsWith(tool.path)
-            );
-            const content = (
-              <>
-                <span className="sidebar-icon">{tool.icon}</span>
-                <div className="sidebar-item-text">
-                  <span className="sidebar-item-name">{tool.name}</span>
-                  <span className="sidebar-item-desc">{tool.desc}</span>
-                </div>
-                {counts && tool.path === '/credentials' && counts.credentials > 0 && (
-                  <span className="sidebar-badge">{counts.credentials}</span>
-                )}
-              </>
-            );
-            if (tool.external) {
-              return (
-                <a key={tool.name} href={tool.href} target="_blank" rel="noopener noreferrer" className="sidebar-link">
-                  {content}
-                </a>
-              );
-            }
+      <nav className="sidebar-nav">
+        {TOOLS.map((tool) => {
+          const isActive = !tool.external && (
+            tool.path === '/' ? location.pathname === '/' : location.pathname.startsWith(tool.path)
+          );
+          const content = (
+            <>
+              <span className="sidebar-icon">{tool.icon}</span>
+              <div className="sidebar-item-text">
+                <span className="sidebar-item-name">{tool.name}</span>
+                <span className="sidebar-item-desc">{tool.desc}</span>
+              </div>
+              {counts && tool.path === '/library' && counts.artifacts > 0 && (
+                <span className="sidebar-badge">{counts.artifacts}</span>
+              )}
+              {counts && tool.path === '/credentials' && counts.credentials > 0 && (
+                <span className="sidebar-badge">{counts.credentials}</span>
+              )}
+            </>
+          );
+          if (tool.external) {
             return (
-              <Link key={tool.name} to={tool.path} className={`sidebar-link${isActive ? ' sidebar-link--active' : ''}`} onClick={onToggle}>
+              <a key={tool.name} href={tool.href} target="_blank" rel="noopener noreferrer" className="sidebar-link">
                 {content}
-              </Link>
+              </a>
             );
-          })}
-        </nav>
-        <div className="sidebar-footer">
-          <button className="theme-toggle sidebar-theme-btn" onClick={toggleTheme}>
-            {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
-          </button>
-        </div>
-      </aside>
-    </>
+          }
+          return (
+            <Link key={tool.name} to={tool.path} className={`sidebar-link${isActive ? ' sidebar-link--active' : ''}`}>
+              {content}
+            </Link>
+          );
+        })}
+      </nav>
+      <div className="sidebar-footer">
+        <button className="theme-toggle sidebar-theme-btn" onClick={toggleTheme}>
+          {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
+        </button>
+      </div>
+    </aside>
   );
 }
