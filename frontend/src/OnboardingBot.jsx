@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { logAnalyticsEvent } from './firebase';
 import './OnboardingBot.css';
 
 const STEPS = [
@@ -82,6 +83,8 @@ export default function OnboardingBot() {
   };
 
   const finish = () => {
+    const completed = stepIndex >= STEPS.length - 1;
+    logAnalyticsEvent(completed ? 'onboarding_complete' : 'onboarding_skip', { step_index: stepIndex, total_steps: STEPS.length });
     setActive(false);
     localStorage.setItem('onboarding_done', 'true');
   };

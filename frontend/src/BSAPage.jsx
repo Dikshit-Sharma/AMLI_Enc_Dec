@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import { fetchBSAEntries, addBSAEntry, updateBSAEntry, deleteBSAEntry, fetchBSAHistory, fetchAllBSAHistory, bulkUpdateBSA } from './api';
 import { SkeletonTableRows } from './Skeleton';
+import { logAnalyticsEvent } from './firebase';
 
 function Highlight({ text, query }) {
   if (!query || !text) return <>{text}</>;
@@ -109,6 +110,7 @@ function AddForm({ onAdded, onCancel, existingEntries }) {
       const spocs = spocStr.split(';').map(s => s.trim()).filter(Boolean);
       const consumers = names.map((name, i) => ({ name, spoc: spocs[i] || '' }));
       await addBSAEntry({ api: api.trim(), consumers });
+      logAnalyticsEvent('bsa_entry_add', { api_name: api.trim(), consumer_count: consumers.length });
       setApi(''); setConsumerStr(''); setSpocStr(''); setDupes([]);
       onAdded();
     } catch (err) { alert('Failed to add: ' + err.message); }
@@ -149,6 +151,7 @@ function EditInline({ entry, onSave, onCancel }) {
       const spocs = spocStr.split(';').map(s => s.trim()).filter(Boolean);
       const consumers = names.map((name, i) => ({ name, spoc: spocs[i] || '' }));
       await updateBSAEntry(entry.id, { api: api.trim(), consumers });
+      logAnalyticsEvent('bsa_entry_edit', { entry_id: entry.id, api_name: api.trim(), consumer_count: consumers.length });
       onSave();
     } catch (err) { alert('Failed to save: ' + err.message); }
     finally { setSaving(false); }
@@ -462,9 +465,12 @@ function CSVImportPreview({ data, onConfirm, onCancel }) {
   const handleConfirm = async () => {
     setSaving(true);
     try {
+      let totalConsumers = 0;
       for (const api of apis) {
         await addBSAEntry({ api, consumers: data[api] });
+        totalConsumers += data[api].length;
       }
+      logAnalyticsEvent('bsa_csv_import', { api_count: apis.length, total_consumers: totalConsumers });
       onConfirm();
     } catch (err) { alert('Import failed: ' + err.message); }
     finally { setSaving(false); }
@@ -626,6 +632,7 @@ export default function BSAPage({ theme, toggleTheme }) {
     const ws = XLSX.utils.json_to_sheet(rows); ws['!cols'] = [{ wch: 25 }, { wch: 25 }, { wch: 20 }, { wch: 12 }, { wch: 22 }];
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'BSA');
     XLSX.writeFile(wb, `BSA_Export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    logAnalyticsEvent('bsa_excel_export', { row_count: rows.length });
   };
 
   const handleImportCSV = async (e) => {
@@ -649,6 +656,7 @@ export default function BSAPage({ theme, toggleTheme }) {
 
   const handleBulkEditSpoc = async (newSpoc) => {
     await bulkUpdateBSA(selectedIds, { newSpoc });
+    logAnalyticsEvent('bsa_bulk_edit', { selected_count: selectedIds.length, new_spoc: newSpoc });
     setShowBulkEdit(false); setSelectedIds([]); loadEntries();
   };
 
@@ -657,6 +665,7 @@ export default function BSAPage({ theme, toggleTheme }) {
     const snapshot = { ...deleteTarget, consumers: [...(deleteTarget.consumers || [])] };
     try {
       await deleteBSAEntry(deleteTarget.id);
+      logAnalyticsEvent('bsa_entry_delete', { entry_id: deleteTarget.id, api_name: snapshot.api, consumer_count: snapshot.consumers.length });
       setDeleteTarget(null);
       loadEntries();
       setToast({ message: `"${snapshot.api}" deleted`, onUndo: async () => {
@@ -669,6 +678,7 @@ export default function BSAPage({ theme, toggleTheme }) {
   const handleInlineAddConsumer = async (entry, consumer) => {
     const updated = [...(entry.consumers || []), consumer];
     await updateBSAEntry(entry.id, { consumers: updated });
+    logAnalyticsEvent('bsa_consumer_add_inline', { entry_id: entry.id, api_name: entry.api, consumer_name: consumer.name });
     loadEntries();
     setToast({ message: `Added "${consumer.name}" to ${entry.api}`, onUndo: async () => {
       const reduced = (entry.consumers || []).filter(c => c.name !== consumer.name);
@@ -680,6 +690,7 @@ export default function BSAPage({ theme, toggleTheme }) {
   const handleInlineSpocUpdate = async (entry, updatedConsumers) => {
     const oldConsumers = [...(entry.consumers || [])];
     await updateBSAEntry(entry.id, { consumers: updatedConsumers });
+    logAnalyticsEvent('bsa_spoc_update_inline', { entry_id: entry.id, api_name: entry.api });
     loadEntries();
     setToast({ message: `Updated SPOCs for ${entry.api}`, onUndo: async () => {
       await updateBSAEntry(entry.id, { consumers: oldConsumers });

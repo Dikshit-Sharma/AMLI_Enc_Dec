@@ -3,6 +3,7 @@ import { parseCurl, createSafeArtifactForAI } from './artifactUtil';
 import { SYSTEM_PROMPTS } from './ai/prompts';
 import useAI from './ai/useAI';
 import { extractJson } from './ai/extractJson';
+import { logAnalyticsEvent } from './firebase';
 
 function auditArtifact(art) {
   const issues = [];
@@ -73,6 +74,7 @@ export default function ArtifactAuditor({ artifact, onClose, onJumpToField }) {
   const scoreColor = report.score >= 80 ? 'var(--success)' : report.score >= 50 ? '#f59e0b' : 'var(--error)';
 
   const handleAIEnhance = async () => {
+    logAnalyticsEvent('ai_audit_trigger', { artifact_id: artifact.id, api_name: artifact.apiName, initial_score: report.score });
     const safeArtifact = createSafeArtifactForAI(artifact);
     const result = await callAI(
       JSON.stringify(safeArtifact, null, 2),
@@ -83,11 +85,14 @@ export default function ArtifactAuditor({ artifact, onClose, onJumpToField }) {
       const parsed = extractJson(result);
       if (parsed && parsed.aiIssues) {
         setAiInsights(parsed);
+        logAnalyticsEvent('ai_audit_complete', { artifact_id: artifact.id, had_ai_issues: parsed.aiIssues.length > 0, result_type: 'structured' });
       } else {
         setAiInsights({ aiIssues: [{ severity: 'info', message: result }], summary: 'AI analysis completed. Review findings below.', score: report.score });
+        logAnalyticsEvent('ai_audit_complete', { artifact_id: artifact.id, had_ai_issues: false, result_type: 'unstructured' });
       }
     } else {
       setAiInsights({ aiIssues: [], summary: 'AI deep scan unavailable. Set VITE_GROQ_API_KEY to enable.', score: report.score });
+      logAnalyticsEvent('ai_audit_failed', { artifact_id: artifact.id, reason: 'ai_unavailable' });
     }
   };
 

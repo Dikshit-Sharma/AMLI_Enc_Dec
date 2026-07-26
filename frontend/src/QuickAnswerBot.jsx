@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { SYSTEM_PROMPTS } from './ai/prompts';
 import useAI from './ai/useAI';
 import { aiAvailable } from './ai/gemini';
+import { logAnalyticsEvent } from './firebase';
 import './QuickAnswerBot.css';
 
 const FAQ = [
@@ -54,6 +55,7 @@ export default function QuickAnswerBot() {
   }, [messages]);
 
   const handleFAQClick = (faq) => {
+    logAnalyticsEvent('faq_click', { faq_question: faq.q });
     setMessages(prev => [...prev, { role: 'user', text: faq.q }, { role: 'bot', text: faq.a }]);
     setOpen(true);
   };
@@ -79,6 +81,7 @@ export default function QuickAnswerBot() {
         0.3
       );
       if (result) {
+        logAnalyticsEvent('ai_answer_returned', { answer_length: result.length, page_context: location.pathname });
         setMessages(prev => prev.filter(m => !m.loading).concat({ role: 'bot', text: result }));
         return;
       }
@@ -88,6 +91,7 @@ export default function QuickAnswerBot() {
     const answer = match
       ? match.a
       : 'I\'m not sure about that. Try one of the FAQ topics above, or set VITE_GROQ_API_KEY for AI-powered answers.';
+    logAnalyticsEvent('ai_fallback_to_faq', { question_length: question.length, page_context: location.pathname, faq_matched: !!match });
     setMessages(prev => prev.filter(m => !m.loading).concat({ role: 'bot', text: answer }));
   };
 

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { fetchArtifacts, fetchArtifact, toDate } from './api';
 import { generateAndDownloadZip, generateBulkZip } from './artifactUtil';
 import { decrypt, decryptCBC } from './cryptoUtil';
+import { logAnalyticsEvent } from './firebase';
 import ArtifactComparator from './ArtifactComparator';
 import LibraryInsights from './LibraryInsights';
 import { SkeletonTableRows } from './Skeleton';
@@ -84,6 +85,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     const full = await getFullArtifact(id);
     if (!full?.curl) return;
     navigator.clipboard.writeText(full.curl).then(() => {
+      logAnalyticsEvent('artifact_copy_curl', { artifact_id: id });
       setCopyStatus((prev) => ({ ...prev, [id]: true }));
       setTimeout(() => {
         setCopyStatus((prev) => ({ ...prev, [id]: false }));
@@ -96,6 +98,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     try {
       const full = await getFullArtifact(art.id);
       await generateAndDownloadZip([full], decrypt, decryptCBC);
+      logAnalyticsEvent('artifact_download', { artifact_id: art.id, api_name: art.apiName, env: art.env });
     } catch (err) {
       console.error('Re-download failed:', err);
       alert('Re-download failed: ' + err.message);
@@ -117,7 +120,10 @@ const LibraryPage = ({ theme, toggleTheme }) => {
       getFullArtifact(idA),
       getFullArtifact(idB),
     ]);
-    if (fullA && fullB) setCompareArtifacts({ artifactA: fullA, artifactB: fullB });
+    if (fullA && fullB) {
+      setCompareArtifacts({ artifactA: fullA, artifactB: fullB });
+      logAnalyticsEvent('artifact_compare', { artifact_a_id: idA, artifact_b_id: idB });
+    }
   };
 
   const handleBulkDownload = async () => {
@@ -127,6 +133,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     try {
       const fullList = await Promise.all(selected.map(a => getFullArtifact(a.id)));
       await generateBulkZip(fullList.filter(Boolean), decrypt, decryptCBC);
+      logAnalyticsEvent('artifact_download_bulk', { count: selected.length });
     } catch (err) {
       alert('Download failed: ' + err.message);
     } finally {
@@ -275,7 +282,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
                 width: 'auto',
                 flex: 'none',
               }}
-              onClick={() => setShowInsights(true)}
+              onClick={() => { logAnalyticsEvent('library_insights_open', { total_artifacts: allArtifacts.length }); setShowInsights(true); }}
             >
               📊 Insights
             </button>

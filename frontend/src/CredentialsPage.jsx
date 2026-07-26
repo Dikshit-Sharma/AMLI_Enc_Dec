@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { fetchCredentials, addCredential, deleteCredential, fetchExtractedCredentials } from './api';
 import { SkeletonTableRows } from './Skeleton';
 import { deduplicate } from './credentialExtract';
+import { logAnalyticsEvent } from './firebase';
 
 const ENVS = ['DEV', 'UAT', 'PROD'];
 
@@ -23,6 +24,7 @@ function AddForm({ env, onAdded }) {
     setSaving(true);
     try {
       await addCredential({ ...form, env });
+      logAnalyticsEvent('credential_add', { env, soa_app_id: form.soaAppId });
       setForm({ soaAppId: '', apiName: '', xApiKey: '', clientId: '', clientSecret: '', aesKey: '' });
       onAdded();
     } catch (err) {
@@ -155,7 +157,9 @@ export default function CredentialsPage({ theme, toggleTheme }) {
   const toggleReveal = (id) => {
     setRevealedIds((prev) => {
       const next = new Set(prev);
+      const revealing = !next.has(id);
       if (next.has(id)) next.delete(id); else next.add(id);
+      logAnalyticsEvent('credential_reveal', { credential_id: id, revealed: revealing });
       return next;
     });
   };
@@ -170,6 +174,7 @@ export default function CredentialsPage({ theme, toggleTheme }) {
       `AES Key: ${c.aesKey}`,
     ].filter(Boolean).join('\n');
     await navigator.clipboard.writeText(text);
+    logAnalyticsEvent('credential_copy', { credential_id: c.id, soa_app_id: c.soaAppId, source: c._source });
     setCopiedId(c.id);
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -183,6 +188,7 @@ export default function CredentialsPage({ theme, toggleTheme }) {
     setDeleting(id);
     try {
       await deleteCredential(id);
+      logAnalyticsEvent('credential_delete', { credential_id: id, source: 'manual' });
       await loadAll();
     } catch (err) {
       alert('Delete failed: ' + err.message);

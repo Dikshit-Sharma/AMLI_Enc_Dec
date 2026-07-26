@@ -60,6 +60,16 @@ function App() {
     Sentry.getCurrentScope().setTag('page', location.pathname);
   }, [location.pathname]);
 
+  React.useEffect(() => {
+    const start = Date.now();
+    const handleUnload = () => {
+      const duration = Math.round((Date.now() - start) / 1000);
+      logAnalyticsEvent('session_duration', { duration_seconds: duration, pathname: location.pathname });
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => { window.removeEventListener('beforeunload', handleUnload); handleUnload(); };
+  }, []);
+
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
     logAnalyticsEvent('theme_toggle', { theme: theme === 'light' ? 'dark' : 'light' });

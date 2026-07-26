@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchArtifacts, fetchCredentials } from './api';
+import { logAnalyticsEvent } from './firebase';
 import './CommandPalette.css';
 
 const ENVS = ['DEV', 'UAT', 'PROD'];
@@ -65,6 +66,7 @@ export default function CommandPalette({ open, onClose }) {
       setSelectedIdx((p) => Math.max(p - 1, 0));
     } else if (e.key === 'Enter' && flatItems[selectedIdx]) {
       const item = flatItems[selectedIdx];
+      logAnalyticsEvent('cmd_palette_select', { item_id: item.id, source: 'keyboard' });
       if (item.id?.startsWith('art_')) {
         navigate('/credentials');
       } else {
@@ -111,6 +113,7 @@ export default function CommandPalette({ open, onClose }) {
                       key={`${group.category}-${item.id || i}`}
                       className={`cmd-item ${idx === selectedIdx ? 'selected' : ''}`}
                       onClick={() => {
+                        logAnalyticsEvent('cmd_palette_select', { item_id: item.id, source: 'click' });
                         if (item.id?.startsWith('art_')) navigate('/credentials');
                         else navigate('/library');
                         onClose();

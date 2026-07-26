@@ -22,6 +22,7 @@ import FontFamily from '@tiptap/extension-font-family';
 import TextAlign from '@tiptap/extension-text-align';
 import Typography from '@tiptap/extension-typography';
 import { common, createLowlight } from 'lowlight';
+import { logAnalyticsEvent } from './firebase';
 
 const lowlight = createLowlight(common);
 
@@ -210,6 +211,7 @@ function ExportDropdown({ editor, title }) {
       document.body.appendChild(a);
       a.click();
       setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+      logAnalyticsEvent('clipboard_export', { format: 'html', clipboard_title: title });
     } catch (e) { console.error('Export HTML failed:', e); }
     setOpen(false);
   };
@@ -226,6 +228,7 @@ function ExportDropdown({ editor, title }) {
       document.body.appendChild(a);
       a.click();
       setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+      logAnalyticsEvent('clipboard_export', { format: 'markdown', clipboard_title: title });
     } catch (e) { console.error('Export Markdown failed:', e); }
     setOpen(false);
   };
@@ -238,6 +241,7 @@ function ExportDropdown({ editor, title }) {
       win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title || 'Clipboard'}</title><style>@media print{body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:1rem;line-height:1.6;color:#000}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}th{background:#f5f5f5}pre{background:#f5f5f5;padding:0.75rem;border-radius:4px;overflow-x:auto;font-size:0.85rem}blockquote{border-left:3px solid #6366f1;padding-left:1rem;color:#555;font-style:italic}}</style></head><body>${html}</body></html>`);
       win.document.close();
       win.print();
+      logAnalyticsEvent('clipboard_export', { format: 'print', clipboard_title: title });
     } catch (e) { console.error('Print failed:', e); }
     setOpen(false);
   };
@@ -442,6 +446,7 @@ function HomePage({ theme, toggleTheme }) {
       const data = await res.json();
       const cid = data.id || genId();
       saveRecent(cid, 'Untitled Clipboard');
+      logAnalyticsEvent('clipboard_create', { clipboard_id: cid });
       navigate(`/clipboard/${cid}`);
     } catch (err) {
       setError('Failed to create clipboard. Try again.');
@@ -452,6 +457,7 @@ function HomePage({ theme, toggleTheme }) {
     e.preventDefault();
     const id = clipboardId.trim();
     if (!id) return;
+    logAnalyticsEvent('clipboard_open', { clipboard_id: id, source: 'manual_input' });
     navigate(`/clipboard/${id}`);
   };
 
@@ -506,7 +512,7 @@ function HomePage({ theme, toggleTheme }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
               {recent.map(r => (
-                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.55rem 0.75rem', background: 'var(--input-bg)', borderRadius: '0.4rem', border: '1px solid var(--border)', transition: 'border-color 0.15s', cursor: 'pointer' }} onClick={() => navigate(`/clipboard/${r.id}`)}>
+                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.55rem 0.75rem', background: 'var(--input-bg)', borderRadius: '0.4rem', border: '1px solid var(--border)', transition: 'border-color 0.15s', cursor: 'pointer' }} onClick={() => { logAnalyticsEvent('clipboard_open', { clipboard_id: r.id, source: 'recent_list' }); navigate(`/clipboard/${r.id}`); }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--text)', marginBottom: '2px' }}>{r.title || 'Untitled'}</div>
                     <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{r.id}</div>
