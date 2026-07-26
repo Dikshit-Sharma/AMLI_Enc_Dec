@@ -703,6 +703,7 @@ export default function BSAPage({ theme, toggleTheme }) {
       <div className="card">
         <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', gap: '0.5rem', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Link to="/" className="back-link" style={{ marginBottom: 0, fontSize: '0.85rem' }}>← Back</Link>
             <button className="theme-toggle" onClick={toggleTheme} style={{ padding: '0.3rem 0.5rem', fontSize: '0.85rem' }}>{theme === 'light' ? '🌙' : '☀️'}</button>
           </div>
           <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', alignItems: 'center' }}>

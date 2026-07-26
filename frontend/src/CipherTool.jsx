@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { encrypt, decrypt, encryptCBC, decryptCBC, generateAESKeyHex, hexToBase64, base64ToHex } from './cryptoUtil';
 import SmartTextArea from './SmartTextArea';
 import { logAnalyticsEvent } from './firebase';
@@ -153,6 +154,7 @@ export default function CipherTool({ theme, toggleTheme }) {
       <div className="card workspace-fullscreen">
         <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', gap: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <Link to="/" className="back-link" style={{ marginBottom: 0 }}>← Back</Link>
             <button className="theme-toggle" onClick={toggleTheme}>
               {theme === 'light' ? '🌙' : '☀️'}
             </button>

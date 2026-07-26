@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { logAnalyticsEvent } from './firebase';
 import './App.css';
@@ -16,7 +16,6 @@ import useHotkeys from './hooks/useHotkeys';
 import OnboardingBot from './OnboardingBot';
 import QuickAnswerBot from './QuickAnswerBot';
 import CommandPalette from './CommandPalette';
-import AppLayout from './AppLayout';
 
 function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
@@ -80,18 +79,17 @@ function App() {
     <>
       <OnboardingBot />
       <QuickAnswerBot />
-      <AppLayout theme={theme} toggleTheme={toggleTheme}>
-        <Routes>
-          <Route path="/" element={<HomePage theme={theme} toggleTheme={toggleTheme} />} />
-          <Route path="/artifacts" element={<ArtifactsPage theme={theme} toggleTheme={toggleTheme} />} />
-          <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
-          <Route path="/credentials" element={<CredentialsPage theme={theme} toggleTheme={toggleTheme} />} />
-          <Route path="/bsa" element={<BSAPage theme={theme} toggleTheme={toggleTheme} />} />
-          <Route path="/clipboard" element={<ClipboardPage theme={theme} toggleTheme={toggleTheme} />} />
-          <Route path="/clipboard/:id" element={<ClipboardPage theme={theme} toggleTheme={toggleTheme} />} />
-          <Route path="/cipher" element={<CipherTool theme={theme} toggleTheme={toggleTheme} />} />
-        </Routes>
-      </AppLayout>
+      <Routes>
+      <Route path="/" element={<HomePage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/artifacts" element={<ArtifactsPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/library" element={<LibraryPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/credentials" element={<CredentialsPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/bsa" element={<BSAPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/clipboard" element={<ClipboardPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/clipboard/:id" element={<ClipboardPage theme={theme} toggleTheme={toggleTheme} />} />
+
+      <Route path="/cipher" element={<CipherTool theme={theme} toggleTheme={toggleTheme} />} />
+    </Routes>
 
     <CommandPalette open={showCmdPalette} onClose={() => setShowCmdPalette(false)} />
     {showHotkeys && <HotkeyHelp onClose={() => setShowHotkeys(false)} />}

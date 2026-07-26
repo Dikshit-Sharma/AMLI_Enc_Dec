@@ -535,9 +535,12 @@ function HomePage({ theme, toggleTheme }) {
         {/* Header with theme toggle */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
           <div>
-            <h1 style={{ fontSize: '1.5rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '1.6rem' }}>📋</span> Clipboard
-            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.35rem' }}>
+              <Link to="/" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textDecoration: 'none', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)' }}>← Home</Link>
+              <h1 style={{ fontSize: '1.5rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.6rem' }}>📋</span> Clipboard
+              </h1>
+            </div>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', lineHeight: 1.5, margin: 0 }}>
               Real-time collaborative rich text editor. Create a new clipboard or open an existing one.
             </p>

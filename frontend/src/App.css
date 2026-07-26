@@ -2497,24 +2497,6 @@ button:disabled {
   color: var(--primary);
 }
 
-.sidebar-link--active {
-  background: var(--primary-glow);
-  color: var(--primary);
-  font-weight: 600;
-}
-
-.sidebar-badge {
-  margin-left: auto;
-  background: var(--primary);
-  color: #fff;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 0.15rem 0.5rem;
-  border-radius: 9999px;
-  min-width: 1.4rem;
-  text-align: center;
-}
-
 .sidebar-icon {
   font-size: 1.3rem;
   flex-shrink: 0;

@@ -163,6 +163,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
       <div className="card artifact-workspace workspace-fullscreen" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div className="top-nav-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <Link to="/" className="back-link" style={{ marginBottom: 0 }}>← Back</Link>
             <button className="theme-toggle" onClick={toggleTheme}>
               {theme === 'light' ? '🌙' : '☀️'}
             </button>
