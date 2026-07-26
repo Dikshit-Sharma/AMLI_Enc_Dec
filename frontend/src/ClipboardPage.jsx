@@ -132,12 +132,124 @@ function ToolbarTableActions({ editor }) {
   );
 }
 
+function htmlToMarkdown(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  function walk(node) {
+    if (node.nodeType === 3) return node.textContent;
+    if (node.nodeType !== 1) return '';
+    const tag = node.tagName.toLowerCase();
+    const children = Array.from(node.childNodes).map(walk).join('');
+    switch (tag) {
+      case 'h1': return `# ${children}\n\n`;
+      case 'h2': return `## ${children}\n\n`;
+      case 'h3': return `### ${children}\n\n`;
+      case 'h4': return `#### ${children}\n\n`;
+      case 'h5': return `##### ${children}\n\n`;
+      case 'h6': return `###### ${children}\n\n`;
+      case 'p': return `${children}\n\n`;
+      case 'br': return '\n';
+      case 'strong': case 'b': return `**${children}**`;
+      case 'em': case 'i': return `*${children}*`;
+      case 'u': return `<u>${children}</u>`;
+      case 's': case 'del': return `~~${children}~~`;
+      case 'code': return node.parentElement?.tagName === 'PRE' ? children : `\`${children}\``;
+      case 'pre': return `\`\`\`\n${children}\n\`\`\`\n\n`;
+      case 'blockquote': return `> ${children}\n\n`;
+      case 'a': return `[${children}](${node.getAttribute('href') || ''})`;
+      case 'img': return `![${node.getAttribute('alt') || ''}](${node.getAttribute('src') || ''})`;
+      case 'hr': return '---\n\n';
+      case 'br': return '\n';
+      case 'ul': return children;
+      case 'ol': return children;
+      case 'li': {
+        const parent = node.parentElement?.tagName.toLowerCase();
+        if (parent === 'ol') {
+          const idx = Array.from(node.parentElement.children).indexOf(node) + 1;
+          return `${idx}. ${children.trim()}\n`;
+        }
+        return `- ${children.trim()}\n`;
+      }
+      case 'table': {
+        const rows = Array.from(node.querySelectorAll('tr'));
+        if (!rows.length) return children;
+        const lines = rows.map((row, ri) => {
+          const cells = Array.from(row.querySelectorAll('th, td')).map(c => c.textContent.trim());
+          const line = `| ${cells.join(' | ')} |`;
+          if (ri === 0) return `${line}\n| ${cells.map(() => '---').join(' | ')} |`;
+          return line;
+        });
+        return lines.join('\n') + '\n\n';
+      }
+      default: return children;
+    }
+  }
+  return walk(tmp).replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function ExportDropdown({ editor, title }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    if (open) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  if (!editor) return null;
+
+  const html = editor.getHTML();
+
+  const exportHTML = () => {
+    const full = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title || 'Clipboard'}</title><style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#1f2937}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d1d5db;padding:8px 12px;text-align:left}th{background:#f3f4f6}pre{background:#1e293b;color:#e2e8f0;padding:1rem;border-radius:6px;overflow-x:auto}code{background:#f3f4f6;padding:2px 4px;border-radius:3px;font-size:0.9em}blockquote{border-left:3px solid #6366f1;padding-left:1rem;color:#6b7280;font-style:italic}</style></head><body>${html}</body></html>`;
+    const blob = new Blob([full], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${title || 'clipboard'}.html`; a.click();
+    URL.revokeObjectURL(url);
+    setOpen(false);
+  };
+
+  const exportMarkdown = () => {
+    const md = htmlToMarkdown(html);
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${title || 'clipboard'}.md`; a.click();
+    URL.revokeObjectURL(url);
+    setOpen(false);
+  };
+
+  const exportPrint = () => {
+    const win = window.open('', '_blank');
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title || 'Clipboard'}</title><style>@media print{body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:1rem;line-height:1.6;color:#000}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}th{background:#f5f5f5}pre{background:#f5f5f5;padding:0.75rem;border-radius:4px;overflow-x:auto;font-size:0.85rem}blockquote{border-left:3px solid #6366f1;padding-left:1rem;color:#555;font-style:italic}}</style></head><body>${html}</body></html>`);
+    win.document.close();
+    win.print();
+    setOpen(false);
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button onClick={() => setOpen(!open)} title="Export" style={{ padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '3px' }}>⬇ Export ▾</button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: '6px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 50, minWidth: '150px', overflow: 'hidden' }}>
+          <button onClick={exportHTML} style={{ display: 'block', width: '100%', padding: '0.45rem 0.75rem', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text)', borderBottom: '1px solid var(--border)' }} onMouseEnter={(e) => e.target.style.background = 'var(--input-bg)'} onMouseLeave={(e) => e.target.style.background = 'none'}>📄 Export as HTML</button>
+          <button onClick={exportMarkdown} style={{ display: 'block', width: '100%', padding: '0.45rem 0.75rem', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text)', borderBottom: '1px solid var(--border)' }} onMouseEnter={(e) => e.target.style.background = 'var(--input-bg)'} onMouseLeave={(e) => e.target.style.background = 'none'}>📝 Export as Markdown</button>
+          <button onClick={exportPrint} style={{ display: 'block', width: '100%', padding: '0.45rem 0.75rem', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', fontSize: '0.78rem', color: 'var(--text)' }} onMouseEnter={(e) => e.target.style.background = 'var(--input-bg)'} onMouseLeave={(e) => e.target.style.background = 'none'}>🖨️ Print / Save PDF</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EditorPage({ clipboardId, theme, toggleTheme }) {
   const [title, setTitle] = useState('');
   const [syncStatus, setSyncStatus] = useState('connecting');
   const [lastSynced, setLastSynced] = useState(null);
   const [copied, setCopied] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
+  const [wordCount, setWordCount] = useState({ words: 0, chars: 0, lines: 1, paragraphs: 0 });
   const saveTimeoutRef = useRef(null);
   const isRemoteUpdate = useRef(false);
 
@@ -169,6 +281,12 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
     onUpdate: ({ editor }) => {
       if (isRemoteUpdate.current) return;
       const html = editor.getHTML();
+      const text = editor.getText();
+      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+      const chars = text.length;
+      const lines = text.split('\n').length;
+      const paragraphs = editor.getJSON().content?.filter(n => n.type === 'paragraph' && n.content?.length > 0).length || 0;
+      setWordCount({ words, chars, lines, paragraphs });
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       setSyncStatus('saving');
       saveTimeoutRef.current = setTimeout(async () => {
@@ -198,6 +316,12 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
         isRemoteUpdate.current = true;
         editor.commands.setContent(data.content);
         isRemoteUpdate.current = false;
+        const text = editor.getText();
+        const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        const chars = text.length;
+        const lines = text.split('\n').length;
+        const paragraphs = editor.getJSON().content?.filter(n => n.type === 'paragraph' && n.content?.length > 0).length || 0;
+        setWordCount({ words, chars, lines, paragraphs });
       }
       setSyncStatus('synced');
       setLastSynced(new Date());
@@ -251,6 +375,16 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
         {showToolbar && <ToolbarTableActions editor={editor} />}
         <div style={{ minHeight: '65vh', padding: '1rem 1.25rem' }}>
           <EditorContent editor={editor} />
+        </div>
+        {/* Status bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.35rem 1rem', borderTop: '1px solid var(--border)', background: 'var(--input-bg)', fontSize: '0.68rem', color: 'var(--text-muted)', flexWrap: 'wrap', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', gap: '0.8rem' }}>
+            <span>{wordCount.words.toLocaleString()} {wordCount.words === 1 ? 'word' : 'words'}</span>
+            <span>{wordCount.chars.toLocaleString()} chars</span>
+            <span>{wordCount.paragraphs} {wordCount.paragraphs === 1 ? 'paragraph' : 'paragraphs'}</span>
+            <span>{wordCount.lines} {wordCount.lines === 1 ? 'line' : 'lines'}</span>
+          </div>
+          <ExportDropdown editor={editor} title={title} />
         </div>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import * as Sentry from '@sentry/react';
 import { logAnalyticsEvent } from './firebase';
 import './App.css';
 import SmartTextArea from './SmartTextArea';
@@ -53,6 +54,11 @@ function App() {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  React.useEffect(() => {
+    logAnalyticsEvent('page_view', { page_path: location.pathname, page_title: document.title });
+    Sentry.getCurrentScope().setTag('page', location.pathname);
+  }, [location.pathname]);
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
