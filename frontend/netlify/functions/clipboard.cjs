@@ -1,16 +1,20 @@
 const admin = require('firebase-admin');
-const { corsHeaders, verifyApiKey, jsonRes, errorRes } = require('./auth');
 
-const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
-  process.env.FIREBASE_SERVICE_ACCOUNT || '{}'
-);
-
-if (admin.apps.length === 0) {
-  admin.initializeApp({
-    credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT),
-  });
+const ALLOWED_ORIGINS = ['https://amliaes.netlify.app', 'http://localhost:5173', 'http://localhost:8888'];
+function getHeaders(event) {
+  const origin = (event && event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  return {
+    'Access-Control-Allow-Origin': ALLOWED_ORIGINS.indexOf(origin) !== -1 ? origin : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-API-Key',
+    'Content-Type': 'application/json',
+  };
 }
+function ok(event, data, status) { return { statusCode: status || 200, headers: getHeaders(event), body: JSON.stringify(data) }; }
+function err(event, status, msg) { return ok(event, { error: msg || 'Internal server error' }, status || 500); }
 
+const FIREBASE_SERVICE_ACCOUNT = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+if (admin.apps.length === 0) { admin.initializeApp({ credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT) }); }
 const db = admin.firestore();
 
 function generateId() {
@@ -21,37 +25,20 @@ function generateId() {
 }
 
 const handler = async (event) => {
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: corsHeaders(event), body: '' };
-  }
-
-  if (!verifyApiKey(event)) {
-    return errorRes(event, 401, 'Unauthorized');
-  }
-
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: getHeaders(event), body: '' };
   try {
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};
-
       if (params.id) {
         const doc = await db.collection('clipboards').doc(params.id).get();
-        if (!doc.exists) {
-          return errorRes(event, 404, 'Clipboard not found');
-        }
-        return jsonRes(event, { id: doc.id, ...doc.data() });
+        if (!doc.exists) return err(event, 404, 'Clipboard not found');
+        return ok(event, { id: doc.id, ...doc.data() });
       }
-
-      const snapshot = await db.collection('clipboards')
-        .orderBy('updatedAt', 'desc')
-        .limit(50)
-        .get();
-      const clipboards = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-      return jsonRes(event, { clipboards });
+      const snapshot = await db.collection('clipboards').orderBy('updatedAt', 'desc').limit(50).get();
+      return ok(event, { clipboards: snapshot.docs.map(d => ({ id: d.id, ...d.data() })) });
     }
-
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
-
       if (body.action === 'create') {
         let id = generateId();
         let attempts = 0;
@@ -61,48 +48,27 @@ const handler = async (event) => {
           id = generateId();
           attempts++;
         }
-
-        const data = {
-          title: body.title || 'Untitled Clipboard',
-          content: '',
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          version: 0,
-        };
-
+        const data = { title: body.title || 'Untitled Clipboard', content: '', createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), version: 0 };
         await db.collection('clipboards').doc(id).set(data);
-        return jsonRes(event, { id, ...data });
+        return ok(event, { id, ...data });
       }
-
       if (body.action === 'update' && body.id) {
-        const updateData = {
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          version: admin.firestore.FieldValue.increment(1),
-        };
+        const updateData = { updatedAt: admin.firestore.FieldValue.serverTimestamp(), version: admin.firestore.FieldValue.increment(1) };
         if (body.title !== undefined) updateData.title = body.title;
         if (body.content !== undefined) updateData.content = body.content;
-
         await db.collection('clipboards').doc(body.id).update(updateData);
-        return jsonRes(event, { ok: true });
+        return ok(event, { ok: true });
       }
-
-      return errorRes(event, 400, 'Invalid action');
+      return err(event, 400, 'Invalid action');
     }
-
     if (event.httpMethod === 'DELETE') {
       const body = JSON.parse(event.body || '{}');
-      if (!body.id) {
-        return errorRes(event, 400, 'id is required');
-      }
+      if (!body.id) return err(event, 400, 'id is required');
       await db.collection('clipboards').doc(body.id).delete();
-      return jsonRes(event, { ok: true });
+      return ok(event, { ok: true });
     }
-
-    return errorRes(event, 405, 'Method not allowed');
-  } catch (err) {
-    console.error('Clipboard function error:', err);
-    return errorRes(event, 500, 'Internal server error');
-  }
+    return err(event, 405, 'Method not allowed');
+  } catch (e) { console.error('clipboard error:', e); return err(event, 500, 'Internal server error'); }
 };
 
 module.exports = { handler };
