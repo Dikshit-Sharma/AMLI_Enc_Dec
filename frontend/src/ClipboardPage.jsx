@@ -159,7 +159,6 @@ function htmlToMarkdown(html) {
       case 'a': return `[${children}](${node.getAttribute('href') || ''})`;
       case 'img': return `![${node.getAttribute('alt') || ''}](${node.getAttribute('src') || ''})`;
       case 'hr': return '---\n\n';
-      case 'br': return '\n';
       case 'ul': return children;
       case 'ol': return children;
       case 'li': {
@@ -199,33 +198,41 @@ function ExportDropdown({ editor, title }) {
 
   if (!editor) return null;
 
-  const html = editor.getHTML();
-
   const exportHTML = () => {
-    const full = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title || 'Clipboard'}</title><style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#1f2937}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d1d5db;padding:8px 12px;text-align:left}th{background:#f3f4f6}pre{background:#1e293b;color:#e2e8f0;padding:1rem;border-radius:6px;overflow-x:auto}code{background:#f3f4f6;padding:2px 4px;border-radius:3px;font-size:0.9em}blockquote{border-left:3px solid #6366f1;padding-left:1rem;color:#6b7280;font-style:italic}</style></head><body>${html}</body></html>`;
-    const blob = new Blob([full], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `${title || 'clipboard'}.html`; a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const html = editor.getHTML();
+      const full = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title || 'Clipboard'}</title><style>body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#1f2937}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d1d5db;padding:8px 12px;text-align:left}th{background:#f3f4f6}pre{background:#1e293b;color:#e2e8f0;padding:1rem;border-radius:6px;overflow-x:auto}code{background:#f3f4f6;padding:2px 4px;border-radius:3px;font-size:0.9em}blockquote{border-left:3px solid #6366f1;padding-left:1rem;color:#6b7280;font-style:italic}</style></head><body>${html}</body></html>`;
+      const blob = new Blob([full], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${title || 'clipboard'}.html`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { console.error('Export HTML failed:', e); }
     setOpen(false);
   };
 
   const exportMarkdown = () => {
-    const md = htmlToMarkdown(html);
-    const blob = new Blob([md], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `${title || 'clipboard'}.md`; a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const html = editor.getHTML();
+      const md = htmlToMarkdown(html);
+      const blob = new Blob([md], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${title || 'clipboard'}.md`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { console.error('Export Markdown failed:', e); }
     setOpen(false);
   };
 
   const exportPrint = () => {
-    const win = window.open('', '_blank');
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title || 'Clipboard'}</title><style>@media print{body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:1rem;line-height:1.6;color:#000}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}th{background:#f5f5f5}pre{background:#f5f5f5;padding:0.75rem;border-radius:4px;overflow-x:auto;font-size:0.85rem}blockquote{border-left:3px solid #6366f1;padding-left:1rem;color:#555;font-style:italic}}</style></head><body>${html}</body></html>`);
-    win.document.close();
-    win.print();
+    try {
+      const html = editor.getHTML();
+      const win = window.open('', '_blank');
+      if (!win) { alert('Pop-up blocked. Please allow pop-ups for this site.'); setOpen(false); return; }
+      win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title || 'Clipboard'}</title><style>@media print{body{font-family:system-ui,-apple-system,sans-serif;max-width:800px;margin:0 auto;padding:1rem;line-height:1.6;color:#000}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:6px 10px;text-align:left}th{background:#f5f5f5}pre{background:#f5f5f5;padding:0.75rem;border-radius:4px;overflow-x:auto;font-size:0.85rem}blockquote{border-left:3px solid #6366f1;padding-left:1rem;color:#555;font-style:italic}}</style></head><body>${html}</body></html>`);
+      win.document.close();
+      win.print();
+    } catch (e) { console.error('Print failed:', e); }
     setOpen(false);
   };
 
@@ -255,7 +262,7 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ codeBlock: false }),
+      StarterKit.configure({ codeBlock: false, strike: false, link: false, underline: false }),
       Underline,
       Strike,
       Subscript,
@@ -280,28 +287,32 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
     content: '',
     onUpdate: ({ editor }) => {
       if (isRemoteUpdate.current) return;
-      const html = editor.getHTML();
-      const text = editor.getText();
-      const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-      const chars = text.length;
-      const lines = text.split('\n').length;
-      const paragraphs = editor.getJSON().content?.filter(n => n.type === 'paragraph' && n.content?.length > 0).length || 0;
-      setWordCount({ words, chars, lines, paragraphs });
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      setSyncStatus('saving');
-      saveTimeoutRef.current = setTimeout(async () => {
-        try {
-          await setDoc(doc(db, 'clipboards', clipboardId), {
-            content: html,
-            updatedAt: serverTimestamp(),
-          }, { merge: true });
-          setSyncStatus('synced');
-          setLastSynced(new Date());
-        } catch (err) {
-          console.error('Save failed:', err);
-          setSyncStatus('error');
-        }
-      }, 800);
+      try {
+        const html = editor.getHTML();
+        const text = editor.getText();
+        const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+        const chars = text.length;
+        const lines = text.split('\n').length;
+        const paragraphs = editor.getJSON().content?.filter(n => n.type === 'paragraph' && n.content?.length > 0).length || 0;
+        setWordCount({ words, chars, lines, paragraphs });
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        setSyncStatus('saving');
+        saveTimeoutRef.current = setTimeout(async () => {
+          try {
+            await setDoc(doc(db, 'clipboards', clipboardId), {
+              content: html,
+              updatedAt: serverTimestamp(),
+            }, { merge: true });
+            setSyncStatus('synced');
+            setLastSynced(new Date());
+          } catch (err) {
+            console.error('Save failed:', err);
+            setSyncStatus('error');
+          }
+        }, 800);
+      } catch (e) {
+        // editor not fully initialized yet, skip this update
+      }
     },
   });
 
@@ -316,12 +327,14 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
         isRemoteUpdate.current = true;
         editor.commands.setContent(data.content);
         isRemoteUpdate.current = false;
-        const text = editor.getText();
-        const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-        const chars = text.length;
-        const lines = text.split('\n').length;
-        const paragraphs = editor.getJSON().content?.filter(n => n.type === 'paragraph' && n.content?.length > 0).length || 0;
-        setWordCount({ words, chars, lines, paragraphs });
+        try {
+          const text = editor.getText();
+          const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+          const chars = text.length;
+          const lines = text.split('\n').length;
+          const paragraphs = editor.getJSON().content?.filter(n => n.type === 'paragraph' && n.content?.length > 0).length || 0;
+          setWordCount({ words, chars, lines, paragraphs });
+        } catch (e) { /* editor not ready yet */ }
       }
       setSyncStatus('synced');
       setLastSynced(new Date());
