@@ -54,7 +54,7 @@ const ToolbarBtn = ({ active, onClick, children, title }) => (
 
 const Separator = () => <div style={{ width: '1px', background: 'var(--border)', margin: '0 2px', alignSelf: 'stretch' }} />;
 
-function EditorToolbar({ editor }) {
+function EditorToolbar({ editor, title }) {
   if (!editor) return null;
 
   const addTable = () => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
@@ -111,6 +111,8 @@ function EditorToolbar({ editor }) {
       <Separator />
       <ToolbarBtn active={false} onClick={() => editor.chain().focus().undo().run()} title="Undo (Ctrl+Z)">↶</ToolbarBtn>
       <ToolbarBtn active={false} onClick={() => editor.chain().focus().redo().run()} title="Redo (Ctrl+Shift+Z)">↷</ToolbarBtn>
+      <Separator />
+      <ExportDropdown editor={editor} title={title} />
     </div>
   );
 }
@@ -390,7 +392,7 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
             <button className="theme-toggle" onClick={toggleTheme} style={{ padding: '0.25rem 0.45rem', fontSize: '0.82rem' }}>{theme === 'light' ? '🌙' : '☀️'}</button>
           </div>
         </div>
-        {showToolbar && <EditorToolbar editor={editor} />}
+        {showToolbar && <EditorToolbar editor={editor} title={title} />}
         {showToolbar && <ToolbarTableActions editor={editor} />}
         <div style={{ minHeight: '65vh', padding: '1rem 1.25rem' }}>
           <EditorContent editor={editor} />
@@ -403,7 +405,6 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
             <span>{wordCount.paragraphs} {wordCount.paragraphs === 1 ? 'paragraph' : 'paragraphs'}</span>
             <span>{wordCount.lines} {wordCount.lines === 1 ? 'line' : 'lines'}</span>
           </div>
-          <ExportDropdown editor={editor} title={title} />
         </div>
       </div>
     </div>
