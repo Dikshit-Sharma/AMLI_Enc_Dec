@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { corsHeaders, verifyApiKey, jsonRes, errorRes } = require('./auth');
 
 const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
   process.env.FIREBASE_SERVICE_ACCOUNT || '{}'
@@ -12,15 +13,19 @@ if (admin.apps.length === 0) {
 
 const db = admin.firestore();
 
-const handler = async (event) => {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
+function maskValue(val) {
+  if (!val || typeof val !== 'string') return val;
+  if (val.length <= 8) return '••••••••';
+  return val.slice(0, 4) + '••••' + val.slice(-4);
+}
 
+const handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers, body: '' };
+    return { statusCode: 204, headers: corsHeaders(event), body: '' };
+  }
+
+  if (!verifyApiKey(event)) {
+    return errorRes(event, 401, 'Unauthorized');
   }
 
   try {
@@ -37,7 +42,13 @@ const handler = async (event) => {
         const data = doc.data();
         return {
           id: doc.id,
-          ...data,
+          soaAppId: data.soaAppId,
+          env: data.env,
+          apiName: data.apiName,
+          xApiKey: maskValue(data.xApiKey),
+          clientId: maskValue(data.clientId),
+          clientSecret: maskValue(data.clientSecret),
+          aesKey: maskValue(data.aesKey),
           timestamp: data.timestamp?.toDate?.().toISOString() ?? null,
         };
       });
@@ -52,21 +63,7 @@ const handler = async (event) => {
         return b.timestamp.localeCompare(a.timestamp);
       });
 
-      const body = JSON.stringify({ credentials });
-      console.log('credentials size:', body.length, 'count:', credentials.length);
-      if (body.length > 5_000_000) {
-        console.error('credentials payload too large:', body.length);
-        return {
-          statusCode: 200,
-          headers: { ...headers, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ credentials: [], _truncated: true }),
-        };
-      }
-      return {
-        statusCode: 200,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body,
-      };
+      return jsonRes(event, { credentials });
     }
 
     if (event.httpMethod === 'POST') {
@@ -74,11 +71,7 @@ const handler = async (event) => {
         JSON.parse(event.body || '{}');
 
       if (!soaAppId || !env) {
-        return {
-          statusCode: 400,
-          headers,
-          body: JSON.stringify({ error: 'soaAppId and env are required' }),
-        };
+        return errorRes(event, 400, 'soaAppId and env are required');
       }
 
       const ref = await db.collection('credentials').add({
@@ -92,45 +85,24 @@ const handler = async (event) => {
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      return {
-        statusCode: 200,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: ref.id }),
-      };
+      return jsonRes(event, { id: ref.id });
     }
 
     if (event.httpMethod === 'DELETE') {
       const { id } = JSON.parse(event.body || '{}');
 
       if (!id) {
-        return {
-          statusCode: 400,
-          headers,
-          body: JSON.stringify({ error: 'id is required' }),
-        };
+        return errorRes(event, 400, 'id is required');
       }
 
       await db.collection('credentials').doc(id).delete();
-
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ ok: true }),
-      };
+      return jsonRes(event, { ok: true });
     }
 
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    };
+    return errorRes(event, 405, 'Method not allowed');
   } catch (err) {
     console.error('Function error:', err);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: err.message }),
-    };
+    return errorRes(event, 500, 'Internal server error');
   }
 };
 

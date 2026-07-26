@@ -112,8 +112,6 @@ export default function CredentialsPage({ theme, toggleTheme }) {
   const [copiedId, setCopiedId] = useState(null);
   const [credSearch, setCredSearch] = useState('');
 
-  const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
-
   const loadAll = async () => {
     setLoading(true);
     try {
@@ -143,14 +141,25 @@ export default function CredentialsPage({ theme, toggleTheme }) {
     if (isAuthenticated) loadAll();
   }, [isAuthenticated]);
 
-  const handlePasswordSubmit = (e) => {
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-    if (password === LIB_PASSWORD) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('cred_auth', 'true');
-      setPassError('');
-    } else {
-      setPassError('Incorrect password. Please try again.');
+    setPassError('');
+    try {
+      const res = await fetch('/api/auth-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('cred_auth', 'true');
+        setPassError('');
+      } else {
+        setPassError('Incorrect password. Please try again.');
+      }
+    } catch (err) {
+      setPassError('Authentication failed. Please try again.');
     }
   };
 

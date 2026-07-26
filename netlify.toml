@@ -40,6 +40,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/groq-proxy"
+  to = "/.netlify/functions/groq-proxy"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth-proxy"
+  to = "/.netlify/functions/auth-proxy"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200

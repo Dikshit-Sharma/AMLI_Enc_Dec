@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { corsHeaders, verifyApiKey, jsonRes, errorRes } = require('./auth');
 
 const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
   process.env.FIREBASE_SERVICE_ACCOUNT || '{}'
@@ -11,20 +12,6 @@ if (admin.apps.length === 0) {
 }
 
 const db = admin.firestore();
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
-
-function jsonRes(data, status = 200) {
-  return {
-    statusCode: status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  };
-}
 
 const SUMMARY_FIELDS = ['apiName', 'jiraTicket', 'env', 'encryption', 'aesKey', 'algo', 'numRequests', 'timestamp'];
 
@@ -138,16 +125,20 @@ const handler = async (event) => {
   const params = event.queryStringParameters || {};
 
   if (method === 'OPTIONS') {
-    return { statusCode: 204, headers: CORS, body: '' };
+    return { statusCode: 204, headers: corsHeaders(event), body: '' };
+  }
+
+  if (!verifyApiKey(event)) {
+    return errorRes(event, 401, 'Unauthorized');
   }
 
   try {
     if (method === 'GET') {
       if (params.id) {
         const doc = await db.collection('artifacts').doc(params.id).get();
-        if (!doc.exists) return jsonRes({ error: 'Not found' }, 404);
+        if (!doc.exists) return jsonRes(event, { error: 'Not found' }, 404);
         const data = doc.data();
-        return jsonRes({
+        return jsonRes(event, {
           artifact: {
             id: doc.id,
             ...data,
@@ -220,17 +211,7 @@ const handler = async (event) => {
           .slice(0, 20);
         const sampledCount = snap.docs.length;
 
-        const body = JSON.stringify({ total, envCounts, recent, activity, dailyVelocity, velocity, topApis, sampledCount });
-        console.log('stats size:', body.length, 'sampled:', sampledCount);
-        if (body.length > 5_000_000) {
-          console.error('stats payload still too large:', body.length);
-          return jsonRes({
-            total, envCounts, recent: [],
-            activity: [], dailyVelocity: [], velocity: [], topApis: [],
-            sampledCount, _truncated: true,
-          });
-        }
-        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
+        return jsonRes(event, { total, envCounts, recent, activity, dailyVelocity, velocity, topApis, sampledCount });
       }
 
       if (params['extract-credentials'] === '1') {
@@ -249,13 +230,7 @@ const handler = async (event) => {
         for (const env of Object.keys(grouped)) {
           grouped[env] = deduplicate(grouped[env]);
         }
-        const credBody = JSON.stringify({ credentials: grouped, totalArtifacts: snapshot.docs.length });
-        console.log('extract-credentials size:', credBody.length);
-        if (credBody.length > 5_000_000) {
-          console.error('extract-credentials payload too large:', credBody.length);
-          return jsonRes({ credentials: { DEV: [], UAT: [], PROD: [] }, totalArtifacts: 0, _truncated: true });
-        }
-        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: credBody };
+        return jsonRes(event, { credentials: grouped, totalArtifacts: snapshot.docs.length });
       }
 
       const search = params.search?.toLowerCase();
@@ -284,13 +259,7 @@ const handler = async (event) => {
           a.jiraTicket?.toLowerCase().includes(search) ||
           a.env?.toLowerCase().includes(search)
         );
-        const body = JSON.stringify({ artifacts, nextCursor: null, total });
-        console.log('search size:', body.length, 'count:', artifacts.length);
-        if (body.length > 5_000_000) {
-          console.error('search payload too large:', body.length);
-          return jsonRes({ artifacts: [], nextCursor: null, total, _truncated: true });
-        }
-        return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body };
+        return jsonRes(event, { artifacts, nextCursor: null, total });
       }
 
       let q = db.collection('artifacts').select(...SUMMARY_FIELDS).orderBy('timestamp', 'desc').limit(pageSize);
@@ -306,19 +275,13 @@ const handler = async (event) => {
               .data().timestamp?.toDate?.()?.toISOString() ?? null
           : null;
 
-      const listBody = JSON.stringify({ artifacts, nextCursor, total });
-      console.log('list size:', listBody.length, 'count:', artifacts.length);
-      if (listBody.length > 5_000_000) {
-        console.error('list payload too large:', listBody.length);
-        return jsonRes({ artifacts: [], nextCursor: null, total: 0, _truncated: true });
-      }
-      return { statusCode: 200, headers: { ...CORS, 'Content-Type': 'application/json' }, body: listBody };
+      return jsonRes(event, { artifacts, nextCursor, total });
     }
 
     if (method === 'POST') {
       const { artifacts } = JSON.parse(event.body || '{}');
       if (!Array.isArray(artifacts) || artifacts.length === 0) {
-        return jsonRes({ error: 'artifacts array is required' }, 400);
+        return errorRes(event, 400, 'artifacts array is required');
       }
 
       const ids = [];
@@ -330,13 +293,13 @@ const handler = async (event) => {
         ids.push(ref.id);
       }
 
-      return jsonRes({ ids, count: ids.length });
+      return jsonRes(event, { ids, count: ids.length });
     }
 
-    return jsonRes({ error: 'Method not allowed' }, 405);
+    return errorRes(event, 405, 'Method not allowed');
   } catch (err) {
     console.error('Function error:', err);
-    return jsonRes({ error: err.message }, 500);
+    return errorRes(event, 500, 'Internal server error');
   }
 };
 

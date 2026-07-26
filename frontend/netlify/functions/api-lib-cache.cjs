@@ -1,4 +1,5 @@
 const admin = require('firebase-admin');
+const { corsHeaders, verifyApiKey, jsonRes, errorRes } = require('./auth');
 
 const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
   process.env.FIREBASE_SERVICE_ACCOUNT || '{}'
@@ -13,14 +14,12 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 
 const handler = async (event) => {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
-
   if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers, body: '' };
+    return { statusCode: 204, headers: corsHeaders(event), body: '' };
+  }
+
+  if (!verifyApiKey(event)) {
+    return errorRes(event, 401, 'Unauthorized');
   }
 
   try {
@@ -28,7 +27,7 @@ const handler = async (event) => {
       const params = event.queryStringParameters || {};
       const { tokenHash, baseUrl } = params;
       if (!tokenHash || !baseUrl) {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: 'tokenHash and baseUrl required' }) };
+        return errorRes(event, 400, 'tokenHash and baseUrl required');
       }
 
       const snap = await db.collection('api-lib-cache')
@@ -47,18 +46,14 @@ const handler = async (event) => {
         });
       });
 
-      return {
-        statusCode: 200,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projects }),
-      };
+      return jsonRes(event, { projects });
     }
 
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
       const { tokenHash, baseUrl, projects } = body;
       if (!tokenHash || !baseUrl || !Array.isArray(projects)) {
-        return { statusCode: 400, headers, body: JSON.stringify({ error: 'tokenHash, baseUrl, and projects array required' }) };
+        return errorRes(event, 400, 'tokenHash, baseUrl, and projects array required');
       }
 
       const batch = db.batch();
@@ -77,25 +72,13 @@ const handler = async (event) => {
       }
       await batch.commit();
 
-      return {
-        statusCode: 200,
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ok: true, count: projects.length }),
-      };
+      return jsonRes(event, { ok: true, count: projects.length });
     }
 
-    return {
-      statusCode: 405,
-      headers,
-      body: JSON.stringify({ error: 'Method not allowed' }),
-    };
+    return errorRes(event, 405, 'Method not allowed');
   } catch (err) {
     console.error('Function error:', err);
-    return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: err.message }),
-    };
+    return errorRes(event, 500, 'Internal server error');
   }
 };
 

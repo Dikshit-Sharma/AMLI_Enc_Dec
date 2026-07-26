@@ -1,38 +1,56 @@
-/* eslint-env node */
-// Proxy for GitLab API — avoids CORS/Private Network Access restrictions
-// when the GitLab instance is on an internal/corporate network.
+const { corsHeaders, verifyApiKey, errorRes } = require('./auth');
+
+const ALLOWED_GITLAB_HOSTS = [
+  'gitlab.com',
+  'gitlab.nvidia.com',
+  'gitlab.internal',
+];
+
+function isAllowedUrl(url) {
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    const hostname = parsed.hostname.toLowerCase();
+    return ALLOWED_GITLAB_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h));
+  } catch {
+    return false;
+  }
+}
 
 const handler = async (event) => {
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
-
   if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: corsHeaders, body: '' };
+    return { statusCode: 204, headers: corsHeaders(event), body: '' };
+  }
+
+  if (!verifyApiKey(event)) {
+    return errorRes(event, 401, 'Unauthorized');
   }
 
   if (event.httpMethod === 'GET') {
     return {
       statusCode: 200,
-      headers: corsHeaders,
+      headers: corsHeaders(event),
       body: JSON.stringify({ ok: true, message: 'gitlab-proxy is alive' }),
     };
   }
 
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ error: 'Method not allowed' }) };
+    return errorRes(event, 405, 'Method not allowed');
   }
 
   let body;
   try { body = JSON.parse(event.body || '{}'); } catch {
-    return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid JSON body' }) };
+    return errorRes(event, 400, 'Invalid JSON body');
   }
 
   const { target, token } = body;
   if (!target || !token) {
-    return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing "target" or "token"' }) };
+    return errorRes(event, 400, 'Missing "target" or "token"');
+  }
+
+  if (!isAllowedUrl(target)) {
+    console.error('GitLab proxy: blocked URL:', target);
+    return errorRes(event, 403, 'Target URL not allowed');
   }
 
   try {
@@ -46,15 +64,15 @@ const handler = async (event) => {
 
     return {
       statusCode: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      headers: { ...corsHeaders(event), 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: res.status, data }),
     };
   } catch (err) {
     return {
       statusCode: 502,
-      headers: corsHeaders,
+      headers: corsHeaders(event),
       body: JSON.stringify({
-        error: err.name === 'AbortError' ? 'Request timed out (25s). GitLab might be unreachable from Netlify cloud.' : err.message,
+        error: err.name === 'AbortError' ? 'Request timed out' : 'Upstream request failed',
       }),
     };
   }

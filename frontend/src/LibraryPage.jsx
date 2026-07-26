@@ -24,7 +24,6 @@ const LibraryPage = ({ theme, toggleTheme }) => {
   const [totalCount, setTotalCount] = useState(0);
   const [fullArtifacts, setFullArtifacts] = useState({});
   const [loadingFull, setLoadingFull] = useState(null);
-  const LIB_PASSWORD = import.meta.env.VITE_LIBRARY_PASSWORD || "*******************";
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -34,7 +33,6 @@ const LibraryPage = ({ theme, toggleTheme }) => {
         const list = res.artifacts || [];
         setAllArtifacts(list);
         if (res.total !== undefined) setTotalCount(res.total);
-        console.log(`Library: loaded ${list.length} artifacts in summary mode`);
       })
       .catch(err => console.error('Failed to load artifacts:', err))
       .finally(() => setLoading(false));
@@ -56,14 +54,25 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     }
   };
 
-  const handlePasswordSubmit = (e) => {
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
-    if (password === LIB_PASSWORD) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('lib_auth', 'true');
-      setPassError('');
-    } else {
-      setPassError('Incorrect password. Please try again.');
+    setPassError('');
+    try {
+      const res = await fetch('/api/auth-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('lib_auth', 'true');
+        setPassError('');
+      } else {
+        setPassError('Incorrect password. Please try again.');
+      }
+    } catch (err) {
+      setPassError('Authentication failed. Please try again.');
     }
   };
 
