@@ -267,6 +267,7 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
   const [copied, setCopied] = useState(false);
   const [showToolbar, setShowToolbar] = useState(true);
   const [wordCount, setWordCount] = useState({ words: 0, chars: 0, lines: 1, paragraphs: 0 });
+  const [deleting, setDeleting] = useState(false);
   const saveTimeoutRef = useRef(null);
   const isRemoteUpdate = useRef(false);
   const lastVersionRef = useRef(0);
@@ -379,6 +380,25 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const deleteClipboard = async () => {
+    if (!window.confirm('Delete this clipboard permanently?')) return;
+    setDeleting(true);
+    try {
+      const res = await fetch('/api/clipboard', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: clipboardId }),
+      });
+      if (!res.ok) throw new Error('Delete failed');
+      logAnalyticsEvent('clipboard_delete', { clipboard_id: clipboardId, clipboard_title: title });
+      const saved = JSON.parse(localStorage.getItem('clipboard_recent') || '[]');
+      localStorage.setItem('clipboard_recent', JSON.stringify(saved.filter(s => s.id !== clipboardId)));
+      navigate('/clipboard');
+    } catch (err) {
+      alert('Failed to delete clipboard.');
+    } finally { setDeleting(false); }
+  };
+
   const statusColor = syncStatus === 'synced' ? 'var(--success, #22c55e)' : syncStatus === 'saving' ? '#f59e0b' : syncStatus === 'error' ? '#ef4444' : '#94a3b8';
   const statusText = syncStatus === 'synced' ? 'Synced' : syncStatus === 'saving' ? 'Saving...' : syncStatus === 'error' ? 'Error' : 'Connecting...';
 
@@ -399,6 +419,7 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
             {lastSynced && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{lastSynced.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
             <button onClick={copyId} style={{ padding: '2px 8px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'monospace' }}>{copied ? '✓' : clipboardId}</button>
             <button onClick={() => setShowToolbar(v => !v)} title="Toggle toolbar" style={{ padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)', color: 'var(--text)', cursor: 'pointer', fontSize: '0.75rem' }}>{showToolbar ? '▾' : '▸'} T</button>
+            <button onClick={deleteClipboard} disabled={deleting} title="Delete clipboard" style={{ padding: '2px 6px', borderRadius: '4px', border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600, opacity: deleting ? 0.5 : 1, transition: 'all 0.15s' }} onMouseEnter={(e) => { e.target.style.background = '#ef4444'; e.target.style.color = '#fff'; }} onMouseLeave={(e) => { e.target.style.background = '#fef2f2'; e.target.style.color = '#dc2626'; }}>🗑 Delete</button>
             <button className="theme-toggle" onClick={toggleTheme} style={{ padding: '0.25rem 0.45rem', fontSize: '0.82rem' }}>{theme === 'light' ? '🌙' : '☀️'}</button>
           </div>
         </div>

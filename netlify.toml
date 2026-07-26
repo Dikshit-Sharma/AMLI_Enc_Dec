@@ -35,6 +35,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/clipboard-report"
+  to = "/.netlify/functions/clipboard-report"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
@@ -44,4 +49,6 @@
     schedule = "30 3 * * MON"
     # Required env vars (set in Netlify UI): SENDGRID_API_KEY, DIGEST_RECIPIENT, DIGEST_FROM, GROQ_API_KEY
   [functions."bsa-report"]
+    schedule = "30 3 * * MON"
+  [functions."clipboard-report"]
     schedule = "30 3 * * MON"
