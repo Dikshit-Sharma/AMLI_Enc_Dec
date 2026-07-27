@@ -1,10 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { ConvexProvider, ConvexReactClient } from 'convex/react'
 import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
+
+const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
 
 const sentryDsn = import.meta.env.VITE_SENTRY_DSN;
 if (sentryDsn) {
@@ -25,7 +28,9 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>
       <BrowserRouter>
-        <App />
+        <ConvexProvider client={convex}>
+          <App />
+        </ConvexProvider>
       </BrowserRouter>
     </ErrorBoundary>
   </StrictMode>,

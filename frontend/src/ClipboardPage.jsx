@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../convex/_generated/api';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -25,13 +27,6 @@ import { common, createLowlight } from 'lowlight';
 import { logAnalyticsEvent } from './firebase';
 
 const lowlight = createLowlight(common);
-
-function genId() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let id = '';
-  for (let i = 0; i < 8; i++) id += chars.charAt(Math.floor(Math.random() * chars.length));
-  return id;
-}
 
 const btnActive = (active) => ({
   background: active ? 'var(--primary)' : 'transparent',
@@ -272,26 +267,23 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
   const saveTimeoutRef = useRef(null);
   const isRemoteUpdate = useRef(false);
   const lastVersionRef = useRef(0);
-  const pollRef = useRef(null);
   const titleDirtyRef = useRef(false);
+
+  const doc = useQuery(api.clipboards.get, { clipboardId });
+  const updateClipboard = useMutation(api.clipboards.update);
+  const removeClipboard = useMutation(api.clipboards.remove);
 
   const apiUpdate = useCallback(async (patch) => {
     try {
-      lastVersionRef.current += 1;
-      const res = await fetch('/api/clipboard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'update', id: clipboardId, ...patch }),
-      });
-      if (!res.ok) throw new Error('Update failed');
+      setSyncStatus('saving');
+      await updateClipboard({ clipboardId, ...patch });
       setSyncStatus('synced');
       setLastSynced(new Date());
     } catch (err) {
-      lastVersionRef.current = Math.max(0, lastVersionRef.current - 1);
       console.error('Save failed:', err);
       setSyncStatus('error');
     }
-  }, [clipboardId]);
+  }, [clipboardId, updateClipboard]);
 
   const updateWordCount = useCallback((ed) => {
     try {
@@ -343,39 +335,30 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
 
   useEffect(() => {
     if (!clipboardId || !editor) return;
-    let alive = true;
 
-    const fetchDoc = async () => {
-      try {
-        const res = await fetch(`/api/clipboard?id=${clipboardId}`);
-        if (res.status === 404) {
-          if (alive) { setNotFound(true); setSyncStatus('error'); clearInterval(pollRef.current); }
-          return;
-        }
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!alive) return;
-        setNotFound(false);
-        if (data.title !== undefined && !titleDirtyRef.current) setTitle(data.title);
-        if (data.content !== undefined && data.version > lastVersionRef.current) {
-          isRemoteUpdate.current = true;
-          editor.commands.setContent(data.content);
-          isRemoteUpdate.current = false;
-          updateWordCount(editor);
-        }
-        if (data.version !== undefined) lastVersionRef.current = Math.max(lastVersionRef.current, data.version);
-        setSyncStatus('synced');
-        setLastSynced(new Date());
-      } catch (err) {
-        console.error('Poll error:', err);
-        setSyncStatus('error');
-      }
-    };
+    if (doc === undefined) {
+      setSyncStatus('connecting');
+      return;
+    }
 
-    fetchDoc();
-    pollRef.current = setInterval(fetchDoc, 3000);
-    return () => { alive = false; clearInterval(pollRef.current); };
-  }, [clipboardId, editor, updateWordCount]);
+    if (doc === null) {
+      setNotFound(true);
+      setSyncStatus('error');
+      return;
+    }
+
+    setNotFound(false);
+    if (doc.title !== undefined && !titleDirtyRef.current) setTitle(doc.title);
+    if (doc.content !== undefined && doc.version > lastVersionRef.current) {
+      isRemoteUpdate.current = true;
+      editor.commands.setContent(doc.content);
+      isRemoteUpdate.current = false;
+      updateWordCount(editor);
+    }
+    if (doc.version !== undefined) lastVersionRef.current = Math.max(lastVersionRef.current, doc.version);
+    setSyncStatus('synced');
+    setLastSynced(new Date());
+  }, [doc, clipboardId, editor, updateWordCount]);
 
   const updateTitle = useCallback((newTitle) => {
     setTitle(newTitle);
@@ -397,12 +380,7 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
     if (!window.confirm('Delete this clipboard permanently?')) return;
     setDeleting(true);
     try {
-      const res = await fetch('/api/clipboard', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: clipboardId }),
-      });
-      if (!res.ok) throw new Error('Delete failed');
+      await removeClipboard({ clipboardId });
       logAnalyticsEvent('clipboard_delete', { clipboard_id: clipboardId, clipboard_title: title });
       const saved = JSON.parse(localStorage.getItem('clipboard_recent') || '[]');
       localStorage.setItem('clipboard_recent', JSON.stringify(saved.filter(s => s.id !== clipboardId)));
@@ -481,6 +459,7 @@ function HomePage({ theme, toggleTheme }) {
   const [error, setError] = useState('');
   const [recent, setRecent] = useState([]);
   const navigate = useNavigate();
+  const createClipboardMutation = useMutation(api.clipboards.create);
 
   useEffect(() => {
     const saved = JSON.parse(localStorage.getItem('clipboard_recent') || '[]');
@@ -491,14 +470,8 @@ function HomePage({ theme, toggleTheme }) {
     setCreating(true);
     setError('');
     try {
-      const res = await fetch('/api/clipboard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', title: 'Untitled Clipboard' }),
-      });
-      if (!res.ok) throw new Error('Failed to create');
-      const data = await res.json();
-      const cid = data.id || genId();
+      const result = await createClipboardMutation({ title: 'Untitled Clipboard' });
+      const cid = result.id;
       saveRecent(cid, 'Untitled Clipboard');
       logAnalyticsEvent('clipboard_create', { clipboard_id: cid });
       navigate(`/clipboard/${cid}`);
