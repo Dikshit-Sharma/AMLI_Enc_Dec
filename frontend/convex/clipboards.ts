@@ -57,6 +57,9 @@ export const update = mutation({
     content: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (args.content && args.content.length > 900000) {
+      throw new Error("Content too large (max ~900KB). Try trimming or splitting into smaller clipboards.");
+    }
     const doc = await ctx.db
       .query("clipboards")
       .withIndex("by_clipboardId", (q) => q.eq("clipboardId", args.clipboardId))

@@ -274,6 +274,10 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
   const removeClipboard = useMutation(api.clipboards.remove);
 
   const apiUpdate = useCallback(async (patch) => {
+    if (patch.content && patch.content.length > 900000) {
+      setSyncStatus('error');
+      return;
+    }
     try {
       setSyncStatus('saving');
       await updateClipboard({ clipboardId, ...patch });
@@ -447,6 +451,11 @@ function EditorPage({ clipboardId, theme, toggleTheme }) {
             <span>{wordCount.paragraphs} {wordCount.paragraphs === 1 ? 'paragraph' : 'paragraphs'}</span>
             <span>{wordCount.lines} {wordCount.lines === 1 ? 'line' : 'lines'}</span>
           </div>
+          {wordCount.chars > 700000 && (
+            <span style={{ color: wordCount.chars > 900000 ? '#ef4444' : '#f59e0b', fontWeight: 600 }}>
+              ⚠ {Math.round(wordCount.chars / 1000)}KB / 900KB limit
+            </span>
+          )}
         </div>
       </div>
     </div>
