@@ -93,7 +93,7 @@ export const getAll = query({
       version: doc.version,
       contentLength: doc.content.length,
       createdAt: doc._creationTime,
-      updatedAt: doc.updatedAt,
+      updatedAt: doc.updatedAt ?? null,
     }));
   },
 });
