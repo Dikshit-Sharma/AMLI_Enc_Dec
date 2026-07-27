@@ -283,14 +283,19 @@ const handler = async (event) => {
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const rows = await fetchConvexAll();
-    const clipboards = rows.map((r) => ({
-      id: r.id,
-      title: r.title || 'Untitled',
-      version: r.version || 0,
-      contentLength: r.contentLength || 0,
-      createdAt: r.createdAt ? new Date(r.createdAt) : null,
-      updatedAt: r.updatedAt ? new Date(r.updatedAt) : null,
-    }));
+    const clipboards = rows.map((r) => {
+      const created = r.createdAt ? new Date(r.createdAt) : null;
+      const updated = r.updatedAt ? new Date(r.updatedAt) : null;
+      const effectiveUpdated = updated || created;
+      return {
+        id: r.id,
+        title: r.title || 'Untitled',
+        version: r.version || 0,
+        contentLength: r.contentLength || 0,
+        createdAt: created,
+        updatedAt: effectiveUpdated,
+      };
+    });
 
     const total = clipboards.length;
     const newLast7Days = clipboards.filter(c => c.createdAt && c.createdAt >= weekAgo).length;
