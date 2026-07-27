@@ -7,5 +7,6 @@ export default defineSchema({
     title: v.string(),
     content: v.string(),
     version: v.number(),
+    updatedAt: v.number(),
   }).index("by_clipboardId", ["clipboardId"]),
 });

@@ -1,30 +1,22 @@
-const admin = require('firebase-admin');
-
-const FIREBASE_SERVICE_ACCOUNT = JSON.parse(
-  process.env.FIREBASE_SERVICE_ACCOUNT || '{}'
-);
-
-if (admin.apps.length === 0) {
-  admin.initializeApp({
-    credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT),
-  });
-}
-
-const db = admin.firestore();
-
+const CONVEX_URL = process.env.CONVEX_URL || process.env.VITE_CONVEX_URL || '';
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY || '';
 const DIGEST_FROM = process.env.DIGEST_FROM || 'dikshit.sharma2580@gmail.com';
 const DIGEST_RECIPIENT = process.env.DIGEST_RECIPIENT || 'dikshit.sharma2580@gmail.com';
 const GROQ_API_KEY = process.env.GROQ_API_KEY || process.env.VITE_GROQ_API_KEY || '';
 
-function formatTs(ts) {
-  if (!ts) return null;
-  try {
-    if (ts.seconds) return new Date(ts.seconds * 1000);
-    if (ts._seconds) return new Date(ts._seconds * 1000);
-    if (ts.toDate) return ts.toDate();
-    return new Date(ts);
-  } catch { return null; }
+async function fetchConvexAll() {
+  if (!CONVEX_URL) throw new Error('CONVEX_URL not set');
+  const res = await fetch(`${CONVEX_URL}/api/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'clipboards:getAll', args: {} }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Convex query failed ${res.status}: ${text}`);
+  }
+  const data = await res.json();
+  return data.value || [];
 }
 
 function daysSince(date) {
@@ -290,20 +282,15 @@ const handler = async (event) => {
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    const snapshot = await db.collection('clipboards').limit(5000).get();
-    const clipboards = snapshot.docs.map(doc => {
-      const data = doc.data();
-      const created = formatTs(data.createdAt);
-      const updated = formatTs(data.updatedAt);
-      return {
-        id: doc.id,
-        title: data.title || 'Untitled',
-        version: data.version || 0,
-        contentLength: (data.content || '').length,
-        createdAt: created,
-        updatedAt: updated,
-      };
-    });
+    const rows = await fetchConvexAll();
+    const clipboards = rows.map((r) => ({
+      id: r.id,
+      title: r.title || 'Untitled',
+      version: r.version || 0,
+      contentLength: r.contentLength || 0,
+      createdAt: r.createdAt ? new Date(r.createdAt) : null,
+      updatedAt: r.updatedAt ? new Date(r.updatedAt) : null,
+    }));
 
     const total = clipboards.length;
     const newLast7Days = clipboards.filter(c => c.createdAt && c.createdAt >= weekAgo).length;

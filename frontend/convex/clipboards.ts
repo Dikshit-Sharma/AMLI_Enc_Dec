@@ -44,6 +44,7 @@ export const create = mutation({
       title: args.title,
       content: "",
       version: 0,
+      updatedAt: Date.now(),
     });
     return { id };
   },
@@ -61,7 +62,7 @@ export const update = mutation({
       .withIndex("by_clipboardId", (q) => q.eq("clipboardId", args.clipboardId))
       .unique();
     if (!doc) throw new Error("Clipboard not found");
-    const patch: Record<string, unknown> = { version: doc.version + 1 };
+    const patch: Record<string, unknown> = { version: doc.version + 1, updatedAt: Date.now() };
     if (args.title !== undefined) patch.title = args.title;
     if (args.content !== undefined) patch.content = args.content;
     await ctx.db.patch(doc._id, patch);
@@ -79,5 +80,20 @@ export const remove = mutation({
     if (!doc) throw new Error("Clipboard not found");
     await ctx.db.delete(doc._id);
     return { ok: true };
+  },
+});
+
+export const getAll = query({
+  args: {},
+  handler: async (ctx) => {
+    const docs = await ctx.db.query("clipboards").take(5000);
+    return docs.map((doc) => ({
+      id: doc.clipboardId,
+      title: doc.title,
+      version: doc.version,
+      contentLength: doc.content.length,
+      createdAt: doc._creationTime,
+      updatedAt: doc.updatedAt,
+    }));
   },
 });
