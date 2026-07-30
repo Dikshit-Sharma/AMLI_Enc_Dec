@@ -1,5 +1,3 @@
-const admin = require('firebase-admin');
-
 const ALLOWED_ORIGINS = ['https://amliaes.netlify.app', 'http://localhost:5173', 'http://localhost:8888'];
 function getHeaders(event) {
   const origin = (event && event.headers && (event.headers.origin || event.headers.Origin)) || '';
@@ -13,15 +11,26 @@ function getHeaders(event) {
 function ok(event, data, status) { return { statusCode: status || 200, headers: getHeaders(event), body: JSON.stringify(data) }; }
 function err(event, status, msg) { return ok(event, { error: msg || 'Internal server error' }, status || 500); }
 
-const FIREBASE_SERVICE_ACCOUNT = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-if (admin.apps.length === 0) { admin.initializeApp({ credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT) }); }
-const db = admin.firestore();
+const CONVEX_URL = process.env.CONVEX_URL || process.env.VITE_CONVEX_URL || '';
 
-function generateId() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let id = '';
-  for (let i = 0; i < 8; i++) id += chars.charAt(Math.floor(Math.random() * chars.length));
-  return id;
+async function convexQuery(path, args) {
+  const res = await fetch(`${CONVEX_URL}/api/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, args }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error(`Convex query error ${res.status}: ${t}`); }
+  return (await res.json()).value;
+}
+
+async function convexMutation(path, args) {
+  const res = await fetch(`${CONVEX_URL}/api/mutation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, args }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error(`Convex mutation error ${res.status}: ${t}`); }
+  return (await res.json()).value;
 }
 
 const handler = async (event) => {
@@ -30,33 +39,24 @@ const handler = async (event) => {
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};
       if (params.id) {
-        const doc = await db.collection('clipboards').doc(params.id).get();
-        if (!doc.exists) return err(event, 404, 'Clipboard not found');
-        return ok(event, { id: doc.id, ...doc.data() });
+        const doc = await convexQuery('clipboards:get', { clipboardId: params.id });
+        if (!doc) return err(event, 404, 'Clipboard not found');
+        return ok(event, { id: doc.id, title: doc.title, content: doc.content, version: doc.version });
       }
-      const snapshot = await db.collection('clipboards').orderBy('updatedAt', 'desc').limit(50).get();
-      return ok(event, { clipboards: snapshot.docs.map(d => ({ id: d.id, ...d.data() })) });
+      const rows = await convexQuery('clipboards:getAll', {});
+      return ok(event, { clipboards: rows });
     }
     if (event.httpMethod === 'POST') {
       const body = JSON.parse(event.body || '{}');
       if (body.action === 'create') {
-        let id = generateId();
-        let attempts = 0;
-        while (attempts < 5) {
-          const exists = await db.collection('clipboards').doc(id).get();
-          if (!exists.exists) break;
-          id = generateId();
-          attempts++;
-        }
-        const data = { title: body.title || 'Untitled Clipboard', content: '', createdAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), version: 0 };
-        await db.collection('clipboards').doc(id).set(data);
-        return ok(event, { id, ...data });
+        const result = await convexMutation('clipboards:create', { title: body.title || 'Untitled Clipboard' });
+        return ok(event, { id: result.id, title: body.title || 'Untitled Clipboard', content: '', version: 0 });
       }
       if (body.action === 'update' && body.id) {
-        const updateData = { updatedAt: admin.firestore.FieldValue.serverTimestamp(), version: admin.firestore.FieldValue.increment(1) };
-        if (body.title !== undefined) updateData.title = body.title;
-        if (body.content !== undefined) updateData.content = body.content;
-        await db.collection('clipboards').doc(body.id).update(updateData);
+        const args = { clipboardId: body.id };
+        if (body.title !== undefined) args.title = body.title;
+        if (body.content !== undefined) args.content = body.content;
+        await convexMutation('clipboards:update', args);
         return ok(event, { ok: true });
       }
       return err(event, 400, 'Invalid action');
@@ -64,11 +64,11 @@ const handler = async (event) => {
     if (event.httpMethod === 'DELETE') {
       const body = JSON.parse(event.body || '{}');
       if (!body.id) return err(event, 400, 'id is required');
-      await db.collection('clipboards').doc(body.id).delete();
+      await convexMutation('clipboards:remove', { clipboardId: body.id });
       return ok(event, { ok: true });
     }
     return err(event, 405, 'Method not allowed');
-  } catch (e) { console.error('clipboard error:', e); return err(event, 500, 'Internal server error'); }
+  } catch (e) { console.error('clipboard proxy error:', e); return err(event, 500, e.message); }
 };
 
 module.exports = { handler };
