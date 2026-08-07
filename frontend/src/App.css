@@ -2577,6 +2577,195 @@ button:disabled {
   flex: none !important;
 }
 
+/* ─── Artifact Attachments ─── */
+.artifact-attachments {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border: 1px dashed var(--border);
+  border-radius: 1rem;
+  background: var(--output-bg);
+}
+
+.artifact-attachments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.artifact-attachments-header > span:first-child {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.artifact-attachments-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.artifact-attachments-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.artifact-img-dropzone {
+  flex: 1;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 1.25rem;
+  border: 2px dashed var(--border);
+  border-radius: 0.9rem;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.artifact-img-dropzone:hover,
+.artifact-img-dropzone:focus-visible {
+  border-color: var(--primary);
+  color: var(--text);
+  background: var(--primary-glow);
+  outline: none;
+}
+
+.artifact-img-dropzone-icon {
+  font-size: 1.6rem;
+}
+
+.artifact-img-dropzone kbd {
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--card-bg);
+  font-size: 0.7rem;
+  font-family: inherit;
+}
+
+.artifact-addfile {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.artifact-addfile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+.artifact-addfile-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-xl);
+  padding: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  animation: modalSlideIn 0.15s ease;
+}
+
+.artifact-addfile-menu-item {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.artifact-addfile-menu-item:hover {
+  background: var(--primary-glow);
+  color: var(--primary);
+}
+
+.artifact-attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.artifact-attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text);
+  max-width: 100%;
+}
+
+.artifact-attachment-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.artifact-attachment-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.artifact-attachment-size {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.artifact-attachment-remove {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.35rem;
+  padding: 0;
+  flex: none;
+}
+
+.artifact-attachment-remove:hover {
+  background: rgba(244, 63, 94, 0.15);
+  color: var(--error);
+}
+
 /* ─── Auditor AI Section ─── */
 .auditor-ai-section {
   margin-top: 1.5rem;

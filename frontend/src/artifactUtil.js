@@ -253,8 +253,11 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC, sho
 
 /**
  * Generates and triggers ZIP download for all artifacts.
+ * `attachments` are extra files/images (Blob or string) added to BOTH the
+ * original and masked ZIPs. They are only used for the download and are
+ * never persisted anywhere.
  */
-export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC) {
+export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC, attachments = []) {
   const firstArt = artifacts[0] || {};
   const jira = firstArt.jiraTicket || 'JIRA';
   const env = firstArt.env || 'DEV';
@@ -266,6 +269,10 @@ export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC) 
       const content = await generateArtifactText(art, decryptGCM, decryptCBC, shouldMask);
       const fileName = `${art.jiraTicket || 'JIRA'}_${art.apiName || 'API'}.txt`;
       zip.file(fileName, content);
+    }
+    for (const att of attachments) {
+      if (!att || !att.name) continue;
+      zip.file(att.name, att.data);
     }
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = window.URL.createObjectURL(blob);

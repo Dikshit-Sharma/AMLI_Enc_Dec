@@ -36,6 +36,13 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   const [curlErrors, setCurlErrors] = useState({});
   const [curlValidMsg, setCurlValidMsg] = useState({});
   const curlValTimers = useRef({});
+  const [attachments, setAttachments] = useState([]);
+  const [addFileMenuOpen, setAddFileMenuOpen] = useState(false);
+  const [textModalOpen, setTextModalOpen] = useState(false);
+  const [textFileName, setTextFileName] = useState('additional.txt');
+  const [textContent, setTextContent] = useState('');
+  const imageInputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const pasteSuggestion = useSmartPaste(libraryForPaste);
 
@@ -122,9 +129,9 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
     }
     setLoading(true);
     try {
-      await generateAndDownloadZip(artifacts, decrypt, decryptCBC);
+      await generateAndDownloadZip(artifacts, decrypt, decryptCBC, attachments);
       await pushToLibrary(artifacts);
-      logAnalyticsEvent('generate_artifacts', { count: artifacts.length });
+      logAnalyticsEvent('generate_artifacts', { count: artifacts.length, attachments: attachments.length });
     } catch (err) { setError('Generation failed: ' + err.message); }
     finally { setLoading(false); generatingRef.current = false; }
   };
@@ -156,6 +163,75 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
       const text = await generateArtifactText(artifacts[index], decrypt, decryptCBC, true);
       setMaskedPreviews(prev => ({ ...prev, [index]: text }));
     } catch (err) { setError('Preview failed: ' + err.message); }
+  };
+
+  const genAttachmentId = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return `att-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  };
+
+  const addAttachment = (att) => setAttachments(prev => [...prev, { id: genAttachmentId(), ...att }]);
+  const removeAttachment = (id) => setAttachments(prev => prev.filter(a => a.id !== id));
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (file) addAttachment({ name: file.name, kind: 'image', data: file });
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (file) addAttachment({ name: file.name, kind: 'file', data: file });
+  };
+
+  const handleImagePaste = (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type && item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          const ext = (item.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+          addAttachment({ name: `pasted-image-${Date.now()}.${ext}`, kind: 'image', data: file });
+        }
+      }
+    }
+  };
+
+  const handleImageDrop = (e) => {
+    e.preventDefault();
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (!files) return;
+    for (const file of files) {
+      if (file.type && file.type.startsWith('image/')) {
+        addAttachment({ name: file.name, kind: 'image', data: file });
+      }
+    }
+  };
+
+  const openTextModal = () => {
+    setTextFileName('additional.txt');
+    setTextContent('');
+    setAddFileMenuOpen(false);
+    setTextModalOpen(true);
+  };
+
+  const confirmTextAttachment = () => {
+    addAttachment({ name: (textFileName.trim() || 'additional.txt'), kind: 'text', data: textContent });
+    setTextModalOpen(false);
+    setTextContent('');
+    setTextFileName('additional.txt');
+  };
+
+  const formatAttachmentSize = (data) => {
+    if (!data) return '';
+    const size = typeof data === 'string' ? new Blob([data]).size : (data.size || 0);
+    if (!size) return '';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`;
   };
 
   return (
@@ -346,12 +422,95 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
           ))}
         </div>
 
+        <div className="artifact-attachments" style={{ flexShrink: 0 }}>
+          <div className="artifact-attachments-header">
+            <span>📎 Attachments</span>
+            <span className="artifact-attachments-hint">Included in both Original &amp; Masked ZIPs · Not saved to the library</span>
+          </div>
+          <div className="artifact-attachments-row">
+            <div
+              className="artifact-img-dropzone"
+              onPaste={handleImagePaste}
+              onDrop={handleImageDrop}
+              onDragOver={(e) => e.preventDefault()}
+              onClick={() => imageInputRef.current && imageInputRef.current.click()}
+              role="button"
+              tabIndex={0}
+              title="Click to upload or click the box first, then press Ctrl+V to paste an image"
+            >
+              <span className="artifact-img-dropzone-icon">🖼️</span>
+              <span>Click to upload an image or press <kbd>Ctrl</kbd>+<kbd>V</kbd> to paste</span>
+              <input type="file" accept="image/*" ref={imageInputRef} onChange={handleImageUpload} hidden />
+            </div>
+
+            <div className="artifact-addfile">
+              <button className="btn-sm-artifact-action" onClick={() => setAddFileMenuOpen(o => !o)}>
+                ＋ Additional file
+              </button>
+              {addFileMenuOpen && (
+                <>
+                  <div className="artifact-addfile-overlay" onClick={() => setAddFileMenuOpen(false)} />
+                  <div className="artifact-addfile-menu">
+                    <button className="artifact-addfile-menu-item" onClick={() => { setAddFileMenuOpen(false); fileInputRef.current && fileInputRef.current.click(); }}>
+                      📄 Upload external file
+                    </button>
+                    <button className="artifact-addfile-menu-item" onClick={openTextModal}>
+                      ✏️ Write / paste text file
+                    </button>
+                  </div>
+                </>
+              )}
+              <input type="file" ref={fileInputRef} onChange={handleFileUpload} hidden />
+            </div>
+          </div>
+
+          {attachments.length > 0 && (
+            <div className="artifact-attachment-list">
+              {attachments.map(att => (
+                <div className="artifact-attachment-chip" key={att.id}>
+                  <span className="artifact-attachment-icon">
+                    {att.kind === 'image' ? '🖼️' : att.kind === 'text' ? '📝' : '📄'}
+                  </span>
+                  <span className="artifact-attachment-name" title={att.name}>{att.name}</span>
+                  <span className="artifact-attachment-size">{formatAttachmentSize(att.data)}</span>
+                  <button className="artifact-attachment-remove" onClick={() => removeAttachment(att.id)} title="Remove">×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="artifacts-actions-centered" style={{ flexShrink: 0 }}>
           <button className="btn-primary btn-sm-artifacts" onClick={handleGenerateArtifacts} disabled={loading}>
             {loading ? <div className="loader tiny" /> : '🚀 Generate & Download Artifacts'}
           </button>
         </div>
       </div>
+
+      {textModalOpen && (
+        <div className="modal-overlay" onClick={() => setTextModalOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '540px', width: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2>📝 Add Text File</h2>
+              <button className="close-modal" onClick={() => setTextModalOpen(false)}>&times;</button>
+            </div>
+            <div className="modal-body scrollable" style={{ padding: '1.5rem 2rem' }}>
+              <div className="form-group">
+                <label className="field-label">File Name</label>
+                <input type="text" className="main-input" value={textFileName} onChange={(e) => setTextFileName(e.target.value)} placeholder="additional.txt" />
+              </div>
+              <div className="form-group">
+                <label className="field-label">File Content</label>
+                <textarea className="main-input small-area" value={textContent} onChange={(e) => setTextContent(e.target.value)} placeholder="Write or paste content here..." style={{ minHeight: '220px', resize: 'vertical' }} />
+              </div>
+              <div className="modal-actions" style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                <button className="btn-sm-ghost" onClick={() => setTextModalOpen(false)}>Cancel</button>
+                <button className="btn-sm-primary" onClick={confirmTextAttachment}>OK</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {auditIndex !== null && (
         <ArtifactAuditor
