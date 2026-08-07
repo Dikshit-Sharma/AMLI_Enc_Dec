@@ -2584,7 +2584,7 @@ button:disabled {
   border: 1px dashed var(--border);
   border-radius: 1rem;
   background: var(--output-bg);
-  max-width: 640px;
+  max-width: 65%;
 }
 
 .artifact-attachments-header {
@@ -2616,8 +2616,8 @@ button:disabled {
 }
 
 .artifact-img-dropzone {
-  flex: none;
-  width: 300px;
+  flex: 1;
+  min-width: 260px;
   max-width: 100%;
   display: flex;
   flex-direction: column;

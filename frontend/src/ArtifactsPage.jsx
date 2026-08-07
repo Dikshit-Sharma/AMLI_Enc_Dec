@@ -180,9 +180,12 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
   };
 
   const handleFileUpload = (e) => {
-    const file = e.target.files && e.target.files[0];
+    const files = e.target.files && Array.from(e.target.files);
     e.target.value = '';
-    if (file) addAttachment({ name: file.name, kind: 'file', data: file });
+    if (!files || files.length === 0) return;
+    for (const file of files) {
+      addAttachment({ name: file.name, kind: 'file', data: file });
+    }
   };
 
   const handleImagePaste = (e) => {
@@ -460,7 +463,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
                   </div>
                 </>
               )}
-              <input type="file" ref={fileInputRef} onChange={handleFileUpload} hidden />
+              <input type="file" multiple ref={fileInputRef} onChange={handleFileUpload} hidden />
             </div>
           </div>
 
