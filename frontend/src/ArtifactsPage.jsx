@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { logAnalyticsEvent } from './firebase';
 import { fetchArtifacts, addArtifacts } from './api';
-import { decrypt, decryptCBC } from './cryptoUtil';
+import { decrypt, decryptCBC, decryptRSA } from './cryptoUtil';
 import { generateAndDownloadZip, generateArtifactText } from './artifactUtil';
 import ArtifactAuditor from './ArtifactAuditor';
 import useSmartPaste from './SmartPaste';
@@ -129,7 +129,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
     }
     setLoading(true);
     try {
-      await generateAndDownloadZip(artifacts, decrypt, decryptCBC, attachments);
+      await generateAndDownloadZip(artifacts, decrypt, decryptCBC, attachments, decryptRSA);
       await pushToLibrary(artifacts);
       logAnalyticsEvent('generate_artifacts', { count: artifacts.length, attachments: attachments.length });
     } catch (err) { setError('Generation failed: ' + err.message); }
@@ -160,7 +160,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
       return;
     }
     try {
-      const text = await generateArtifactText(artifacts[index], decrypt, decryptCBC, true);
+      const text = await generateArtifactText(artifacts[index], decrypt, decryptCBC, true, decryptRSA);
       setMaskedPreviews(prev => ({ ...prev, [index]: text }));
     } catch (err) { setError('Preview failed: ' + err.message); }
   };
@@ -403,6 +403,7 @@ export default function ArtifactsPage({ theme, toggleTheme }) {
                       <select className="custom-select" value={art.algo} onChange={(e) => updateArtifact(index, 'algo', e.target.value)}>
                         <option value="GCM">AES/GCM</option>
                         <option value="CBC">AES/CBC</option>
+                        <option value="RSA">AES/RSA</option>
                       </select>
                     </div>
                     <div className="form-group flexify">

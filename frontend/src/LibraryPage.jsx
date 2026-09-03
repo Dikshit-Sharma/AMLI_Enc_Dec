@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchArtifacts, fetchArtifact, toDate } from './api';
 import { generateAndDownloadZip, generateBulkZip } from './artifactUtil';
-import { decrypt, decryptCBC } from './cryptoUtil';
+import { decrypt, decryptCBC, decryptRSA } from './cryptoUtil';
 import { logAnalyticsEvent } from './firebase';
 import ArtifactComparator from './ArtifactComparator';
 import LibraryInsights from './LibraryInsights';
@@ -106,7 +106,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     setDownloadingStatus((prev) => ({ ...prev, [art.id]: true }));
     try {
       const full = await getFullArtifact(art.id);
-      await generateAndDownloadZip([full], decrypt, decryptCBC);
+      await generateAndDownloadZip([full], decrypt, decryptCBC, [], decryptRSA);
       logAnalyticsEvent('artifact_download', { artifact_id: art.id, api_name: art.apiName, env: art.env });
     } catch (err) {
       console.error('Re-download failed:', err);
@@ -141,7 +141,7 @@ const LibraryPage = ({ theme, toggleTheme }) => {
     setLoadingFull('bulk');
     try {
       const fullList = await Promise.all(selected.map(a => getFullArtifact(a.id)));
-      await generateBulkZip(fullList.filter(Boolean), decrypt, decryptCBC);
+      await generateBulkZip(fullList.filter(Boolean), decrypt, decryptCBC, decryptRSA);
       logAnalyticsEvent('artifact_download_bulk', { count: selected.length });
     } catch (err) {
       alert('Download failed: ' + err.message);
