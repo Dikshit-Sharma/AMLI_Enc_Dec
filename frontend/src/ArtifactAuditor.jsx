@@ -56,6 +56,11 @@ function auditArtifact(art) {
       }
     } else if (art.algo === 'CBC' && ![16, 24, 32].includes(art.aesKey.length)) {
       issues.push({ severity: 'error', field: 'aesKey', message: 'CBC mode key must be 16, 24, or 32 characters' });
+    } else if (art.algo === 'RSA') {
+      const parts = art.aesKey.split('|').map(s => s.trim());
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        issues.push({ severity: 'error', field: 'aesKey', message: 'RSA mode requires PRIVATE_KEY|PUBLIC_KEY separated by a pipe' });
+      }
     }
   }
 

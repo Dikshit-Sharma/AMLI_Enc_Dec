@@ -134,7 +134,7 @@ export function parseCurl(curlString) {
 /**
  * Decrypts payload if needed and formats the artifact text.
  */
-export async function generateArtifactText(artifact, decryptGCM, decryptCBC, shouldMask = false) {
+export async function generateArtifactText(artifact, decryptGCM, decryptCBC, shouldMask = false, decryptRSA = null) {
   const { jiraTicket, apiName: _apiName, env, curl, response, encryption, aesKey, algo, numRequests, extraRequests } = artifact;
   const parsedCurl = parseCurl(curl);
 
@@ -166,7 +166,19 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC, sho
     }
   };
 
-  const decryptFn = algo === 'CBC' ? decryptCBC : decryptGCM;
+  let decryptFn;
+  if (algo === 'RSA') {
+    decryptFn = async (payload, key) => {
+      if (!decryptRSA) throw new Error('RSA decryption not available');
+      const parts = key.split('|').map(s => s.trim());
+      if (parts.length !== 2) throw new Error('RSA mode requires PRIVATE_KEY|PUBLIC_KEY');
+      return decryptRSA(payload, parts[0], parts[1]);
+    };
+  } else if (algo === 'CBC') {
+    decryptFn = decryptCBC;
+  } else {
+    decryptFn = decryptGCM;
+  }
 
   // Process all request-response pairs
   const pairs = [
@@ -257,7 +269,7 @@ export async function generateArtifactText(artifact, decryptGCM, decryptCBC, sho
  * original and masked ZIPs. They are only used for the download and are
  * never persisted anywhere.
  */
-export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC, attachments = []) {
+export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC, attachments = [], decryptRSA = null) {
   const firstArt = artifacts[0] || {};
   const jira = firstArt.jiraTicket || 'JIRA';
   const env = firstArt.env || 'DEV';
@@ -266,7 +278,7 @@ export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC, 
   const download = async (shouldMask, suffix = '') => {
     const zip = new JSZip();
     for (const art of artifacts) {
-      const content = await generateArtifactText(art, decryptGCM, decryptCBC, shouldMask);
+      const content = await generateArtifactText(art, decryptGCM, decryptCBC, shouldMask, decryptRSA);
       const fileName = `${art.jiraTicket || 'JIRA'}_${art.apiName || 'API'}.txt`;
       zip.file(fileName, content);
     }
@@ -296,11 +308,11 @@ export async function generateAndDownloadZip(artifacts, decryptGCM, decryptCBC, 
  * Generates a single ZIP containing original (unmasked) text for multiple artifacts.
  * Used for bulk export from the Library.
  */
-export async function generateBulkZip(artifacts, decryptGCM, decryptCBC) {
+export async function generateBulkZip(artifacts, decryptGCM, decryptCBC, decryptRSA = null) {
   if (!artifacts?.length) return;
   const zip = new JSZip();
   for (const art of artifacts) {
-    const content = await generateArtifactText(art, decryptGCM, decryptCBC, false);
+    const content = await generateArtifactText(art, decryptGCM, decryptCBC, false, decryptRSA);
     const fileName = `${art.jiraTicket || 'JIRA'}_${art.apiName || 'API'}.txt`;
     zip.file(fileName, content);
   }
