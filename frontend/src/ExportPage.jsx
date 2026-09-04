@@ -4,10 +4,37 @@ import { exportToObsidian } from './obsidianExport';
 import { logAnalyticsEvent } from './firebase';
 
 export default function ExportPage({ theme, toggleTheme }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    sessionStorage.getItem('obsidian_auth') === 'true'
+  );
+  const [password, setPassword] = useState('');
+  const [passError, setPassError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [status, setStatus] = useState('');
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
+
+  const handlePasswordSubmit = async (e) => {
+    e.preventDefault();
+    setPassError('');
+    try {
+      const res = await fetch('/api/auth-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('obsidian_auth', 'true');
+        setPassError('');
+      } else {
+        setPassError('Incorrect password. Please try again.');
+      }
+    } catch {
+      setPassError('Authentication failed. Please try again.');
+    }
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -29,6 +56,47 @@ export default function ExportPage({ theme, toggleTheme }) {
       setExporting(false);
     }
   };
+
+  // Password gate — same password as the Library and Credentials pages
+  if (!isAuthenticated) {
+    return (
+      <div className="container">
+        <div className="card" style={{ maxWidth: '460px', margin: '2rem auto' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.35rem' }}>
+                <Link to="/" style={{ fontSize: '0.82rem', color: 'var(--text-muted)', textDecoration: 'none', padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid var(--border)', background: 'var(--input-bg)' }}>&larr; Home</Link>
+              </div>
+              <h1 style={{ fontSize: '1.4rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.5rem' }}>&#x1f4d6;</span> Export to Obsidian
+              </h1>
+            </div>
+            <button className="theme-toggle" onClick={toggleTheme} style={{ padding: '0.3rem 0.5rem', fontSize: '0.85rem', flexShrink: 0 }}>{theme === 'light' ? '\u{1F319}' : '\u{2600}\u{FE0F}'}</button>
+          </div>
+
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', lineHeight: 1.5, marginBottom: '1.25rem' }}>
+            Please enter the secret password to export the Obsidian vault.
+          </p>
+
+          <form onSubmit={handlePasswordSubmit}>
+            <input
+              className="main-input"
+              type="password"
+              placeholder="Enter password..."
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setPassError(''); }}
+              style={{ width: '100%', fontSize: '0.85rem', padding: '0.6rem 0.85rem', marginBottom: '0.75rem' }}
+              autoFocus
+            />
+            {passError && (
+              <div style={{ padding: '0.5rem 0.75rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.4rem', color: '#dc2626', fontSize: '0.78rem', marginBottom: '0.75rem' }}>{passError}</div>
+            )}
+            <button type="submit" className="btn-primary" style={{ width: '100%', padding: '0.7rem', fontSize: '0.9rem', fontWeight: 600 }}>Unlock Export</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container">
