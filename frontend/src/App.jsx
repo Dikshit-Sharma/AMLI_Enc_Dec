@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import * as Sentry from '@sentry/react';
 import { logAnalyticsEvent } from './firebase';
 import './App.css';
@@ -11,11 +11,33 @@ import LibraryPage from './LibraryPage';
 import CredentialsPage from './CredentialsPage';
 import BSAPage from './BSAPage';
 import ClipboardPage from './ClipboardPage';
+import ExportPage from './ExportPage';
 import HotkeyHelp from './HotkeyHelp';
 import useHotkeys from './hooks/useHotkeys';
 import OnboardingBot from './OnboardingBot';
 import QuickAnswerBot from './QuickAnswerBot';
 import CommandPalette from './CommandPalette';
+
+function FloatingExportButton() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Hide on the export page and cipher page
+  if (location.pathname === '/export' || location.pathname === '/cipher') return null;
+
+  return (
+    <button
+      className="floating-export-btn"
+      onClick={() => {
+        logAnalyticsEvent('obsidian_export_click', { source: 'floating_button', from_page: location.pathname });
+        navigate('/export');
+      }}
+      title="Export to Obsidian"
+    >
+      &#x1f4d6;
+    </button>
+  );
+}
 
 function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
@@ -87,10 +109,12 @@ function App() {
       <Route path="/bsa" element={<BSAPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/clipboard" element={<ClipboardPage theme={theme} toggleTheme={toggleTheme} />} />
       <Route path="/clipboard/:id" element={<ClipboardPage theme={theme} toggleTheme={toggleTheme} />} />
+      <Route path="/export" element={<ExportPage theme={theme} toggleTheme={toggleTheme} />} />
 
       <Route path="/cipher" element={<CipherTool theme={theme} toggleTheme={toggleTheme} />} />
     </Routes>
 
+    <FloatingExportButton />
     <CommandPalette open={showCmdPalette} onClose={() => setShowCmdPalette(false)} />
     {showHotkeys && <HotkeyHelp onClose={() => setShowHotkeys(false)} />}
     </>
