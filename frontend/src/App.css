@@ -3070,3 +3070,184 @@ button:disabled {
 .floating-export-btn:active {
   transform: scale(0.95);
 }
+
+/* ===== CLI Terminal (Ctrl+Shift+D) ===== */
+.cli-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(2, 6, 23, 0.75);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  animation: cli-fade 0.18s ease;
+}
+@keyframes cli-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.cli-window {
+  width: min(980px, 96vw);
+  height: min(680px, 90vh);
+  background: #0b1020;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  overflow: hidden;
+  animation: cli-pop 0.2s ease;
+}
+@keyframes cli-pop { from { transform: scale(0.96) translateY(8px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+
+.cli-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: linear-gradient(180deg, #141b33, #0d1327);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+.cli-dots { display: flex; gap: 0.45rem; }
+.cli-dot { width: 12px; height: 12px; border-radius: 50%; cursor: pointer; transition: filter 0.15s; }
+.cli-dot:hover { filter: brightness(1.2); }
+.cli-dot-red { background: #ff5f57; }
+.cli-dot-yellow { background: #febc2e; }
+.cli-dot-green { background: #28c840; }
+.cli-title {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.5px;
+  margin-left: 0.5rem;
+}
+.cli-spacer { flex: 1; }
+
+.cli-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.1rem 1.2rem;
+  font-family: 'SFMono-Regular', 'Menlo', 'Consolas', 'Courier New', monospace;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: #e2e8f0;
+  caret-color: #22d3ee;
+}
+.cli-body::-webkit-scrollbar { width: 8px; height: 8px; }
+.cli-body::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); border-radius: 4px; }
+.cli-body::-webkit-scrollbar-track { background: transparent; }
+
+.cli-line { white-space: pre-wrap; word-break: break-word; padding: 0px 0; }
+.cli-line-cmd { margin: 0.25rem 0 0; }
+.cli-line-err { color: #f87171; }
+.cli-line-info { color: #67e8f9; }
+
+.cli-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+.cli-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: inherit;
+  caret-color: #22d3ee;
+  padding: 0;
+}
+.cli-cursor {
+  width: 8px;
+  height: 1.1em;
+  background: #22d3ee;
+  display: inline-block;
+  animation: cli-blink 1s steps(2, start) infinite;
+}
+@keyframes cli-blink { to { visibility: hidden; } }
+
+.cli-prompt { font-weight: 600; }
+.cli-prompt-user { color: #10b981; }
+.cli-prompt-at { color: #64748b; }
+.cli-prompt-host { color: #22d3ee; }
+.cli-prompt-sep { color: #f59e0b; margin-left: 0.25rem; }
+.cli-cmd-text { color: #f8fafc; margin-left: 0.5rem; }
+
+/* Banner */
+.cli-banner { margin: 0.25rem 0 0.75rem; }
+.cli-banner-row { display: flex; gap: 1.5rem; align-items: flex-start; line-height: 1.15; }
+.cli-banner-logo {
+  color: #6366f1;
+  font-family: inherit;
+  white-space: pre;
+  font-weight: 400;
+  text-shadow: 0 0 12px rgba(99,102,241,0.35);
+}
+.cli-banner-info {
+  color: #94a3b8;
+  white-space: pre;
+  padding-top: 0.4rem;
+}
+
+/* ===== CLI Fullscreen Terminal ===== */
+.cli-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: #0b1020;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: cli-fade 0.18s ease;
+}
+@keyframes cli-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.cli-window-full {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  background: #0b1020;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.cli-line-sys {
+  color: #f59e0b;
+  font-style: italic;
+}
+
+.cli-line-prompt {
+  color: #f59e0b;
+}
+
+.cli-banner-row .cli-banner-info {
+  position: relative;
+}
+.cli-banner-row .cli-banner-info .cli-swatch-block {
+  display: inline-block;
+  width: 1.2ch;
+  height: 1.2ch;
+  margin-right: 0.15ch;
+  border-radius: 2px;
+}
+
+/* Swatch colors for the neofetch bottom bar */
+.cli-swatch-indigo { background: #6366f1; }
+.cli-swatch-cyan { background: #22d3ee; }
+.cli-swatch-emerald { background: #10b981; }
+.cli-swatch-amber { background: #f59e0b; }
+.cli-swatch-rose { background: #f43f5e; }
+
+/* Input type password styling - hide text */
+.cli-input[type="password"] {
+  -webkit-text-security: disc;
+  text-security: disc;
+}

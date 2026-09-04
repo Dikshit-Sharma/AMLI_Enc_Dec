@@ -17,6 +17,7 @@ import useHotkeys from './hooks/useHotkeys';
 import OnboardingBot from './OnboardingBot';
 import QuickAnswerBot from './QuickAnswerBot';
 import CommandPalette from './CommandPalette';
+import TerminalCLI from './cli/TerminalCLI';
 
 function FloatingExportButton() {
   const navigate = useNavigate();
@@ -43,6 +44,7 @@ function App() {
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const [showHotkeys, setShowHotkeys] = useState(false);
   const [showCmdPalette, setShowCmdPalette] = useState(false);
+  const [showCLI, setShowCLI] = useState(false);
 
   const location = useLocation();
 
@@ -56,6 +58,18 @@ function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setShowCmdPalette((p) => !p);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Ctrl+Shift+D toggles the CLI terminal
+  React.useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
+        e.preventDefault();
+        setShowCLI((p) => !p);
       }
     };
     window.addEventListener('keydown', handler);
@@ -117,7 +131,28 @@ function App() {
     <FloatingExportButton />
     <CommandPalette open={showCmdPalette} onClose={() => setShowCmdPalette(false)} />
     {showHotkeys && <HotkeyHelp onClose={() => setShowHotkeys(false)} />}
+    {showCLI && (
+      <CLIHost
+        theme={theme}
+        toggleTheme={toggleTheme}
+        onClose={() => setShowCLI(false)}
+      />
+    )}
     </>
+  );
+}
+
+/** Provides useNavigate to the CLI */
+function CLIHost({ theme, toggleTheme, onClose }) {
+  const navigate = useNavigate();
+  return (
+    <TerminalCLI
+      theme={theme}
+      toggleTheme={toggleTheme}
+      onClose={onClose}
+      isOpen
+      navigate={navigate}
+    />
   );
 }
 
