@@ -54,19 +54,19 @@ export default function ExportPage({ theme, toggleTheme }) {
           <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.6rem' }}>Vault Structure</div>
           <pre style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.6, margin: 0, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
 {`AMLI_Vault/
-  Dashboard.md              # Overview with wikilinks
+  Dashboard.md              # Overview with links
   Artifacts/
     _Index.md               # Summary table
-    SOA-1234_CreateOrder_DEV.md  # One per artifact
+    SOA-1234_CreateOrder_DEV.md  # Full details per artifact
   BSA/
     _Index.md               # Summary table
     CreateOrder.md          # One per API
   Credentials/
-    _Index.md               # All values masked
-    SOA-1234_AppKey_DEV.md  # One per credential
+    _Index.md               # Full values
+    SOA-1234_AppKey_DEV.md  # One per credential (unmasked)
   Clipboard/
     _Index.md               # Summary table
-    Meeting Notes.md        # One per clipboard
+    Meeting_Notes_Abc12345.md   # Title + ID suffix (no collisions)
   Changelog/
     Changelog.md            # Export timestamp`}
           </pre>
@@ -78,7 +78,7 @@ export default function ExportPage({ theme, toggleTheme }) {
             { icon: '\u{1F517}', title: 'Wikilinks', desc: 'Cross-reference between notes' },
             { icon: '\u{1F3F7}\u{FE0F}', title: 'Tags', desc: 'Filter by content type & env' },
             { icon: '\u{1F4C4}', title: 'Frontmatter', desc: 'YAML metadata on every note' },
-            { icon: '\u{1F512}', title: 'Masked Secrets', desc: 'Credentials safely masked' },
+            { icon: '\u{1F4DC}', title: 'Full Details', desc: 'Artifacts & credentials in full' },
           ].map((f) => (
             <div key={f.title} style={{ padding: '0.75rem', background: 'var(--input-bg)', borderRadius: '0.5rem', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.2rem' }}>{f.icon} {f.title}</div>
