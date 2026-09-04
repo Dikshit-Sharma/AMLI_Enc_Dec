@@ -11,13 +11,26 @@ import { htmlToMarkdown } from './markdownUtil';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Sanitize a string for use as an Obsidian file/folder name */
+/**
+ * Sanitize a string for use as an Obsidian file/folder name.
+ * Replaces spaces, special characters, and path separators so wikilinks
+ * always resolve reliably (no spaces/special chars in link targets).
+ */
 function sanitize(name) {
-  return (name || 'Untitled')
+  const s = String(name == null ? '' : name)
+    .replace(/\s+/g, '_')
     .replace(/[/\\:*?"<>|#^[\]]/g, '_')
     .replace(/_{2,}/g, '_')
-    .replace(/^_|_$/g, '')
-    .trim() || 'Untitled';
+    .replace(/^_+|_+$/g, '')
+    .trim();
+  return s || 'Untitled';
+}
+
+/** Escape a value safely for a Markdown table cell (pipes/newlines) */
+function cell(val) {
+  return String(val == null ? '' : val)
+    .replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, '<br>');
 }
 
 /** Format a Firestore-style timestamp to ISO date string */
@@ -32,17 +45,9 @@ function fmtDateTime(ts) {
   return d ? d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
 }
 
-/** Mask a credential value: show first 4 + last 4 chars, mask the rest */
-function maskCred(val) {
-  if (!val) return '';
-  const s = String(val);
-  if (s.length <= 8) return '****';
-  return s.slice(0, 4) + '*'.repeat(s.length - 8) + s.slice(-4);
-}
-
 /** Escape YAML special characters */
 function yamlEscape(str) {
-  if (!str) return '""';
+  if (str == null || str === '') return '""';
   const s = String(str);
   if (/[:{}[\],&*?|>!%@`#-]/.test(s) || s.includes("'") || s.includes('"') || /^\d/.test(s)) {
     return `"${s.replace(/"/g, '\\"')}"`;
@@ -50,11 +55,20 @@ function yamlEscape(str) {
   return `'${s}'`;
 }
 
-// ─── Markdown Generators ────────────────────────────────────────────────────
+/** Wrap a JSON string in a code fence, pretty-printing if it is valid JSON */
+function jsonBlock(value) {
+  let out = String(value == null ? '' : value);
+  try {
+    out = JSON.stringify(typeof value === 'string' ? JSON.parse(value) : value, null, 2);
+  } catch { /* keep as-is */ }
+  return '```json\n' + out + '\n```\n\n';
+}
+
+// ─── Markdown Building Blocks ───────────────────────────────────────────────
 
 function buildFrontmatter(tags, extra = {}) {
   let fm = '---\n';
-  fm += `tags: [${(tags || []).map(t => `'${t}'`).join(', ')}]\n`;
+  fm += `tags:\n${(tags || []).map(t => `  - ${t}`).join('\n')}\n`;
   for (const [k, v] of Object.entries(extra)) {
     fm += `${k}: ${yamlEscape(v)}\n`;
   }
@@ -62,7 +76,14 @@ function buildFrontmatter(tags, extra = {}) {
   return fm;
 }
 
-/** Generate Dashboard.md -- the vault overview */
+/** Obsidian short-link (basename only, no path) — most reliable form */
+function link(name, display) {
+  const n = sanitize(name);
+  return display && display !== n ? `[[${n}|${display}]]` : `[[${n}]]`;
+}
+
+// ─── Dashboard ──────────────────────────────────────────────────────────────
+
 function generateDashboard(data) {
   const { artifacts, bsa, credentials, clipboards } = data;
   let md = buildFrontmatter(['dashboard', 'amli'], {
@@ -76,22 +97,39 @@ function generateDashboard(data) {
   md += '## Overview\n\n';
   md += '| Section | Count |\n';
   md += '|---|---|\n';
-  md += `| [[Artifacts/_Index|Artifacts]] | ${artifacts.length} |\n`;
-  md += `| [[BSA/_Index|BSA Entries]] | ${bsa.length} |\n`;
-  md += `| [[Credentials/_Index|Credentials]] | ${credentials.length} |\n`;
-  md += `| [[Clipboard/_Index|Clipboard Notes]] | ${clipboards.length} |\n`;
+  md += `| [Artifacts](Artifacts/_Index) | ${artifacts.length} |\n`;
+  md += `| [BSA Entries](BSA/_Index) | ${bsa.length} |\n`;
+  md += `| [Credentials](Credentials/_Index) | ${credentials.length} |\n`;
+  md += `| [Clipboard Notes](Clipboard/_Index) | ${clipboards.length} |\n`;
 
   md += '\n## Quick Links\n\n';
-  md += '- [[Artifacts/_Index]] -- SOA documentation artifacts\n';
-  md += '- [[BSA/_Index]] -- Business Stakeholder Alignment tracker\n';
-  md += '- [[Credentials/_Index]] -- API credentials (masked)\n';
-  md += '- [[Clipboard/_Index]] -- Collaborative rich-text notes\n';
-  md += '- [[Changelog/Changelog]] -- Export history\n';
+  md += '- [Artifacts](Artifacts/_Index) -- SOA documentation artifacts\n';
+  md += '- [BSA](BSA/_Index) -- Business Stakeholder Alignment tracker\n';
+  md += '- [Credentials](Credentials/_Index) -- API credentials\n';
+  md += '- [Clipboard](Clipboard/_Index) -- Collaborative rich-text notes\n';
+  md += '- [Changelog](Changelog/Changelog) -- Export history\n';
 
   return md;
 }
 
-/** Generate Artifacts/_Index.md */
+// ─── Artifacts ──────────────────────────────────────────────────────────────
+
+/** Build a unique, deterministic, Obsidian-safe filename for an artifact note */
+function artifactFileName(art, index) {
+  const base = sanitize(art.jiraTicket) + '_' + sanitize(art.apiName) + '_' + sanitize(art.env);
+  // If the meaningful name parts are all "Untitled", include the id + index
+  if (base === 'Untitled_Untitled_Untitled') {
+    return `${sanitize(art.apiName) || 'Artifact'}_${art.id || index + 1}`;
+  }
+  return base;
+}
+
+/** Standardize an artifact object so it has all fields uniformly */
+function normalizeArtifact(a) {
+  if (a && a.artifact && typeof a.artifact === 'object') a = a.artifact;
+  return a || {};
+}
+
 function generateArtifactsIndex(artifacts) {
   let md = buildFrontmatter(['artifacts', 'index', 'amli'], {
     'type': 'index',
@@ -106,25 +144,26 @@ function generateArtifactsIndex(artifacts) {
     return md;
   }
 
-  md += '| JIRA | API Name | Env | Encryption | Date |\n';
-  md += '|---|---|---|---|---|\n';
+  md += '| # | JIRA | API Name | Env | Encryption | Date |\n';
+  md += '|---|---|---|---|---|---|\n';
 
-  for (const art of artifacts) {
-    const fname = `${sanitize(art.jiraTicket)}_${sanitize(art.apiName)}_${sanitize(art.env)}`;
-    md += `| ${art.jiraTicket || '-'} | [[${fname}|${art.apiName || '-'}]] | ${art.env || '-'} | ${art.encryption || 'Disabled'} | ${fmtDate(art.timestamp)} |\n`;
-  }
+  artifacts.forEach((art, i) => {
+    const n = sanitize(art.apiName) || 'Unnamed API';
+    const fname = artifactFileName(art, i);
+    md += `| ${i + 1} | ${cell(art.jiraTicket || '-')} | ${link(fname, n)} | ${cell(art.env || '-')} | ${cell(art.encryption || 'Disabled')} | ${fmtDate(art.timestamp)} |\n`;
+  });
 
   return md;
 }
 
-/** Generate individual artifact note */
 function generateArtifactNote(art) {
-  let md = buildFrontmatter(['artifact', 'soa', art.env?.toLowerCase()], {
+  let md = buildFrontmatter(['artifact', 'soa', art.env?.toLowerCase() || 'unknown'], {
     'jira': art.jiraTicket || '',
     'api': art.apiName || '',
     'env': art.env || '',
     'encryption': art.encryption || 'Disabled',
     'algorithm': art.algo || '',
+    'num_requests': art.numRequests != null ? String(art.numRequests) : '',
     'created': fmtDate(art.timestamp),
   });
 
@@ -132,70 +171,63 @@ function generateArtifactNote(art) {
   md += `**JIRA:** ${art.jiraTicket || '-'}  \n`;
   md += `**Environment:** ${art.env || '-'}  \n`;
   md += `**Encryption:** ${art.encryption || 'Disabled'}  \n`;
-
   if (art.algo) md += `**Algorithm:** ${art.algo}  \n`;
+  if (art.numRequests != null) md += `**Request Count:** ${art.numRequests}  \n`;
   md += `**Date:** ${fmtDateTime(art.timestamp)}  \n\n`;
 
   md += '---\n\n';
 
-  // Parse curl
+  // Raw curl + parsed breakdown
   if (art.curl) {
-    md += '## Request\n\n';
+    md += '## Request (curl)\n\n';
+    md += '```bash\n' + art.curl + '\n```\n\n';
+
     const parsed = parseCurlForObsidian(art.curl);
     if (parsed.url) md += `**URL:** \`${parsed.url}\`\n\n`;
     if (Object.keys(parsed.headers).length) {
       md += '### Headers\n\n';
-      md += '```json\n';
-      md += JSON.stringify(parsed.headers, null, 2);
-      md += '\n```\n\n';
+      md += '| Header | Value |\n';
+      md += '|---|---|\n';
+      for (const [k, v] of Object.entries(parsed.headers)) {
+        md += `| \`${cell(k)}\` | \`${cell(v)}\` |\n`;
+      }
+      md += '\n';
     }
-    if (parsed.body) {
+    if (parsed.body !== null && parsed.body !== undefined) {
       md += '### Body\n\n';
-      md += '```json\n';
-      md += (typeof parsed.body === 'string' ? parsed.body : JSON.stringify(parsed.body, null, 2));
-      md += '\n```\n\n';
+      md += jsonBlock(parsed.body);
     }
   }
 
   // Response
   if (art.response) {
     md += '## Response\n\n';
-    let respFormatted = art.response;
-    try {
-      respFormatted = JSON.stringify(JSON.parse(art.response), null, 2);
-    } catch { /* keep as-is */ }
-    md += '```json\n';
-    md += respFormatted;
-    md += '\n```\n\n';
+    md += jsonBlock(art.response);
   }
 
   // Extra request/response pairs
-  if (art.extraRequests?.length) {
-    for (let i = 0; i < art.extraRequests.length; i++) {
-      const extra = art.extraRequests[i];
-      md += `## Request ${i + 2}\n\n`;
-      if (extra.request) {
-        let reqFormatted = extra.request;
-        try { reqFormatted = JSON.stringify(JSON.parse(extra.request), null, 2); } catch { /* keep */ }
-        md += '```json\n';
-        md += reqFormatted;
-        md += '\n```\n\n';
+  const extra = Array.isArray(art.extraRequests) ? art.extraRequests : [];
+  if (extra.length) {
+    md += '## Additional Requests\n\n';
+    extra.forEach((pair, i) => {
+      const pairNum = i + 2;
+      md += `### Request ${pairNum}\n\n`;
+      if (pair.request) md += jsonBlock(pair.request);
+      if (pair.response) {
+        md += `### Response ${pairNum}\n\n`;
+        md += jsonBlock(pair.response);
       }
-      if (extra.response) {
-        md += `### Response ${i + 2}\n\n`;
-        let resFormatted = extra.response;
-        try { resFormatted = JSON.stringify(JSON.parse(extra.response), null, 2); } catch { /* keep */ }
-        md += '```json\n';
-        md += resFormatted;
-        md += '\n```\n\n';
-      }
-    }
+    });
+  }
+
+  if (!art.curl && !art.response && !extra.length) {
+    md += '_No request/response payloads captured._\n';
   }
 
   return md;
 }
 
-/** Simple curl parser (inline to avoid circular deps) */
+/** Simple curl parser */
 function parseCurlForObsidian(curlString) {
   const result = { url: '', headers: {}, body: null };
   if (!curlString) return result;
@@ -214,7 +246,8 @@ function parseCurlForObsidian(curlString) {
   return result;
 }
 
-/** Generate BSA/_Index.md */
+// ─── BSA ────────────────────────────────────────────────────────────────────
+
 function generateBSAIndex(bsaEntries) {
   let md = buildFrontmatter(['bsa', 'index', 'amli'], {
     'type': 'index',
@@ -233,15 +266,14 @@ function generateBSAIndex(bsaEntries) {
   md += '|---|---|---|---|\n';
 
   for (const entry of bsaEntries) {
-    const consumers = (entry.consumers || []).map(c => c.name).join(', ') || '-';
-    const spocs = (entry.consumers || []).map(c => c.spoc).filter(Boolean).join(', ') || '-';
-    md += `| [[${sanitize(entry.api)}|${entry.api}]] | ${consumers} | ${spocs} | ${fmtDate(entry.updatedAt || entry.createdAt)} |\n`;
+    const consumers = (entry.consumers || []).map(c => c.name).filter(Boolean);
+    const spocs = (entry.consumers || []).map(c => c.spoc).filter(Boolean);
+    md += `| ${link(entry.api, entry.api || '-')} | ${cell(consumers.join(', ') || '-')} | ${cell(spocs.join(', ') || '-')} | ${fmtDate(entry.updatedAt || entry.createdAt)} |\n`;
   }
 
   return md;
 }
 
-/** Generate individual BSA note */
 function generateBSANote(entry) {
   let md = buildFrontmatter(['bsa', 'entry', 'amli'], {
     'api': entry.api || '',
@@ -258,11 +290,11 @@ function generateBSANote(entry) {
 
   md += '## Consumers\n\n';
   if (entry.consumers?.length) {
-    md += '| Consumer | SPOC |\n';
-    md += '|---|---|\n';
-    for (const c of entry.consumers) {
-      md += `| ${c.name || '-'} | ${c.spoc || '-'} |\n`;
-    }
+    md += '| # | Consumer | SPOC |\n';
+    md += '|---|---|---|\n';
+    entry.consumers.forEach((c, i) => {
+      md += `| ${i + 1} | ${cell(c.name || '-')} | ${cell(c.spoc || '-')} |\n`;
+    });
   } else {
     md += '_No consumers listed._\n';
   }
@@ -270,16 +302,16 @@ function generateBSANote(entry) {
   return md;
 }
 
-/** Generate Credentials/_Index.md (all values masked) */
+// ─── Credentials (UNMASKED) ─────────────────────────────────────────────────
+
 function generateCredentialsIndex(credentials) {
   let md = buildFrontmatter(['credentials', 'index', 'amli'], {
     'type': 'index',
     'count': String(credentials.length),
-    'security': 'all values masked',
   });
 
   md += '# Credentials Index\n\n';
-  md += '> **Security Notice:** All credential values are masked in this export.\n\n';
+  md += `> ${credentials.length} credential entr(ies)\n\n`;
 
   if (!credentials.length) {
     md += '_No credentials found._\n';
@@ -290,26 +322,30 @@ function generateCredentialsIndex(credentials) {
   md += '|---|---|---|---|---|---|\n';
 
   for (const cred of credentials) {
-    const fname = `${sanitize(cred.soaAppId)}_${sanitize(cred.apiName)}_${sanitize(cred.env)}`;
-    md += `| [[${fname}|${cred.soaAppId || '-'}]] | ${cred.apiName || '-'} | ${cred.env || '-'} | ${maskCred(cred.xApiKey)} | ${maskCred(cred.clientId)} | ${fmtDate(cred.createdAt)} |\n`;
+    const fname = credentialFileName(cred);
+    md += `| ${link(fname, cred.soaAppId || '-')} | ${cell(cred.apiName || '-')} | ${cell(cred.env || '-')} | \`${cell(cred.xApiKey || '')}\` | \`${cell(cred.clientId || '')}\` | ${fmtDate(cred.createdAt)} |\n`;
   }
 
   return md;
 }
 
-/** Generate individual credential note (masked) */
+function credentialFileName(cred) {
+  const base = sanitize(cred.soaAppId) + '_' + sanitize(cred.apiName) + '_' + sanitize(cred.env);
+  if (base === 'Untitled_Untitled_Untitled') {
+    return sanitize(cred.soaAppId) || sanitize(cred.id) || 'Credential';
+  }
+  return base;
+}
+
 function generateCredentialNote(cred) {
-  let md = buildFrontmatter(['credential', 'secret', cred.env?.toLowerCase()], {
+  let md = buildFrontmatter(['credential', cred.env?.toLowerCase() || 'unknown'], {
     'soa_app_id': cred.soaAppId || '',
     'api': cred.apiName || '',
     'env': cred.env || '',
-    'security': 'masked',
     'created': fmtDate(cred.createdAt),
   });
 
   md += `# ${cred.soaAppId || 'Unnamed Credential'}\n\n`;
-  md += '> **Security Notice:** Values are masked in this export. Do not commit this file to public repos.\n\n';
-
   md += `**SOA App ID:** ${cred.soaAppId || '-'}  \n`;
   md += `**API Name:** ${cred.apiName || '-'}  \n`;
   md += `**Environment:** ${cred.env || '-'}  \n`;
@@ -320,15 +356,23 @@ function generateCredentialNote(cred) {
   md += '## Credential Values\n\n';
   md += '| Field | Value |\n';
   md += '|---|---|\n';
-  md += `| x-api-key | \`${maskCred(cred.xApiKey)}\` |\n`;
-  md += `| client-id | \`${maskCred(cred.clientId)}\` |\n`;
-  md += `| client-secret | \`${maskCred(cred.clientSecret)}\` |\n`;
-  md += `| aes-key | \`${maskCred(cred.aesKey)}\` |\n`;
+  md += `| x-api-key | \`${cell(cred.xApiKey || '')}\` |\n`;
+  md += `| client-id | \`${cell(cred.clientId || '')}\` |\n`;
+  md += `| client-secret | \`${cell(cred.clientSecret || '')}\` |\n`;
+  md += `| aes-key | \`${cell(cred.aesKey || '')}\` |\n`;
 
   return md;
 }
 
-/** Generate Clipboard/_Index.md */
+// ─── Clipboard ──────────────────────────────────────────────────────────────
+
+/** Unique clipboard filename: Title_ID8 (disambiguates duplicate titles) */
+function clipboardFileName(cb) {
+  const id8 = String(cb.id || '').slice(0, 8) || 'noid';
+  const base = sanitize(cb.title || 'Untitled');
+  return `${base}_${id8}`;
+}
+
 function generateClipboardIndex(clipboards) {
   let md = buildFrontmatter(['clipboard', 'index', 'amli'], {
     'type': 'index',
@@ -347,14 +391,14 @@ function generateClipboardIndex(clipboards) {
   md += '|---|---|---|\n';
 
   for (const cb of clipboards) {
-    const fname = sanitize(cb.title || cb.id);
-    md += `| [[${fname}]] | ${cb.version || 0} | ${fmtDate(cb.updatedAt)} |\n`;
+    const fname = clipboardFileName(cb);
+    const title = cb.title || 'Untitled Clipboard';
+    md += `| ${link(fname, title)} | ${cb.version || 0} | ${fmtDate(cb.updatedAt)} |\n`;
   }
 
   return md;
 }
 
-/** Generate individual clipboard note */
 function generateClipboardNote(cb) {
   let md = buildFrontmatter(['clipboard', 'note', 'amli'], {
     'title': cb.title || 'Untitled',
@@ -364,11 +408,11 @@ function generateClipboardNote(cb) {
 
   md += `# ${cb.title || 'Untitled Clipboard'}\n\n`;
   md += `**ID:** \`${cb.id || '-'}\`  \n`;
-  md += `**Version:** ${cb.version || 0}  \n\n`;
+  md += `**Version:** ${cb.version || 0}  \n`;
 
-  md += '---\n\n';
+  if (cb.updatedAt) md += `**Updated:** ${fmtDateTime(cb.updatedAt)}  \n`;
+  md += '\n---\n\n';
 
-  // Convert HTML content to Markdown
   if (cb.content) {
     try {
       md += htmlToMarkdown(cb.content);
@@ -385,7 +429,8 @@ function generateClipboardNote(cb) {
   return md;
 }
 
-/** Generate Changelog.md */
+// ─── Changelog ──────────────────────────────────────────────────────────────
+
 function generateChangelog(data) {
   const { artifacts, bsa, credentials, clipboards } = data;
   let md = buildFrontmatter(['changelog', 'amli'], {
@@ -408,7 +453,7 @@ function generateChangelog(data) {
   return md;
 }
 
-// ─── Clipboard API fetcher ──────────────────────────────────────────────────
+// ─── Data Fetchers ──────────────────────────────────────────────────────────
 
 async function fetchAllClipboards() {
   try {
@@ -424,10 +469,11 @@ async function fetchAllClipboards() {
 async function fetchClipboardById(id) {
   try {
     const res = await fetch(`/api/clipboard?id=${encodeURIComponent(id)}`);
-    if (!res.ok) return null;
-    return await res.json();
+    if (!res.ok) return {};
+    const data = await res.json();
+    return data || {};
   } catch {
-    return null;
+    return {};
   }
 }
 
@@ -435,6 +481,7 @@ async function fetchClipboardById(id) {
 
 /**
  * Fetches all data and generates an Obsidian-compatible vault as a ZIP file.
+ * Credentials are exported in full (unmasked). Artifact details are included.
  * @param {Object} options
  * @param {Function} options.onProgress - Callback with status messages
  * @returns {Promise<void>} Triggers download
@@ -444,17 +491,27 @@ export async function exportToObsidian({ onProgress } = {}) {
 
   // 1. Fetch all data
   log('Fetching artifacts...');
-  let artifacts = [];
+  let rawArtifacts = [];
   try {
     const artRes = await fetchArtifacts();
     const list = artRes.artifacts || [];
-    // Fetch full details for each artifact
-    artifacts = await Promise.all(
-      list.map((a) => fetchArtifact(a.id).catch(() => a))
+
+    // Fetch full details (curl/response/extraRequests) per artifact.
+    // fetchArtifact returns { artifact: {...} }; fall back to list item on failure.
+    rawArtifacts = await Promise.all(
+      list.map(async (a) => {
+        try {
+          const full = await fetchArtifact(a.id);
+          return full && full.artifact ? full.artifact : a;
+        } catch {
+          return a;
+        }
+      })
     );
   } catch (e) {
     console.warn('Failed to fetch artifacts:', e);
   }
+  const artifacts = rawArtifacts.map(normalizeArtifact);
 
   log('Fetching BSA entries...');
   let bsa = [];
@@ -470,17 +527,17 @@ export async function exportToObsidian({ onProgress } = {}) {
   try {
     const ENVS = ['DEV', 'UAT', 'PROD'];
     const [manualResults, extractedRes] = await Promise.all([
-      Promise.all(ENVS.map((env) => fetchCredentials(env).then((r) => r.credentials || []))),
-      fetchExtractedCredentials(),
+      Promise.all(ENVS.map((env) => fetchCredentials(env).then((r) => r.credentials || []).catch(() => []))),
+      fetchExtractedCredentials().catch(() => ({ credentials: {} })),
     ]);
     const manual = manualResults.flat();
-    const extracted = extractedRes.credentials || {};
+    const extracted = (extractedRes && extractedRes.credentials) || {};
     const extractedFlat = ENVS.flatMap((env) => extracted[env] || []);
 
     // Deduplicate by id
     const seen = new Set();
     for (const c of [...manual, ...extractedFlat]) {
-      const key = c.id || `${c.soaAppId}_${c.apiName}_${c.env}`;
+      const key = c.id || `${c.soaAppId}_${c.apiName}_${c.env}_${c.xApiKey}`;
       if (!seen.has(key)) {
         seen.add(key);
         credentials.push(c);
@@ -501,11 +558,11 @@ export async function exportToObsidian({ onProgress } = {}) {
   // Fetch full clipboard content
   log('Fetching clipboard content...');
   const fullClipboards = await Promise.all(
-    clipboards.map((cb) => fetchClipboardById(cb.id).then((full) => full || cb).catch(() => cb))
+    clipboards.map((cb) => fetchClipboardById(cb.id).then((full) => ({ ...cb, ...full, id: cb.id })).catch(() => cb))
   );
 
   const data = { artifacts, bsa, credentials, clipboards: fullClipboards };
-  const totalNotes = artifacts.length + bsa.length + credentials.length + fullClipboards.length + 3; // +3 for indexes + dashboard + changelog
+  const totalNotes = artifacts.length + bsa.length + credentials.length + fullClipboards.length + 4; // +4 indexes + dashboard + changelog
 
   log(`Generating ${totalNotes} Obsidian notes...`);
 
@@ -517,10 +574,9 @@ export async function exportToObsidian({ onProgress } = {}) {
   zip.file(`${root}/Dashboard.md`, generateDashboard(data));
 
   // Artifacts
-  for (const art of artifacts) {
-    const fname = `${sanitize(art.jiraTicket)}_${sanitize(art.apiName)}_${sanitize(art.env)}`;
-    zip.file(`${root}/Artifacts/${fname}.md`, generateArtifactNote(art));
-  }
+  artifacts.forEach((art, i) => {
+    zip.file(`${root}/Artifacts/${artifactFileName(art, i)}.md`, generateArtifactNote(art));
+  });
   zip.file(`${root}/Artifacts/_Index.md`, generateArtifactsIndex(artifacts));
 
   // BSA
@@ -529,16 +585,15 @@ export async function exportToObsidian({ onProgress } = {}) {
   }
   zip.file(`${root}/BSA/_Index.md`, generateBSAIndex(bsa));
 
-  // Credentials (masked)
+  // Credentials (unmasked)
   for (const cred of credentials) {
-    const fname = `${sanitize(cred.soaAppId)}_${sanitize(cred.apiName)}_${sanitize(cred.env)}`;
-    zip.file(`${root}/Credentials/${fname}.md`, generateCredentialNote(cred));
+    zip.file(`${root}/Credentials/${credentialFileName(cred)}.md`, generateCredentialNote(cred));
   }
   zip.file(`${root}/Credentials/_Index.md`, generateCredentialsIndex(credentials));
 
   // Clipboards
   for (const cb of fullClipboards) {
-    zip.file(`${root}/Clipboard/${sanitize(cb.title || cb.id)}.md`, generateClipboardNote(cb));
+    zip.file(`${root}/Clipboard/${clipboardFileName(cb)}.md`, generateClipboardNote(cb));
   }
   zip.file(`${root}/Clipboard/_Index.md`, generateClipboardIndex(fullClipboards));
 
