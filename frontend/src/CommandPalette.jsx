@@ -64,15 +64,23 @@ export default function CommandPalette({ open, onClose }) {
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setSelectedIdx((p) => Math.max(p - 1, 0));
-    } else if (e.key === 'Enter' && flatItems[selectedIdx]) {
-      const item = flatItems[selectedIdx];
-      logAnalyticsEvent('cmd_palette_select', { item_id: item.id, source: 'keyboard' });
-      if (item.id?.startsWith('art_')) {
-        navigate('/credentials');
-      } else {
-        navigate('/library');
+    } else if (e.key === 'Enter') {
+      // Check if "Export to Obsidian" action is selected
+      if (flatItems.length === 0 && query.trim() === '' && selectedIdx === 0) {
+        navigate('/export');
+        onClose();
+        return;
       }
-      onClose();
+      const item = flatItems[selectedIdx];
+      if (item) {
+        logAnalyticsEvent('cmd_palette_select', { item_id: item.id, source: 'keyboard' });
+        if (item.id?.startsWith('art_')) {
+          navigate('/credentials');
+        } else {
+          navigate('/library');
+        }
+        onClose();
+      }
     }
   };
 
@@ -101,7 +109,23 @@ export default function CommandPalette({ open, onClose }) {
           ) : results.length === 0 && query.trim() ? (
             <div className="cmd-empty">No results for "{query}"</div>
           ) : query.trim() === '' ? (
-            <div className="cmd-hint">Type to search across Library artifacts and Credentials</div>
+            <>
+              <div className="cmd-hint">Type to search across Library artifacts and Credentials</div>
+              <div className="cmd-group" style={{ marginTop: '0.5rem' }}>
+                <div className="cmd-group-title">Actions</div>
+                <div
+                  className={`cmd-item ${selectedIdx === 0 ? 'selected' : ''}`}
+                  onClick={() => { navigate('/export'); onClose(); }}
+                  onMouseEnter={() => setSelectedIdx(0)}
+                >
+                  <span className="cmd-item-icon">&#x1f4d6;</span>
+                  <div className="cmd-item-text">
+                    <span className="cmd-item-name">Export to Obsidian</span>
+                    <span className="cmd-item-sub">Export all data as an Obsidian vault</span>
+                  </div>
+                </div>
+              </div>
+            </>
           ) : (
             results.map((group) => (
               <div key={group.category} className="cmd-group">
