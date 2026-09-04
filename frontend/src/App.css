@@ -3191,3 +3191,63 @@ button:disabled {
   white-space: pre;
   padding-top: 0.4rem;
 }
+
+/* ===== CLI Fullscreen Terminal ===== */
+.cli-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: #0b1020;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: cli-fade 0.18s ease;
+}
+@keyframes cli-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.cli-window-full {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  background: #0b1020;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.cli-line-sys {
+  color: #f59e0b;
+  font-style: italic;
+}
+
+.cli-line-prompt {
+  color: #f59e0b;
+}
+
+.cli-banner-row .cli-banner-info {
+  position: relative;
+}
+.cli-banner-row .cli-banner-info .cli-swatch-block {
+  display: inline-block;
+  width: 1.2ch;
+  height: 1.2ch;
+  margin-right: 0.15ch;
+  border-radius: 2px;
+}
+
+/* Swatch colors for the neofetch bottom bar */
+.cli-swatch-indigo { background: #6366f1; }
+.cli-swatch-cyan { background: #22d3ee; }
+.cli-swatch-emerald { background: #10b981; }
+.cli-swatch-amber { background: #f59e0b; }
+.cli-swatch-rose { background: #f43f5e; }
+
+/* Input type password styling - hide text */
+.cli-input[type="password"] {
+  -webkit-text-security: disc;
+  text-security: disc;
+}

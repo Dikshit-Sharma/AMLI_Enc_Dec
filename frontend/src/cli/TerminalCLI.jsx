@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { runCommand } from './commands';
+import { runCommand, NEED_PASSWORD } from './commands';
 import { getDSBanner } from './neofetch';
 import { logAnalyticsEvent } from '../firebase';
 import {
@@ -68,12 +68,19 @@ function colorFromCodeInt(codes) {
   return null;
 }
 
+// State for ds password prompt
+const DS_PROMPT_NONE = 'none';
+const DS_PROMPT_AWAITING_PASSWORD = 'awaiting_password';
+const DS_PROMPT_AWAITING_COMMAND = 'awaiting_command';
+
 export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navigate }) {
-  const [history, setHistory] = useState([]); // { type: 'cmd'|'out'|'err'|'info', text }
+  const [history, setHistory] = useState([]); // { type: 'cmd'|'out'|'err'|'info'|'sys', text }
   const [input, setInput] = useState('');
   const [loggedIn, setLoggedIn] = useState(
     sessionStorage.getItem('cli_auth') === 'true'
   );
+  const [dsPromptState, setDsPromptState] = useState(DS_PROMPT_NONE);
+  const [dsPendingCmd, setDsPendingCmd] = useState('');
 
   const inputRef = useRef(null);
   const scrollRef = useRef(null);
@@ -94,6 +101,11 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
     setHistory((prev) => [...prev, { type: 'info', text: String(text) }]);
   }, []);
 
+  const printSys = useCallback((text) => {
+    // System messages (like "Navigating to...") that should NOT be parsed as commands
+    setHistory((prev) => [...prev, { type: 'sys', text: String(text) }]);
+  }, []);
+
   const clearHistory = useCallback(() => {
     setHistory([]);
     bannerShownRef.current = false;
@@ -110,7 +122,7 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
       const banner = getBannerLines();
       const intro = [
         '',
-        `${colorizeCode('AMLI-SH 1.0.0 — linux-like CLI for the AMLI platform', 'cyan')}`,
+        colorizeCode('AMLI-SH 1.0.0 — linux-like CLI for the AMLI platform', 'cyan'),
         '',
         'A few commands to get started:',
         `  ${colorizeCode('help', 'green')}              show all commands`,
@@ -155,11 +167,15 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
     print,
     printErr,
     printInfo,
+    printSys,
     clearHistory,
     getHistory,
     close,
     navigate: (path) => {
-      if (navigate) navigate(path);
+      if (navigate) {
+        printSys(`Navigating to ${path} ...`);
+        navigate(path);
+      }
     },
     isLoggedIn: () => loggedIn,
     setLoggedIn: (v) => {
@@ -184,7 +200,7 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
       }
     },
     showBanner: () => {
-      setHistory((prev) => [...prev, ...getBannerLines()]);
+      setHistory((prev) => [...prev, ...getBannerLines().map((l) => ({ type: 'info', text: l }))]);
       return [];
     },
     listArtifacts: async (args) => {
@@ -335,7 +351,7 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
         return [`Obsidian export failed: ${e.message}`];
       }
     },
-  }), [print, printErr, printInfo, clearHistory, getHistory, close, loggedIn, theme, toggleTheme, navigate, printIn]);
+  }), [print, printErr, printInfo, printSys, clearHistory, getHistory, close, loggedIn, theme, toggleTheme, navigate, printIn]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter') {
@@ -347,11 +363,49 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
       histRef.current.push(line);
       histPosRef.current = -1;
 
-      // If the CLI doesn't print anything for the command, we handled it natively (e.g. clear)
-      // Actually run on next tick to let history settle
+      // If waiting for ds password
+      if (dsPromptState === DS_PROMPT_AWAITING_PASSWORD) {
+        setHistory((prev) => [...prev, { type: 'info', text: '********' }]); // mask password in history
+        // We'll handle the password after state update
+        setTimeout(async () => {
+          try {
+            const ok = await context.authenticate(line);
+            if (ok) {
+              setLoggedIn(true);
+              setDsPromptState(DS_PROMPT_NONE);
+              // Now run the pending command
+              const pendingOut = await runCommand(dsPendingCmd, context);
+              if (pendingOut && pendingOut.length) {
+                setHistory((prev) => [...prev, ...pendingOut.map((t) => ({ type: 'out', text: String(t) }))]);
+              }
+            } else {
+              setHistory((prev) => [...prev, { type: 'err', text: 'Incorrect password.' }]);
+            }
+          } catch (err) {
+            setHistory((prev) => [...prev, { type: 'err', text: `Error: ${err.message}` }]);
+          }
+        }, 0);
+        return;
+      }
+
+      // Normal command
+      setHistory((prev) => [...prev, { type: 'cmd', text: `$ ${line}` }]);
+      setInput('');
+      histRef.current.push(line);
+      histPosRef.current = -1;
+
       setTimeout(async () => {
         try {
           const out = await runCommand(line, context);
+          // Handle password prompt request
+          if (out && out[NEED_PASSWORD]) {
+            const { pendingCmd } = out;
+            setDsPendingCmd(pendingCmd);
+            setDsPromptState(DS_PROMPT_AWAITING_PASSWORD);
+            // Show the password prompt line
+            setHistory((prev) => [...prev, { type: 'info', text: 'ds password: ' }]);
+            return;
+          }
           if (out && out.length) {
             setHistory((prev) => [...prev, ...out.map((t) => ({ type: 'out', text: String(t) }))]);
           }
@@ -372,13 +426,18 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
       setInput(histPosRef.current >= 0 ? (h[h.length - 1 - histPosRef.current] || '') : '');
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      onClose && onClose();
+      if (dsPromptState !== DS_PROMPT_NONE) {
+        setDsPromptState(DS_PROMPT_NONE);
+        setDsPendingCmd('');
+      } else {
+        onClose && onClose();
+      }
     } else if (e.key === 'l' && e.ctrlKey) {
       e.preventDefault();
       clearHistory();
       setHistory((prev) => [...prev, { type: 'info', text: 'AMLI-SH 1.0.0' }]);
     }
-  }, [input, context, onClose, clearHistory]);
+  }, [input, context, onClose, clearHistory, dsPromptState, dsPendingCmd]);
 
   const prompt = (
     <span className="cli-prompt">
@@ -389,9 +448,14 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
     </span>
   );
 
+  // Effect for ds command handling - when ds command requests password
+  useEffect(() => {
+    // This is handled in runCommand via context functions
+  }, []);
+
   return (
-    <div className="cli-overlay" onClick={onClose}>
-      <div className="cli-window" onClick={(e) => e.stopPropagation()}>
+    <div className="cli-fullscreen" onClick={() => inputRef.current && inputRef.current.focus()}>
+      <div className="cli-window-full">
         <div className="cli-titlebar">
           <div className="cli-dots">
             <span className="cli-dot cli-dot-red" onClick={onClose} title="Close" />
@@ -401,7 +465,8 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
           <div className="cli-title">AMLI-SH — ds@amli</div>
           <div className="cli-spacer" />
         </div>
-        <div className="cli-body" ref={scrollRef} onClick={() => inputRef.current && inputRef.current.focus()}>
+        <div className="cli-body" ref={scrollRef}>
+          {/* Banner area - rendered as part of history on first open */}
           {history.map((h, i) => {
             if (h.type === 'cmd') {
               return (
@@ -425,13 +490,26 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
                 </div>
               );
             }
+            if (h.type === 'sys') {
+              return (
+                <div className="cli-line cli-line-sys" key={i}>
+                  {renderLine(h.text, `sys-${i}`)}
+                </div>
+              );
+            }
             return (
               <div className="cli-line" key={i}>
                 {renderLine(h.text, `out-${i}`)}
               </div>
             );
           })}
-          {/* inline banner on clear/start */}
+          {/* ds password prompt inline */}
+          {dsPromptState === DS_PROMPT_AWAITING_PASSWORD && (
+            <div className="cli-line cli-line-prompt" key="ds-prompt">
+              {prompt}
+              <span className="cli-cmd-text">ds password: </span>
+            </div>
+          )}
           <div className="cli-input-row">
             {prompt}
             <input
@@ -443,6 +521,7 @@ export default function TerminalCLI({ theme, toggleTheme, onClose, isOpen, navig
               autoFocus
               spellCheck={false}
               autoComplete="off"
+              type={dsPromptState === DS_PROMPT_AWAITING_PASSWORD ? 'password' : 'text'}
             />
             <span className="cli-cursor" />
           </div>
@@ -474,11 +553,24 @@ function colorizeCode(text, style) {
 
 function getBannerLines() {
   const b = getDSBanner();
-  const LOGO_W = 40; // display width of the logo column (logo is single-width block chars)
+  const LOGO_W = 80;
   return b.map((row) => {
-    if (row.isSwatch) return row.info;
+    if (row.isSwatch) {
+      // Color the swatch blocks with ANSI codes
+      const blocks = row.info.trim().split(/\s+/);
+      const colors = [
+        '\u001b[38;2;99;102;241m',  // indigo
+        '\u001b[38;2;34;211;238m',  // cyan
+        '\u001b[38;2;16;185;129m',  // emerald
+        '\u001b[38;2;245;158;11m',  // amber
+        '\u001b[38;2;244;63;94m',   // rose
+      ];
+      return blocks.map((block, idx) => {
+        const color = colors[idx % colors.length] || '\u001b[36m';
+        return `${color}${block}\u001b[0m`;
+      }).join('   ');
+    }
     const logo = row.logo || '';
-    // Pad the logo field to align the info column (strip to display width)
     return logo + ' '.repeat(Math.max(2, LOGO_W - displayWidth(logo))) + row.info;
   });
 }
@@ -487,7 +579,6 @@ function getBannerLines() {
 function displayWidth(str) {
   let w = 0;
   for (const ch of str) {
-    // CJK / full-width blocks count as 2
     if (/[\u{3000}-\u{9FFF}\u{FF00}-\u{FFEF}\u{2580}-\u{259F}\u{2500}-\u{257F}]/u.test(ch)) w += 2;
     else w += 1;
   }

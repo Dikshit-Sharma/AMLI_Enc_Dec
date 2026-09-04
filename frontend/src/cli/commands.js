@@ -320,6 +320,9 @@ async function handleTheme(args, ctx) {
   return ctx.theme(mode);
 }
 
+// Special result type for signaling terminal to prompt for password
+export const NEED_PASSWORD = Symbol('NEED_PASSWORD');
+
 async function handleDs(args, ctx) {
   // ds login / ds unlock
   const first = (args[0] || '').toLowerCase();
@@ -362,11 +365,9 @@ async function handleDs(args, ctx) {
 
   // Otherwise it's a protected command; ensure authenticated
   if (!ctx.isLoggedIn()) {
-    return [
-      colorize('Access denied: this command requires admin (ds) permission.', 'red'),
-      'Run: ds password <secret>  (the shared Library/Credentials password)',
-      '...then re-run your "ds ..." command.',
-    ];
+    // Signal terminal to prompt for password
+    const pendingCmd = 'ds ' + args.join(' ');
+    return { [NEED_PASSWORD]: true, pendingCmd };
   }
 
   // Execute the protected subcommand
