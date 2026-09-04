@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchArtifacts, fetchCredentials } from './api';
 import { logAnalyticsEvent } from './firebase';
@@ -35,7 +35,32 @@ export default function CommandPalette({ open, onClose }) {
     if (open && inputRef.current) inputRef.current.focus();
   }, [open]);
 
+  // Detect if the query matches the "Export to Obsidian" command: "ds obsidian export"
+  const isExportCommand = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return false;
+    // Match the command loosely: requires "obsidian" and "export" to be present
+    return q.includes('obsidian') && q.includes('export');
+  }, [query]);
+
   const results = React.useMemo(() => {
+    if (isExportCommand) {
+      // When the export command is recognized, show it as the top result
+      const out = [{ category: 'Commands', items: [{ command: 'export', id: 'cmd_export' }] }];
+      const lib = data.library.filter((a) =>
+        a.apiName?.toLowerCase().includes(query.toLowerCase()) ||
+        a.jiraTicket?.toLowerCase().includes(query.toLowerCase()) ||
+        a.env?.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 5);
+      const creds = data.credentials.filter((c) =>
+        c.soaAppId?.toLowerCase().includes(query.toLowerCase()) ||
+        c.apiName?.toLowerCase().includes(query.toLowerCase()) ||
+        c.env?.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 5);
+      if (lib.length) out.push({ category: 'Library', items: lib });
+      if (creds.length) out.push({ category: 'Credentials', items: creds });
+      return out;
+    }
     if (!query.trim()) return [];
     const q = query.toLowerCase();
     const lib = data.library.filter((a) =>
@@ -52,7 +77,7 @@ export default function CommandPalette({ open, onClose }) {
     if (lib.length) out.push({ category: 'Library', items: lib });
     if (creds.length) out.push({ category: 'Credentials', items: creds });
     return out;
-  }, [query, data]);
+  }, [query, data, isExportCommand]);
 
   const flatItems = results.flatMap((g) => g.items);
   useEffect(() => { setSelectedIdx(0); }, [query]);
@@ -65,14 +90,14 @@ export default function CommandPalette({ open, onClose }) {
       e.preventDefault();
       setSelectedIdx((p) => Math.max(p - 1, 0));
     } else if (e.key === 'Enter') {
-      // Check if "Export to Obsidian" action is selected
-      if (flatItems.length === 0 && query.trim() === '' && selectedIdx === 0) {
-        navigate('/export');
-        onClose();
-        return;
-      }
       const item = flatItems[selectedIdx];
       if (item) {
+        if (item.command === 'export') {
+          logAnalyticsEvent('cmd_palette_command', { command: 'obsidian_export', source: 'keyboard' });
+          navigate('/export');
+          onClose();
+          return;
+        }
         logAnalyticsEvent('cmd_palette_select', { item_id: item.id, source: 'keyboard' });
         if (item.id?.startsWith('art_')) {
           navigate('/credentials');
@@ -109,54 +134,53 @@ export default function CommandPalette({ open, onClose }) {
           ) : results.length === 0 && query.trim() ? (
             <div className="cmd-empty">No results for "{query}"</div>
           ) : query.trim() === '' ? (
-            <>
-              <div className="cmd-hint">Type to search across Library artifacts and Credentials</div>
-              <div className="cmd-group" style={{ marginTop: '0.5rem' }}>
-                <div className="cmd-group-title">Actions</div>
-                <div
-                  className={`cmd-item ${selectedIdx === 0 ? 'selected' : ''}`}
-                  onClick={() => { navigate('/export'); onClose(); }}
-                  onMouseEnter={() => setSelectedIdx(0)}
-                >
-                  <span className="cmd-item-icon">&#x1f4d6;</span>
-                  <div className="cmd-item-text">
-                    <span className="cmd-item-name">Export to Obsidian</span>
-                    <span className="cmd-item-sub">Export all data as an Obsidian vault</span>
-                  </div>
-                </div>
-              </div>
-            </>
+            <div className="cmd-hint">Type to search across Library artifacts and Credentials</div>
           ) : (
             results.map((group) => (
               <div key={group.category} className="cmd-group">
                 <div className="cmd-group-title">{group.category}</div>
                 {group.items.map((item, i) => {
                   const idx = flatItems.indexOf(item);
+                  const isExport = item.command === 'export';
                   return (
                     <div
                       key={`${group.category}-${item.id || i}`}
                       className={`cmd-item ${idx === selectedIdx ? 'selected' : ''}`}
                       onClick={() => {
-                        logAnalyticsEvent('cmd_palette_select', { item_id: item.id, source: 'click' });
-                        if (item.id?.startsWith('art_')) navigate('/credentials');
-                        else navigate('/library');
+                        if (isExport) {
+                          logAnalyticsEvent('cmd_palette_command', { command: 'obsidian_export', source: 'click' });
+                          navigate('/export');
+                        } else {
+                          logAnalyticsEvent('cmd_palette_select', { item_id: item.id, source: 'click' });
+                          if (item.id?.startsWith('art_')) navigate('/credentials');
+                          else navigate('/library');
+                        }
                         onClose();
                       }}
                       onMouseEnter={() => setSelectedIdx(idx)}
                     >
                       <span className="cmd-item-icon">
-                        {group.category === 'Library' ? '📚' : '🔑'}
+                        {isExport ? '&#x1f4d6;' : (group.category === 'Library' ? '📚' : '🔑')}
                       </span>
                       <div className="cmd-item-text">
-                        <span className="cmd-item-name">
-                          {group.category === 'Library' ? item.apiName || 'Unnamed' : item.soaAppId || 'Unknown'}
-                        </span>
-                        <span className="cmd-item-sub">
-                          {item.jiraTicket || item.apiName || ''}
-                          {item.env ? ` · ${item.env}` : ''}
-                        </span>
+                        {isExport ? (
+                          <>
+                            <span className="cmd-item-name">ds obsidian export</span>
+                            <span className="cmd-item-sub">Export all data as an Obsidian vault</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="cmd-item-name">
+                              {group.category === 'Library' ? item.apiName || 'Unnamed' : item.soaAppId || 'Unknown'}
+                            </span>
+                            <span className="cmd-item-sub">
+                              {item.jiraTicket || item.apiName || ''}
+                              {item.env ? ` · ${item.env}` : ''}
+                            </span>
+                          </>
+                        )}
                       </div>
-                      {item.env && (
+                      {!isExport && item.env && (
                         <span className={`cmd-env-badge`} data-env={item.env}>
                           {item.env}
                         </span>

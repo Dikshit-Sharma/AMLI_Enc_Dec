@@ -76,10 +76,17 @@ function buildFrontmatter(tags, extra = {}) {
   return fm;
 }
 
-/** Obsidian short-link (basename only, no path) — most reliable form */
-function link(name, display) {
+/**
+ * Obsidian link safe for use INSIDE a Markdown table cell.
+ * Obsidian treats `|` as a column separator, so the display-pipe of a wikilink
+ * must be escaped as `\|` (or omit the display text). Bare links are safest.
+ */
+function tableLink(name, display) {
   const n = sanitize(name);
-  return display && display !== n ? `[[${n}|${display}]]` : `[[${n}]]`;
+  if (display && display !== n) {
+    return `[[${n}\\|${display}]]`;
+  }
+  return `[[${n}]]`;
 }
 
 // ─── Dashboard ──────────────────────────────────────────────────────────────
@@ -97,29 +104,42 @@ function generateDashboard(data) {
   md += '## Overview\n\n';
   md += '| Section | Count |\n';
   md += '|---|---|\n';
-  md += `| [Artifacts](Artifacts/_Index) | ${artifacts.length} |\n`;
-  md += `| [BSA Entries](BSA/_Index) | ${bsa.length} |\n`;
-  md += `| [Credentials](Credentials/_Index) | ${credentials.length} |\n`;
-  md += `| [Clipboard Notes](Clipboard/_Index) | ${clipboards.length} |\n`;
+  md += `| [[Artifacts/_Index]] | ${artifacts.length} |\n`;
+  md += `| [[BSA/_Index]] | ${bsa.length} |\n`;
+  md += `| [[Credentials/_Index]] | ${credentials.length} |\n`;
+  md += `| [[Clipboard/_Index]] | ${clipboards.length} |\n`;
 
   md += '\n## Quick Links\n\n';
-  md += '- [Artifacts](Artifacts/_Index) -- SOA documentation artifacts\n';
-  md += '- [BSA](BSA/_Index) -- Business Stakeholder Alignment tracker\n';
-  md += '- [Credentials](Credentials/_Index) -- API credentials\n';
-  md += '- [Clipboard](Clipboard/_Index) -- Collaborative rich-text notes\n';
-  md += '- [Changelog](Changelog/Changelog) -- Export history\n';
+  md += '- [[Artifacts/_Index]] -- SOA documentation artifacts\n';
+  md += '- [[BSA/_Index]] -- Business Stakeholder Alignment tracker\n';
+  md += '- [[Credentials/_Index]] -- API credentials\n';
+  md += '- [[Clipboard/_Index]] -- Collaborative rich-text notes\n';
+  md += '- [[Changelog/Changelog]] -- Export history\n';
 
   return md;
 }
 
 // ─── Artifacts ──────────────────────────────────────────────────────────────
 
-/** Build a unique, deterministic, Obsidian-safe filename for an artifact note */
-function artifactFileName(art, index) {
-  const base = sanitize(art.jiraTicket) + '_' + sanitize(art.apiName) + '_' + sanitize(art.env);
+/**
+ * Build a unique, deterministic, Obsidian-safe filename for an artifact note.
+ * `used` is a Set of already-used filenames; duplicate names get a numeric suffix.
+ */
+function artifactFileName(art, index, used) {
+  let base = sanitize(art.jiraTicket) + '_' + sanitize(art.apiName) + '_' + sanitize(art.env);
   // If the meaningful name parts are all "Untitled", include the id + index
   if (base === 'Untitled_Untitled_Untitled') {
-    return `${sanitize(art.apiName) || 'Artifact'}_${art.id || index + 1}`;
+    base = `${sanitize(art.apiName) || 'Artifact'}_${art.id || index + 1}`;
+  }
+
+  if (used) {
+    let candidate = base;
+    let n = 2;
+    while (used.has(candidate)) {
+      candidate = `${base}_${n++}`;
+    }
+    used.add(candidate);
+    return candidate;
   }
   return base;
 }
@@ -149,8 +169,8 @@ function generateArtifactsIndex(artifacts) {
 
   artifacts.forEach((art, i) => {
     const n = sanitize(art.apiName) || 'Unnamed API';
-    const fname = artifactFileName(art, i);
-    md += `| ${i + 1} | ${cell(art.jiraTicket || '-')} | ${link(fname, n)} | ${cell(art.env || '-')} | ${cell(art.encryption || 'Disabled')} | ${fmtDate(art.timestamp)} |\n`;
+    const fname = art._fname || artifactFileName(art, i);
+    md += `| ${i + 1} | ${cell(art.jiraTicket || '-')} | ${tableLink(fname, n)} | ${cell(art.env || '-')} | ${cell(art.encryption || 'Disabled')} | ${fmtDate(art.timestamp)} |\n`;
   });
 
   return md;
@@ -268,7 +288,7 @@ function generateBSAIndex(bsaEntries) {
   for (const entry of bsaEntries) {
     const consumers = (entry.consumers || []).map(c => c.name).filter(Boolean);
     const spocs = (entry.consumers || []).map(c => c.spoc).filter(Boolean);
-    md += `| ${link(entry.api, entry.api || '-')} | ${cell(consumers.join(', ') || '-')} | ${cell(spocs.join(', ') || '-')} | ${fmtDate(entry.updatedAt || entry.createdAt)} |\n`;
+    md += `| ${tableLink(entry.api, entry.api || '-')} | ${cell(consumers.join(', ') || '-')} | ${cell(spocs.join(', ') || '-')} | ${fmtDate(entry.updatedAt || entry.createdAt)} |\n`;
   }
 
   return md;
@@ -322,17 +342,26 @@ function generateCredentialsIndex(credentials) {
   md += '|---|---|---|---|---|---|\n';
 
   for (const cred of credentials) {
-    const fname = credentialFileName(cred);
-    md += `| ${link(fname, cred.soaAppId || '-')} | ${cell(cred.apiName || '-')} | ${cell(cred.env || '-')} | \`${cell(cred.xApiKey || '')}\` | \`${cell(cred.clientId || '')}\` | ${fmtDate(cred.createdAt)} |\n`;
+    const fname = cred._fname || credentialFileName(cred);
+    md += `| ${tableLink(fname, cred.soaAppId || '-')} | ${cell(cred.apiName || '-')} | ${cell(cred.env || '-')} | \`${cell(cred.xApiKey || '')}\` | \`${cell(cred.clientId || '')}\` | ${fmtDate(cred.createdAt)} |\n`;
   }
 
   return md;
 }
 
-function credentialFileName(cred) {
-  const base = sanitize(cred.soaAppId) + '_' + sanitize(cred.apiName) + '_' + sanitize(cred.env);
+function credentialFileName(cred, used) {
+  let base = sanitize(cred.soaAppId) + '_' + sanitize(cred.apiName) + '_' + sanitize(cred.env);
   if (base === 'Untitled_Untitled_Untitled') {
-    return sanitize(cred.soaAppId) || sanitize(cred.id) || 'Credential';
+    base = sanitize(cred.soaAppId) || sanitize(cred.id) || 'Credential';
+  }
+  if (used) {
+    let candidate = base;
+    let n = 2;
+    while (used.has(candidate)) {
+      candidate = `${base}_${n++}`;
+    }
+    used.add(candidate);
+    return candidate;
   }
   return base;
 }
@@ -393,7 +422,7 @@ function generateClipboardIndex(clipboards) {
   for (const cb of clipboards) {
     const fname = clipboardFileName(cb);
     const title = cb.title || 'Untitled Clipboard';
-    md += `| ${link(fname, title)} | ${cb.version || 0} | ${fmtDate(cb.updatedAt)} |\n`;
+    md += `| ${tableLink(fname, title)} | ${cb.version || 0} | ${fmtDate(cb.updatedAt)} |\n`;
   }
 
   return md;
@@ -493,8 +522,19 @@ export async function exportToObsidian({ onProgress } = {}) {
   log('Fetching artifacts...');
   let rawArtifacts = [];
   try {
-    const artRes = await fetchArtifacts();
-    const list = artRes.artifacts || [];
+    // Paginate through ALL artifacts (the API returns max 20 per page by default)
+    const list = [];
+    let cursor = null;
+    let more = true;
+    let guard = 0;
+    while (more && guard < 100) {
+      guard += 1;
+      const page = await fetchArtifacts({ limit: 100, cursor });
+      const items = (page && page.artifacts) || [];
+      list.push(...items);
+      cursor = page && page.nextCursor ? page.nextCursor : null;
+      more = Boolean(cursor) && items.length > 0;
+    }
 
     // Fetch full details (curl/response/extraRequests) per artifact.
     // fetchArtifact returns { artifact: {...} }; fall back to list item on failure.
@@ -512,6 +552,12 @@ export async function exportToObsidian({ onProgress } = {}) {
     console.warn('Failed to fetch artifacts:', e);
   }
   const artifacts = rawArtifacts.map(normalizeArtifact);
+
+  // Assign unique filenames (dedup handles same jira+api+env appearing multiple times)
+  const usedArtNames = new Set();
+  artifacts.forEach((art, i) => {
+    art._fname = artifactFileName(art, i, usedArtNames);
+  });
 
   log('Fetching BSA entries...');
   let bsa = [];
@@ -574,8 +620,8 @@ export async function exportToObsidian({ onProgress } = {}) {
   zip.file(`${root}/Dashboard.md`, generateDashboard(data));
 
   // Artifacts
-  artifacts.forEach((art, i) => {
-    zip.file(`${root}/Artifacts/${artifactFileName(art, i)}.md`, generateArtifactNote(art));
+  artifacts.forEach((art) => {
+    zip.file(`${root}/Artifacts/${art._fname}.md`, generateArtifactNote(art));
   });
   zip.file(`${root}/Artifacts/_Index.md`, generateArtifactsIndex(artifacts));
 
@@ -586,8 +632,10 @@ export async function exportToObsidian({ onProgress } = {}) {
   zip.file(`${root}/BSA/_Index.md`, generateBSAIndex(bsa));
 
   // Credentials (unmasked)
+  const usedCredNames = new Set();
   for (const cred of credentials) {
-    zip.file(`${root}/Credentials/${credentialFileName(cred)}.md`, generateCredentialNote(cred));
+    cred._fname = credentialFileName(cred, usedCredNames);
+    zip.file(`${root}/Credentials/${cred._fname}.md`, generateCredentialNote(cred));
   }
   zip.file(`${root}/Credentials/_Index.md`, generateCredentialsIndex(credentials));
 
