@@ -1,10 +1,7 @@
 package com.mli.groupupsure.util;
 
 import com.mli.groupupsure.exception.GenericCustomException;
-import jakarta.xml.bind.DatatypeConverter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
@@ -12,19 +9,27 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import java.security.*;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.KeyFactory;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.SecureRandom;
+import java.security.Signature;
+import java.security.SignatureException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Arrays;
 import java.util.Base64;
-import java.util.UUID;
 
 @Slf4j
-@Component
 public class DecryptionUtil {
 
     private static final int GCM_TAG_LENGTH_BITS = 128;
@@ -303,22 +308,20 @@ public class DecryptionUtil {
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, SignatureException,
             InvalidKeySpecException, InvalidKeyException, GenericCustomException {
 
-        String soaPrivateKey = "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCmxvS8kk8feClj3QCc/ebDjFNA/+bFwAiCe8Rvtnmht/5OACWVmVJ10q/HwDgGFFn7WQDm56WOEUo3FeqYFAu3PPiTPMOXgJUqYP6KWCPzQSE4aVahf9qjgldbLxpsiid2KzX0RnFWzqQtT5LgLdNoI9RA0bs1LoZjX8lS/YUOngwz2g+gdtlvtQXsDruezg1FFlIf6QOfg/mZP8YdTirYMOgZhv77M1nGfFs3Ly5VcdR+mQqg4/mw0O4+oZUKc70I4Ni8S3Cv9+9aZ5chCvgz9guszJi8s0nfZloQN2SZyh4bPwxqRxoHRPfZdxSBlwEw92RX4UzKnDxooGyUeWqNAgMBAAECggEAIJdKpjsVOTobJIfAoe1AFkCq2E3pxAUl5JHZLleDZ2X0TTvcHGLs6Vd1wFxA1ndNqj+XXIgyIxQf46nlwThRncpNbUB3nHilLbXsqA5XYCb/He3/3umESWWkOo525HUPBxmknorRhTw2eyBMvIBYCsbNqKkTo23nFy5VwmEGindpeL4hfZIbVv2OOIYxsy8Q7Q9KThBp58XNlNCoLtUjau0eVBh8ut8uODEzDbn9v5y11aVmzv3CtV6s5QVfgiIqxZBpkJlPJUm/00CVSR5e4n6lKupSrqMkistTPi9HL/E44pzS0f/MLF5K/Pd6S3iNd1PkcjNZjsQ2FhZQd1W0IQKBgQDRspX6ZWfrB5oClnR/Z0xKITNu2NbdJ+HY1bCBvRWr77GoZaYjf9093wLaJTV3QthfKYM9/fe76zyQUjbidVN8laqG0u/vFsiX1cesLZKp2PHhPOweDIb809uN/4raoCZmIMzEexyoP8i8SF5zTIlEA78FaFgB9pFZXhb11bTe1QKBgQDLmj2Ael8rT7iQCS0M6kYXuz07KZe3w54aZSBjROjBHFaGqNka5mEuXdyLi8SYPMmF6onoIi6NENnInHmjimX5u+3Bz2Tn/Y1ZIxwefSQ7Y3slv5VeTfNEwDncU3ePfNwNIpH+t8OEbPxGiRx7fShEBnlmWYrbNP5/ITyOChpo2QKBgQDRspX6ZWfrB5oClnR/Z0xKITNu2NbdJ+HY1bCBvRWr77GoZaYjf9093wLaJTV3QthfKYM9/fe76zyQUjbidVN8laqG0u/vFsiX1cesLZKp2PHhPOweDIb809uN/4raoCZmIMzEexyoP8i8SF5zTIlEA78FaFgB9pFZXhb11bTe1QKBgQDLmj2Ael8rT7iQCS0M6kYXuz07KZe3w54aZSBjROjBHFaGqNka5mEuXdyLi8SYPMmF6onoIi6NENnInHmjimX5u+3Bz2Tn/Y1ZIxwefSQ7Y3slv5VeTfNEwDncU3ePfNwNIpH+t8OEbPxGiRx7fShEBnlmWYrbNP5/ITyOChpo2QKBgQDKA+G4eDjEk24rUAarNjiosZN7Firoo6NP4Y1Jb3+RRDlCoaqMSII7OLzmqzH20s7f3n4xGpmuz9BouMtnHuBvBUBi4pODIc/ddnYFyWGhfv6GnspZqHfi2baJ9cUvGVnkyXR7VJ8m90vLF2zmZrVWcMV10C/4tDEShzJXYqn8gQKBgQDGXI1S4OZboh3kZqw3iv+jG076lvkzligw+xlk3bwOeHdsVpC+fnlr3RKD+jYdRAvqpqiZOsQzt5kWtCxmQu47Mvbe/hoHU6Ykk+pPYgisu609B7yU1kkOUGGO4Nr5NuKFAYtPqOWZ3Tyj0+2l+jgCnnQkXVTFYIoafd0rXXiBcQKBgEDpM4JOYtv4ylYXErsBa29imzAvALryyFyg0IVBgY4Q6Xx/h2f2w0iezxcaB+gx00Oyqjo/hn9X5Sxd+XQTyf0FObkMtMZnA3GD8G8CK+3TInLm9QxF9KXmu4aMZKHIYkXoXI648pmiKzftIsMLTUX41j907oGeSEy4VYrlK1a+";
+        String soaPrivateKey = "MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCzmHPrEqiM4JW9bNjMqsaZrTQKBOCgAMuOSQZ+zkixqAJnKCEyvp+NPLx5//SHhgHWfyJHwmVaeGymwKu5QZZ2/xTCK1s2aajJUEiqvP2lRfHyMRV9eXegIJcz/qOvUgQNYnBAIOca7UDvt/BUn726d1vwlh1WKN3v2CtXA9YC1OAkQy1Ttav7HT7n4K1r325obY7HO/J4R5JzW/fvKB06lmQMXFt92apAPc/BkgChN4D+kHxx9frw91p3axRgb04vNH1HpbPJ37XCZVXsGOqEj/cLGnyv0Mw8wktZiQN0mIFgNA3K7riZtmBn/SrKpA8+FCvSJ7V9Rn/dl4r34pJxAgMBAAECggEABq8wM6HmxdKHOY0F7y0qgIurTeBTWMUwI6gzuTprMc3gOVprd5CTzpK3LEkYCZzAWq1HQiQ54pGBmr29o814ALm6+i9EAR0S4AZFzsauCphqj5efK65pYvDKQTrzTj93VjpcFZjxPRBy8VEiEpDno6YVCmSYltgPyuvbkMIm6pqVW4Ji7iBPly+XF7C+5CUSrM5f75jvpB+Tya/BQYzWNt0UKWiKuscfHshyIifTykCB05VzaZUxPhZxoAXPtkLrW8NxmMYRt+bCGiMfdfIqdBlqpAUmB7Mxjb4Ok+2Qtc5o2f1f5FGZkJ6qfla9CXl5P+mmLauNdGRYYs/yQ83eWQKBgQD0reTHNFc+kmSetCbIvw1OGFf3KZEt1YRJSRSwcBq4EOm4evidGU5699rIZzsZYTjwWY/YVrRFI44T1OV+7c6Z+gJTYcX3izFGGLEEQUe1546SRLwAmJxUauQFhvxmS3YcJOGe/2EyDnSZUUZVsXYT/qHDL631YPXudzTjAFiG6QKBgQC756yFLaOPLp63le4f5aSb6lP8skgeZOoVav6RDrwv3Y7PBFAJoJilkcSEIDsSC2vr1YAogR6CIdfWjczp1+1+kjsB5sibeyP/6J31VBQZ5aQ8kl609KFgl75pk+U1puyieRxVa4/Ywna3745LafKn1gLkVvSwTtpHl+WJUQcKSQKBgDjRxQXphrUWI92i8jq9+yX+izbvZTJimgS2vuI2Nk42R0A69k7tGId/1UOijVvYcvOFqNzRTa2ckxrR3rV6Hfct0qpwUxuoLDod88WML03zxuz6nzn4Np138RnDfgt3TKc+fVKB9Z09NCCCejXeLxB3mjMMeHY6HQJSlmp8oxI5AoGAAtI/rOA6jHPOvkLqCGCSUCT8jda/bnVlblzk5ZirCqzw7/rImNxoblP592HkgSjavfe+rN0DcEDB1N7cLMapMjVP3X9xk6QNrlH3zS8t/hWMmbw4386sfZ7JpRwrXNrcwrO+0SmER2TkE27tXASDODHmaTdFBUCp1llZgO5OhMECgYA42EbUk1vuPmzIEZCx2MwpndpgKbi6A7hxMLfZ+FFpxrzmNE1NUFT+gPHMK9hdxSPvXwjd0DtZk9nO3DyYpI2qtq5wVKtmfZ4CfGipajTHlirvcRzU4W/hPE27TznJdy9P44NExMiy61alH29XE5Jzc9hK7YGrPynkJYWQDV6bJA==";
 
-        String pmjjbyPublicKey = "MIIC6TCCAdGgAwIBAgIJAMwlTtuoNrd2MA0GCSqGSIb3DQEBCwUAMDQxEzARBgNVBAMMClNPQS1QTUpKQlkxEDAOBgNVBAoMB01heExpZmUxCzAJBgNVBAYTAklOMB4XDTI2MDkwODEwMTYzMFoXDTI4MDkwNzEwMTYzMFowNDETMBEGA1UEAwwKU09BLVBNSkpCWTEQMA4GA1UECgwHTWF4TGlmZTELMAkGA1UEBhMCSU4wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCmxvS8kk8feClj3QCc/ebDjFNA/+bFwAiCe8Rvtnmht/5OACWVmVJ10q/HwDgGFFn7WQDm56WOEUo3FeqYFAu3PPiTPMOXgJUqYP6KWCPzQSE4aVahf9qjgldbLxpsiid2KzX0RnFWzqQtT5LgLdNoI9RA0bs1LoZjX8lS/YUOngwz2g+gdtlvtQXsDruezg1FFlIf6QOfg/mZP8YdTirYMOgZhv77M1nGfFs3Ly5VcdR+mQqg4/mw0O4+oZUKc70I4Ni8S3Cv9+9aZ5chCvgz9guszJi8s0nfZloQN2SZyh4bPwxqRxoHRPfZdxSBlwEw92RX4UzKnDxooGyUeWqNAgMBAAEwDQYJKoZIhvcNAQELBQADggEBAGKL7jQH1Qmx5E9j8QL6rjJ4JLA6/M1zP8rczafJn85U8m+ZN3V3kZt49vD2KrWDUnZAugJCXqiUrdRHVKXB08VtdpYge9JeCZxm9jHKkxAlEdSFCV1aM9shcfKRjwf1LorrJjcYgCKrTjMqPzq5rMmN03XnFzyt+c6a+ElfXzcwlEwe2e6MMKdfiUmhvGkI9/QsDGfQsbmfzepMgwva87q3BdcTsbDoi35qV8HtZuDta/CJ5N+yx1XC0JSYqB6asddooKntxUK0XE+ajUCW7qSzm9+5ppGq4NiwZSqydjoX304gF78KK9IO92jM2o3EZE=";
-
-        DecryptionUtil decryptionUtil = new DecryptionUtil();
+        String pmjjbyPublicKey = "MIIDSTCCAjGgAwIBAgIUW/FcZnRy7cl3GWWXdruwZ4cvzcowDQYJKoZIhvcNAQELBQAwNDETMBEGA1UEAwwKU09BLVBNSkpCWTEQMA4GA1UECgwHTWF4TGlmZTELMAkGA1UEBhMCSU4wHhcNMjYwOTA4MTA1ODM0WhcNMjgwOTA3MTA1ODM0WjA0MRMwEQYDVQQDDApTT0EtUE1KSkJZMRAwDgYDVQQKDAdNYXhMaWZlMQswCQYDVQQGEwJJTjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALOYc+sSqIzglb1s2MyqxpmtNAoE4KAAy45JBn7OSLGoAmcoITK+n408vHn/9IeGAdZ/IkfCZVp4bKbAq7lBlnb/FMIrWzZpqMlQSKq8/aVF8fIxFX15d6AglzP+o69SBA1icEAg5xrtQO+38FSfvbp3W/CWHVYo3e/YK1cD1gLU4CRDLVO1q/sdPufgrWvfbmhtjsc78nhHknNb9+8oHTqWZAxcW33ZqkA9z8GSAKE3gP6QfHH1+vD3WndrFGBvTi80fUels8nftcJlVewY6oSP9wsafK/QzDzCS1mJA3SYgWA0DcruuJm2YGf9KsqkDz4UK9IntX1Gf92XivfiknECAwEAAaNTMFEwHQYDVR0OBBYEFImy7pYFeuGw5mbo3o+PS3rYoYJqMB8GA1UdIwQYMBaAFImy7pYFeuGw5mbo3o+PS3rYoYJqMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBALJEfSWhIovr75IK9byr9N2Fv9c5V65LEQaqepUOeEUo6iR1xd6IHUU0A18mKH75JWQQQDMzMkUHRUURlzQx1t79IWsaM6HmL+wDJ9hzBhZCbRQ1QIgzwAtJNI53xHCci/T30z+sNXi5KycLii0ODJAlvHjLJEQiNitYT7LJwNt06eckap8FH+J9sRFPtftTbS7UWTIeVpJRlOeQPIiFZ9VCy2h4xoXw79Xzd0CQr/ipML2ZYWHq4h6NestiNxMnMtUDJo7Z3SLGg5Kbwy8h18OD67sI8Q6Jy+TBmgHeXaC5Zy2fCO2r2spaihEDDdtyFCsEHPCNMxE4HXpVtuPQUnQ=";
 
         String plain = "{\"request\":{\"header\":{\"userName\":\"pmjjby_user\",\"apiKey\":\"pmjjby_api_key_123\"},"
                 + "\"payload\":{\"accountNumber\":\"12345678243\",\"cif\":\"CIF0012345\","
                 + "\"urn\":\"JNS-PMJJBY-23-24-00000000001-12\",\"effectiveDate\":\"2026-08-31 10:15:00\","
                 + "\"requestDate\":\"2026-08-31 10:15:00\",\"token\":\"8002adc6-8540-4b46-9cb5-7e89cd1eab67\"}}}";
 
-        String encrypted = decryptionUtil.encrypt(plain, soaPrivateKey, pmjjbyPublicKey);
+        String encrypted = encrypt(plain, soaPrivateKey, pmjjbyPublicKey);
         System.out.println("ENCRYPTED PAYLOAD:\n" + encrypted);
         System.out.println("\nPOSTMAN BODY:\n{\"request\":{\"payload\":\"" + encrypted + "\"}}");
 
-        String decrypted = decryptionUtil.decrypt(encrypted, soaPrivateKey, pmjjbyPublicKey);
+        String decrypted = decrypt(encrypted, soaPrivateKey, pmjjbyPublicKey);
         System.out.println("\nDECRYPTED REQUEST:\n" + decrypted);
     }
 }
